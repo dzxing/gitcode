@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "GitK",
+  "version": "0.1.0",
+  "identifier": "dev.gitk.workbench",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:43187",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{ "label": "main", "title": "GitK", "width": 1440, "height": 960, "minWidth": 900, "minHeight": 640, "decorations": false, "shadow": true, "theme": "Dark", "backgroundColor": "#14171c" }],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-src 'none'",
+      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost http://localhost:43187 ws://localhost:43187 http://127.0.0.1:43187 ws://127.0.0.1:43187; object-src 'none'; base-uri 'self'; frame-src 'none'",
+      "capabilities": ["main"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"],
+    "category": "DeveloperTool",
+    "shortDescription": "本地 Git 工作台",
+    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" } },
+    "macOS": { "minimumSystemVersion": "12.0" }
+  }
+}

@@ -1,0 +1,16 @@
+node_modules/
+**/node_modules/
+dist/
+release/
+legacy/
+design/
+.tmp/
+test-results/
+playwright-report/
+.git/
+.agents/
+.codex/
+package-lock.json
+bun.lock
+**/bun.lock
+*.tsbuildinfo

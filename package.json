@@ -1,0 +1,48 @@
+{
+  "name": "gitcode-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local Git workbench built with Electron and Vue",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "bun run check && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "start": "node scripts/desktop.mjs",
+    "desktop": "node scripts/desktop.mjs",
+    "desktop:wsl": "node scripts/desktop.mjs --wsl",
+    "desktop:build": "bun run build && node scripts/package-desktop.mjs",
+    "test": "node tests/git.test.cjs && node tests/git-checkout.test.cjs && node tests/git-selected.test.cjs && node tests/git-stash.test.cjs && node tests/git-merge.test.cjs && node tests/gitflow.test.cjs && node tests/gitflow-finish.test.cjs && node tests/preload.test.cjs && node tests/application-menu.test.cjs && node tests/local-core.test.cjs && node tests/frontend.mjs && node tests/worktree.test.mjs && node tests/staging.test.mjs && node tests/stash-view.test.mjs && node tests/stash-graph.test.mjs && node tests/merge-view.test.mjs",
+    "test:ui": "playwright test",
+    "fonts:install": "node scripts/install-fonts.mjs",
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint src scripts/local-core-plugin.ts vite.config.ts playwright.config.ts eslint.config.js --max-warnings 0",
+    "lint:fix": "bun run lint --fix",
+    "check": "bun run typecheck && bun run lint && bun run format:check",
+    "format": "prettier --write \"{src,electron,scripts,tests}/**/*.{vue,ts,js,cjs,mjs,css,json}\" \"*.{ts,js,cjs,mjs,json,html}\" .prettierrc.json",
+    "format:check": "prettier --check \"{src,electron,scripts,tests}/**/*.{vue,ts,js,cjs,mjs,css,json}\" \"*.{ts,js,cjs,mjs,json,html}\" .prettierrc.json"
+  },
+  "dependencies": {
+    "pinia": "3.0.4",
+    "vue": "3.5.40"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.58.2",
+    "@types/node": "22.20.1",
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/server-renderer": "3.5.40",
+    "eslint": "9.39.5",
+    "eslint-plugin-vue": "10.12.0",
+    "globals": "17.13.0",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "7.3.6",
+    "vite-plugin-vue-devtools": "8",
+    "vue-eslint-parser": "^10.3.0",
+    "vue-tsc": "3.3.8"
+  },
+  "productName": "GitCode"
+}

@@ -1,0 +1,39 @@
+{
+  "appId": "dev.gitcode.workbench",
+  "productName": "GitCode",
+  "electronVersion": "45.0.0",
+  "asar": true,
+  "npmRebuild": false,
+  "directories": {
+    "output": "release",
+    "buildResources": "assets"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/*.cjs",
+    "electron/*.json",
+    "assets/**/*",
+    "package.json",
+    "!node_modules/**/*"
+  ],
+  "win": {
+    "target": ["nsis"],
+    "icon": "assets/icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "perMachine": false
+  },
+  "mac": {
+    "target": ["dmg", "zip"],
+    "icon": "assets/icon.icns",
+    "category": "public.app-category.developer-tools"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "icon": "assets/icon.png",
+    "category": "Development",
+    "maintainer": "GitCode contributors"
+  }
+}

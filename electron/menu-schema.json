@@ -1,0 +1,63 @@
+[
+  {
+    "id": "file",
+    "label": "文件",
+    "accessKey": "f",
+    "items": [
+      { "id": "file.newTab", "label": "新标签页", "accelerator": "Alt+T" },
+      { "id": "file.open", "label": "打开仓库…", "accelerator": "CmdOrCtrl+O" },
+      { "id": "file.recent", "label": "最近仓库" },
+      { "id": "file.clone", "label": "克隆仓库…" },
+      { "id": "file.create", "label": "新建本地仓库…" },
+      {
+        "id": "file.closeTab",
+        "label": "关闭当前标签",
+        "accelerator": "CmdOrCtrl+W",
+        "separator": true
+      },
+      { "id": "file.quit", "label": "退出 GitCode", "separator": true }
+    ]
+  },
+  {
+    "id": "edit",
+    "label": "编辑",
+    "accessKey": "e",
+    "items": [
+      { "id": "edit.undo", "label": "撤销文本编辑", "accelerator": "CmdOrCtrl+Z" },
+      { "id": "edit.redo", "label": "重做文本编辑", "accelerator": "CmdOrCtrl+Shift+Z" },
+      { "id": "edit.cut", "label": "剪切", "accelerator": "CmdOrCtrl+X", "separator": true },
+      { "id": "edit.copy", "label": "复制", "accelerator": "CmdOrCtrl+C" },
+      { "id": "edit.paste", "label": "粘贴", "accelerator": "CmdOrCtrl+V" },
+      {
+        "id": "edit.selectAll",
+        "label": "全选文本",
+        "accelerator": "CmdOrCtrl+A",
+        "separator": true
+      }
+    ]
+  },
+  {
+    "id": "view",
+    "label": "视图",
+    "accessKey": "v",
+    "items": [
+      { "id": "view.refresh", "label": "刷新仓库", "accelerator": "CmdOrCtrl+R" },
+      { "id": "view.search", "label": "搜索提交", "accelerator": "CmdOrCtrl+K" },
+      { "id": "view.author", "label": "显示作者", "checkbox": true, "separator": true },
+      { "id": "view.time", "label": "显示时间", "checkbox": true },
+      { "id": "view.sha", "label": "显示 SHA", "checkbox": true },
+      { "id": "view.resetColumns", "label": "恢复默认列" }
+    ]
+  },
+  {
+    "id": "help",
+    "label": "帮助",
+    "accessKey": "h",
+    "items": [
+      { "id": "help.shortcuts", "label": "快捷键", "accelerator": "CmdOrCtrl+/" },
+      { "id": "help.gitDocs", "label": "Git 文档" },
+      { "id": "help.gitBook", "label": "Pro Git 教程" },
+      { "id": "help.about", "label": "关于 GitCode", "separator": true }
+    ]
+  }
+]

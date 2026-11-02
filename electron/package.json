@@ -1,0 +1,13 @@
+{
+  "name": "gitcode-desktop-tools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron runtime and packaging tools for GitCode",
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.0.12"
+  },
+  "trustedDependencies": [
+    "electron"
+  ]
+}

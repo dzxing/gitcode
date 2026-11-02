@@ -1,0 +1,38 @@
+[
+  {
+    "family": "Cascadia Mono",
+    "file": "CascadiaMono.woff2",
+    "source": "https://github.com/microsoft/cascadia-code/releases/download/v2407.24/CascadiaCode-2407.24.zip#woff2/CascadiaMono.woff2",
+    "style": "normal",
+    "weight": "200 700",
+    "sha256": "7d4986a68fbbd674c90cdd8cd5d4a28c698640d3472572b006d2978006049799",
+    "bytes": 210484
+  },
+  {
+    "family": "Cascadia Mono",
+    "file": "CascadiaMonoItalic.woff2",
+    "source": "https://github.com/microsoft/cascadia-code/releases/download/v2407.24/CascadiaCode-2407.24.zip#woff2/CascadiaMonoItalic.woff2",
+    "style": "italic",
+    "weight": "200 700",
+    "sha256": "c00f68dbd1b860cd5634e7c446d6fe68fd7f64e18ce3eb8ef7e52cd27f27116a",
+    "bytes": 153708
+  },
+  {
+    "family": "Inter",
+    "file": "Inter-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
+    "style": "normal",
+    "weight": "100 900",
+    "sha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+    "bytes": 876576
+  },
+  {
+    "family": "Noto Sans SC",
+    "file": "NotoSansSC-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf",
+    "style": "normal",
+    "weight": "100 900",
+    "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
+    "bytes": 17772300
+  }
+]

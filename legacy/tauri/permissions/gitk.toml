@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "allow-gitk-commands"
+description = "Allow the local main window to call GitK's typed Git and directory commands."
+commands.allow = [
+  "runtime_info", "repository_snapshot", "commit_details", "file_diff",
+  "git_action", "create_repository", "choose_directory", "cancel_git_operation", "open_resource"
+]

@@ -1,0 +1,16 @@
+type Unlisten = () => void
+
+export interface NativeWindow {
+  minimize(): Promise<void>
+  toggleMaximize(): Promise<void>
+  close(): Promise<void>
+  isMaximized(): Promise<boolean>
+  isFullscreen(): Promise<boolean>
+  isFocused(): Promise<boolean>
+  onResized(handler: () => void): Promise<Unlisten>
+  onFocusChanged(handler: (event: { payload: boolean }) => void): Promise<Unlisten>
+}
+
+export function currentNativeWindow(): NativeWindow | null {
+  return typeof window === 'undefined' ? null : window.gitkWindow || null
+}
