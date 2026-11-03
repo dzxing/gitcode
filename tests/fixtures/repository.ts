@@ -33,6 +33,7 @@ const commits: Commit[] = entries.map(([subject, author, parents, refs], i) => (
 }))
 
 export const repositoryFixture: Snapshot = {
+  remotes: ['origin'],
   name: 'GitCode',
   path: '~/Projects/GitCode',
   branch: 'main',

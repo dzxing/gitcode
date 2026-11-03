@@ -23,9 +23,10 @@ class MergeOperations {
     return fs.readFile(location, { signal }).catch(missing)
   }
   async state(repo, signal) {
+    const rebase = await this.git.rebase.state(repo, signal)
     const raw = await this.git.git(repo, ['ls-files', '--unmerged', '-z'], { signal }),
       incoming = (await this.gitFile(repo, 'MERGE_HEAD', signal))?.toString('utf8').trim() || ''
-    if (!raw && !incoming) return null
+    if (!raw && !incoming && !rebase) return null
     const files = new Map()
     for (const record of raw.split('\0').filter(Boolean)) {
       const match = record.match(/^(\d+) ([a-f0-9]+) ([123])\t([\s\S]+)$/)
@@ -37,7 +38,7 @@ class MergeOperations {
       files.set(file, value)
     }
     let unsupported = false
-    for (const name of ['rebase-merge', 'rebase-apply', 'CHERRY_PICK_HEAD', 'REVERT_HEAD']) {
+    for (const name of ['CHERRY_PICK_HEAD', 'REVERT_HEAD', ...(!rebase ? ['rebase-apply'] : [])]) {
       const location = path.resolve(
         repo,
         (await this.git.git(repo, ['rev-parse', '--git-path', name], { signal })).trim(),
@@ -64,13 +65,25 @@ class MergeOperations {
       signal,
     })
     const signature = hash(
-      JSON.stringify({ head, branch, incoming, raw, index, content, status, unsupported, config }),
+      JSON.stringify({
+        head,
+        branch,
+        incoming,
+        raw,
+        index,
+        content,
+        status,
+        unsupported,
+        config,
+        rebase,
+      }),
     )
     return {
-      active: !!incoming,
-      incoming,
+      active: !!incoming || !!rebase,
+      incoming: rebase?.pausedOid || incoming,
       head,
-      branch,
+      branch: branch || 'detached HEAD',
+      ...(rebase ? { rebase } : {}),
       signature,
       unsupported,
       unsupportedReason,
@@ -86,7 +99,9 @@ class MergeOperations {
       })),
       staged: status.staged,
       message:
-        (await this.gitFile(repo, 'MERGE_MSG', signal))?.toString('utf8').trim() || 'Merge changes',
+        rebase?.message ||
+        (await this.gitFile(repo, 'MERGE_MSG', signal))?.toString('utf8').trim() ||
+        'Merge changes',
     }
   }
   async safePath(repo, file) {
@@ -213,7 +228,45 @@ class MergeOperations {
         )
     }
   }
-  async start(repo, oid, signal, { noFF = false } = {}) {
+  async integrate(repo, oid, signal, options = {}) {
+    // Keep start() available for explicit merge preparation and GitFlow steps.
+    // Normal non-squash merges finish automatically, like GitKraken.
+    await this.git.noInProgress(repo, signal)
+    const head = await this.git.head(repo, signal)
+    const bases = (
+      await this.git.git(repo, ['merge-base', '--all', head, oid], {
+        signal,
+        allowedCodes: [0, 1],
+      })
+    )
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+    if (!bases.length) throw new Error('未找到共同历史，未执行合并。')
+    if (options.ffOnly && !bases.includes(head) && !bases.includes(oid))
+      throw new Error('Not possible to fast-forward: 本地与远端已分叉，未开始合并或自动贮藏。')
+    await this.checkIgnoredPaths(repo, oid, signal)
+    return this.git.autoStash.run(repo, 'merge', signal, async () => {
+      const result = await this.start(repo, oid, signal, options)
+      const state = await this.state(repo, signal)
+      if (state?.active && !state.files.length && result.outcome === 'succeeded') {
+        const finished = await this.execute(
+          repo,
+          {
+            action: 'merge-finish',
+            expectedHead: state.head,
+            expectedBranch: state.branch,
+            mergeSignature: state.signature,
+            message: state.message || 'Merge branch updates',
+          },
+          signal,
+        )
+        return { ...finished, output: [result.output, finished.output].filter(Boolean).join('\n') }
+      }
+      return result
+    })
+  }
+  async start(repo, oid, signal, { noFF = false, ffOnly = false } = {}) {
     await this.git.noInProgress(repo, signal)
     if (
       (
@@ -234,7 +287,8 @@ class MergeOperations {
           '-c',
           'submodule.recurse=false',
           'merge',
-          ...(noFF ? ['--no-ff'] : []),
+          ...(noFF ? ['--no-ff'] : ffOnly ? ['--ff-only'] : ['--ff']),
+          '--no-squash',
           '--no-commit',
           '--no-edit',
           '--no-stat',
@@ -345,6 +399,7 @@ class MergeOperations {
         throw error
       }
     }
+    if (state.rebase) throw new Error('当前正在变基，请使用继续、跳过或中止变基。')
     if (!state.active) throw new Error('当前不是未完成的合并；贮藏恢复冲突解决后无需完成合并。')
     if (request.action === 'merge-abort')
       return {

@@ -87,6 +87,35 @@ for (const type of ['feature', 'release', 'hotfix'])
       }
     },
   )
+test('Finish pauses before switching over an ignored local file and can safely resume', async (t) => {
+  const f = await fixture(t)
+  const exclude = (await f.git.git(f.repo, ['rev-parse', '--git-path', 'info/exclude'])).trim()
+  await fs.appendFile(path.resolve(f.repo, exclude), '\nprivate.txt\n')
+  await f.git.git(f.repo, ['switch', 'develop'])
+  await f.write('private.txt', 'tracked target\n')
+  await f.git.git(f.repo, ['add', '-f', 'private.txt'])
+  const target = await f.commit('target tracks ignored path')
+  await f.git.git(f.repo, ['switch', f.branch])
+  await f.write('private.txt', 'local data to preserve\n')
+  const blocked = await f.finish()
+  assert.notEqual(blocked.outcome, 'succeeded', JSON.stringify(blocked))
+  assert.equal(blocked.snapshot.branch, f.branch)
+  assert.equal(
+    await fs.readFile(path.join(f.repo, 'private.txt'), 'utf8'),
+    'local data to preserve\n',
+  )
+  assert.equal((await f.git.git(f.repo, ['rev-parse', 'develop'])).trim(), target)
+  assert.equal((await f.git.git(f.repo, ['rev-parse', f.branch])).trim(), f.source)
+  assert.ok(blocked.snapshot.gitflow.finish, JSON.stringify(blocked))
+  await fs.rm(path.join(f.repo, 'private.txt'))
+  const resumed = await f.action('gitflow-finish-continue', {
+    finishSignature: blocked.snapshot.gitflow.finish.signature,
+  })
+  assert.equal(resumed.outcome, 'succeeded', JSON.stringify(resumed))
+  assert.equal(resumed.snapshot.branch, 'develop')
+  assert.equal(await fs.readFile(path.join(f.repo, 'private.txt'), 'utf8'), 'tracked target\n')
+})
+
 test('Finish can retain a source branch and skip a version tag', async (t) => {
   const f = await fixture(t, 'hotfix'),
     result = await f.finish({ deleteBranch: false, createTag: false })
@@ -94,7 +123,7 @@ test('Finish can retain a source branch and skip a version tag', async (t) => {
   assert.ok(result.snapshot.branches.some((b) => b.name === f.branch))
   assert.equal((await f.git.git(f.repo, ['tag', '--list'])).trim(), '')
 })
-test('tag collision and dirty worktree are rejected before modifying any target', async (t) => {
+test('tag collision blocks before changes; dirty worktree is auto-stashed and restored on success', async (t) => {
   const f = await fixture(t, 'release')
   await f.git.git(f.repo, ['tag', 'v1.0.0'])
   let result = await f.finish()
@@ -105,8 +134,9 @@ test('tag collision and dirty worktree are rejected before modifying any target'
   await f.git.git(f.repo, ['tag', '-d', 'v1.0.0'])
   await f.write('draft.txt', 'keep')
   result = await f.finish()
-  assert.equal(result.outcome, 'failed')
-  assert.match(result.error, /工作区修改/)
+  assert.equal(result.outcome, 'succeeded', JSON.stringify(result))
+  assert.equal(await fs.readFile(path.join(f.repo, 'draft.txt'), 'utf8'), 'keep')
+  assert.equal(result.snapshot.stashes.length, 0)
   assert.equal(result.snapshot.gitflow.finish, null)
 })
 test('conflicted Finish survives a new service and resumes after three-way resolution without duplicate merges', async (t) => {

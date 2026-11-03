@@ -46,7 +46,8 @@
       { "id": "view.author", "label": "显示作者", "checkbox": true, "separator": true },
       { "id": "view.time", "label": "显示时间", "checkbox": true },
       { "id": "view.sha", "label": "显示 SHA", "checkbox": true },
-      { "id": "view.resetColumns", "label": "恢复默认列" }
+      { "id": "view.resetColumns", "label": "恢复默认列" },
+      { "id": "view.resetLayout", "label": "重置视图", "separator": true }
     ]
   },
   {

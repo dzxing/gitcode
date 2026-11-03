@@ -229,8 +229,13 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
     await write('B.txt', 'new local task\n')
     await refresh()
     await openEntry(0)
-    await expect(panel().getByRole('button', { name: '恢复并保留', exact: true })).toBeDisabled()
-    await expect(panel()).toContainText('恢复前请先处理当前工作区修改')
+    await expect(panel().getByRole('button', { name: '恢复并保留', exact: true })).toBeEnabled()
+    await panel().getByRole('button', { name: '恢复并保留', exact: true }).click()
+    const consent = panel().getByRole('region', { name: '确认恢复到有修改的工作区', exact: true })
+    await expect(consent).toBeVisible()
+    await consent.getByRole('button', { name: '取消恢复', exact: true }).click()
+    await expect(consent).not.toBeVisible()
+    assert.equal(await readFile(repo + '/B.txt', 'utf8'), 'new local task\n')
     await close()
     await write('B.txt', 'base B\n')
     await refresh()
@@ -250,7 +255,7 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
     await create('Repacked task', false)
     // Only deletion asks for a confirmation; cancelling does not mutate the stash stack.
     await page.locator('.stash-row').nth(1).click({ button: 'right' })
-    await page.getByRole('menuitem', { name: '删除这条贮藏…', exact: true }).click()
+    await page.getByRole('menuitem', { name: '删除贮藏', exact: true }).click()
     const confirmation = page.getByRole('dialog', { name: '删除这条贮藏？', exact: true })
     await expect(confirmation).toContainText('Switch task snapshot')
     await expect(page.locator('dialog[open]')).toHaveCount(1)
@@ -266,7 +271,7 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
     await noDialog()
     await page.locator('.stash-row').first().click({ button: 'right' })
     const popped = await action(() =>
-      page.getByRole('menuitem', { name: '恢复成功后移除记录', exact: true }).click(),
+      page.getByRole('menuitem', { name: '弹出贮藏', exact: true }).click(),
     )
     assert.equal(popped.outcome, 'succeeded', JSON.stringify(popped))
     assert.equal((await git.stash.list(repo)).entries.length, 0)
@@ -311,7 +316,7 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
       inlineCreationAndDirectToolbar: true,
       inlineShortcutDoesNotCommit: true,
       noDialogsForCreatePreviewApplyOrPop: true,
-      onlyDeletionConfirms: true,
+      onlyDeletionUsesModal: true,
       mutuallyExclusiveHistoryWipAndStashSelection: true,
       diffReusesMainArea: true,
       diffCloseReturnsFileFocus: true,
@@ -325,7 +330,7 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
       stashGraphNodeConnectedToBase: true,
       restoreAccessibleFromGraphNode: true,
       previewWorkingAndIndex: true,
-      dirtyRestoreBlocked: true,
+      dirtyRestoreRequiresInlineConsent: true,
       applyPreservesOriginalIndex: true,
       popDeletesOnlyAfterSuccess: true,
       deleteTargetsSelectedOlderEntry: true,

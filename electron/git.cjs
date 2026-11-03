@@ -10,9 +10,12 @@ const { SyncOperations } = require('./sync.cjs')
 const { GitFlowOperations } = require('./gitflow.cjs')
 const { SelectedCommitOperations } = require('./selected-commit.cjs')
 const { StashOperations } = require('./stash.cjs')
+const { NavigationOperations } = require('./navigation.cjs')
 const { MergeOperations } = require('./merge.cjs')
+const { RebaseOperations } = require('./rebase.cjs')
 const { CheckoutOperations } = require('./checkout.cjs')
 const { GitFlowFinishOperations } = require('./gitflow-finish.cjs')
+const { AutoStashOperations } = require('./auto-stash.cjs')
 
 const MAX_OUTPUT = 32 * 1024 * 1024
 const MAX_DIFF = 300_000
@@ -212,9 +215,12 @@ class GitService {
     this.flow = new GitFlowOperations(this)
     this.selectedCommit = new SelectedCommitOperations(this, { filePath, string })
     this.stash = new StashOperations(this, { filePath, string })
+    this.autoStash = new AutoStashOperations(this)
     this.merge = new MergeOperations(this, { filePath, string })
+    this.rebase = new RebaseOperations(this)
     this.flowFinish = new GitFlowFinishOperations(this)
     this.checkout = new CheckoutOperations(this)
+    this.navigation = new NavigationOperations(this, { string, revision, filePath, validRemote })
   }
 
   async discover() {
@@ -325,6 +331,7 @@ class GitService {
       indexFile,
       hooksPath,
       locale,
+      rebasePlan,
     } = {},
   ) {
     await this.discover()
@@ -350,6 +357,18 @@ class GitService {
     for (const key of Object.keys(env)) if (/^GIT_CONFIG_(KEY|VALUE)_/.test(key)) delete env[key]
     if (locale) env.LC_ALL = locale
     if (indexFile) env.GIT_INDEX_FILE = indexFile
+    if (rebasePlan !== undefined) {
+      const quote = (value) => "'" + value.replace(/\\/g, '/').replace(/'/g, "'\\''") + "'"
+      const helper = path.join(
+        __dirname.replace(/app\.asar(?=[/\\])/, 'app.asar.unpacked'),
+        'rebase-editor.cjs',
+      )
+      const command = `${quote(process.execPath)} ${quote(helper)}`
+      env.GIT_EDITOR = `${command} message`
+      env.GIT_SEQUENCE_EDITOR = `${command} sequence`
+      env.GITCODE_REBASE_PLAN = rebasePlan || ''
+      env.ELECTRON_RUN_AS_NODE = '1'
+    }
     const result = await execute(
       this.gitPath,
       [
@@ -509,6 +528,15 @@ class GitService {
           kind,
         }
       })
+    const worktreeRaw = await this.git(repo, ['worktree', 'list', '--porcelain', '-z'], { signal })
+    let worktreePath = ''
+    for (const field of worktreeRaw.split('\0')) {
+      if (field.startsWith('worktree ')) worktreePath = field.slice(9)
+      if (field.startsWith('branch ')) {
+        const local = branches.find((item) => item.fullRef === field.slice(7))
+        if (local) local.worktreePath = worktreePath
+      }
+    }
     const commits = []
     if (head || branches.length) {
       const fields = (
@@ -578,6 +606,7 @@ class GitService {
       branch: branch || 'detached HEAD',
       head,
       commits,
+      remotes: (await this.git(repo, ['remote'], { signal })).trim().split('\n').filter(Boolean),
       branches,
       ...state,
       total,
@@ -696,10 +725,10 @@ class GitService {
       repo,
       [
         ...(!unstage ? ['add'] : head ? ['restore', '--staged'] : ['rm', '--cached']),
-        '--',
-        ...expanded,
+        '--pathspec-from-file=-',
+        '--pathspec-file-nul',
       ],
-      { signal },
+      { signal, input: [...expanded].join('\0') + '\0' },
     )
   }
 
@@ -741,11 +770,19 @@ class GitService {
       if (field.startsWith('worktree ')) location = field.slice(9)
       if (
         field === `branch ${fullRef}` &&
-        (deleting || path.resolve(location) !== path.resolve(repo))
+        (deleting || !(await this.sameDirectory(location, repo)))
       ) {
         throw new Error('该分支正被工作区使用，请先在对应工作区切换分支。')
       }
     }
+  }
+
+  async sameDirectory(left, right) {
+    // Canonicalize symlinks and Windows 8.3 aliases before comparing worktrees.
+    const paths = await Promise.all([fs.realpath(left), fs.realpath(right)])
+    return process.platform === 'win32'
+      ? paths[0].toLowerCase() === paths[1].toLowerCase()
+      : paths[0] === paths[1]
   }
 
   async action(repo, request, signal) {
@@ -810,8 +847,11 @@ class GitService {
         'commit-selected',
         'branch',
         'checkout',
+        'checkout-remote',
+        'checkout-remote-confirm',
         'stash-checkout',
         'rename-branch',
+        'set-upstream',
         'delete-branch',
       ].includes(request.action) ||
         (['create-branch', 'track-branch'].includes(request.action) && request.switchAfter)) &&
@@ -819,6 +859,15 @@ class GitService {
     )
       throw new Error('缺少仓库上下文，请刷新后重新操作。')
     await this.checkContext(repo, request, signal)
+    if (
+      ['rebase-start', 'rebase-continue', 'rebase-skip', 'rebase-abort'].includes(request.action)
+    ) {
+      if (typeof request.expectedHead !== 'string' || typeof request.expectedBranch !== 'string')
+        throw new Error('缺少变基上下文，请刷新后重新操作。')
+      if (await this.flowFinish.state(repo, signal))
+        throw new Error('请先完成或停止 GitFlow 流程，再变基。')
+      return this.rebase.execute(repo, request, signal)
+    }
     if (['merge-resolve', 'merge-finish', 'merge-abort'].includes(request.action)) {
       if (typeof request.expectedHead !== 'string' || typeof request.expectedBranch !== 'string')
         throw new Error('缺少合并上下文，请刷新。')
@@ -862,15 +911,27 @@ class GitService {
         'unstage',
         'branch',
         'checkout',
+        'checkout-remote',
+        'checkout-remote-confirm',
         'create-branch',
         'track-branch',
         'rename-branch',
+        'set-upstream',
         'delete-branch',
       ].includes(request.action)
     )
       await this.noInProgress(repo, signal)
+    if (
+      ['merge-branch', 'fast-forward', 'create-tag', 'delete-remote-branch'].includes(
+        request.action,
+      )
+    )
+      return this.navigation.execute(repo, request, signal)
     if (request.action === 'stash-checkout')
       return this.checkout.stashAndSwitch(repo, request, signal)
+    if (request.action === 'checkout-remote') return this.checkout.remote(repo, request, signal)
+    if (request.action === 'checkout-remote-confirm')
+      return this.checkout.confirmRemote(repo, request, signal)
     if (['fetch', 'pull', 'push'].includes(request.action))
       return this.sync.execute(repo, request, signal)
     if (['stash-create', 'stash-apply', 'stash-pop', 'stash-drop'].includes(request.action))
@@ -912,7 +973,11 @@ class GitService {
         output = await this.git(
           repo,
           [
+            '-c',
+            'submodule.recurse=false',
             'switch',
+            '--no-overwrite-ignore',
+            '--no-guess',
             ...(request.action === 'branch' ? ['-c'] : []),
             name,
             ...(request.action === 'branch' ? [request.expectedHead] : []),
@@ -941,11 +1006,42 @@ class GitService {
         }
         if (request.switchAfter) {
           try {
-            output += await this.git(repo, ['switch', name], { signal })
+            output += await this.git(
+              repo,
+              [
+                '-c',
+                'submodule.recurse=false',
+                'switch',
+                '--no-overwrite-ignore',
+                '--no-guess',
+                name,
+              ],
+              { signal },
+            )
           } catch (error) {
             warning = `分支 ${name} 已创建，但切换失败：${error.message}。请刷新确认当前分支，不要重复创建。`
           }
         }
+        break
+      }
+      case 'set-upstream': {
+        const name = await this.branchName(repo, request.name, signal)
+        await this.checkReference(repo, `refs/heads/${name}`, request.expectedOid, signal)
+        if (typeof request.fullRef !== 'string' || !request.fullRef.startsWith('refs/remotes/'))
+          throw new Error('请选择明确的远程上游分支。')
+        await this.checkReference(repo, request.fullRef, request.upstreamOid, signal)
+        const symbolic = (
+          await this.git(repo, ['symbolic-ref', '-q', request.fullRef], {
+            signal,
+            allowedCodes: [0, 1],
+          })
+        ).trim()
+        if (symbolic) throw new Error('不能将远程符号引用设为上游。')
+        output = await this.git(
+          repo,
+          ['branch', `--set-upstream-to=${request.fullRef}`, '--', name],
+          { signal },
+        )
         break
       }
       case 'rename-branch':
@@ -957,7 +1053,28 @@ class GitService {
         if (request.action === 'rename-branch') {
           const newName = await this.branchName(repo, request.newName, signal)
           output = await this.git(repo, ['branch', '-m', '--', name, newName], { signal })
-        } else output = await this.git(repo, ['branch', '-d', '--', name], { signal })
+        } else {
+          if (request.force !== undefined && typeof request.force !== 'boolean')
+            throw new Error('无效的强制删除选项。')
+          try {
+            output = await this.git(
+              repo,
+              ['branch', request.force === true ? '-D' : '-d', '--', name],
+              { signal, locale: 'C' },
+            )
+          } catch (error) {
+            if (!request.force && !signal?.aborted && /not fully merged/i.test(error.message))
+              return {
+                output: '',
+                outcome: 'failed',
+                branchDeleteBlocked: 'unmerged',
+                error:
+                  '该分支未通过 Git 的合并检查。请确认是否删除未合并分支，再以强制删除方式重试。',
+                details: this.safeError(error),
+              }
+            throw error
+          }
+        }
         break
       }
       default:

@@ -1,11 +1,12 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
 const { GitService } = require('./git.cjs')
 const { isCommand, editCommands, sanitizeState, buildMenuTemplate } = require('./menus.cjs')
+const { ContextMenus } = require('./context-menu.cjs')
 const { CloseCoordinator } = require('./close-coordinator.cjs')
 const { allowedNavigation, assertSender } = require('./security.cjs')
 
@@ -15,6 +16,7 @@ const development =
   (process.env.GITCODE_DEV_URL || process.env.GITK_DEV_URL) === 'http://localhost:43187'
 const indexUrl = pathToFileURL(path.join(root, 'dist', 'index.html')).href
 const git = new GitService()
+const contextMenus = new ContextMenus(Menu)
 let mainWindow = null
 let quitting = false
 const closing = new CloseCoordinator({
@@ -83,6 +85,11 @@ function handle(name, work) {
 }
 
 function registerHandlers() {
+  handle('context-menu:popup', (request) => contextMenus.popup(mainWindow, request))
+  handle('context-menu:close', (requestId) => {
+    if (!Number.isSafeInteger(requestId) || requestId < 1) throw new Error('无效的菜单请求。')
+    contextMenus.close(requestId)
+  })
   handle('app:menu-state', (value) => {
     const state = sanitizeState(value)
     if (process.platform === 'darwin')
@@ -116,6 +123,11 @@ function registerHandlers() {
   handle('sync-plan', (repo, kind, expected) =>
     git.job(async (signal) =>
       git.syncPlan(await git.repository(repo, signal), kind, expected, signal),
+    ),
+  )
+  handle('navigation-read', (repo, request) =>
+    git.job(async (signal) =>
+      git.navigation.read(await git.repository(repo, signal), request, signal),
     ),
   )
   handle('merge-read', (repo, file) =>
@@ -235,7 +247,12 @@ function createWindow() {
     'blur',
   ])
     mainWindow.on(event, state)
-  mainWindow.webContents.on('render-process-gone', () => closing.rendererGone())
+  mainWindow.webContents.on('render-process-gone', () => {
+    contextMenus.close()
+    closing.rendererGone()
+  })
+  mainWindow.webContents.on('did-start-loading', () => contextMenus.close())
+  mainWindow.on('closed', () => contextMenus.close())
   mainWindow.once('ready-to-show', () => mainWindow.show())
   mainWindow.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
     if (isMainFrame) {
@@ -274,6 +291,8 @@ else {
   app
     .whenReady()
     .then(() => {
+      // The renderer currently uses a dark theme; native menus should match it.
+      nativeTheme.themeSource = 'dark'
       Menu.setApplicationMenu(
         process.platform === 'darwin'
           ? Menu.buildFromTemplate(

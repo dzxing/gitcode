@@ -8,6 +8,7 @@ export interface Commit {
   refs: string[]
 }
 export interface Branch {
+  worktreePath?: string
   commitHash?: string
   symbolicTarget?: string
   fullRef?: string
@@ -40,6 +41,7 @@ export interface StashDetails {
   indexDiff?: DiffResult | null
 }
 export interface Snapshot {
+  remotes?: string[]
   merge?: MergeState | null
   stashes?: StashEntry[]
   stashSignature?: string
@@ -104,7 +106,12 @@ export interface SelectedCommitPlan {
   scope: 'working-tree'
   expiresAt: number
 }
+export interface PublishTarget {
+  remote: string
+  branch: string
+}
 export interface SyncContext extends OperationContext {
+  publish?: PublishTarget
   sourceRef?: string
   sourceOid?: string
   method?: 'ff-only' | 'merge'
@@ -115,6 +122,7 @@ export interface MergeConflict {
   stages: Record<string, { mode: string; oid: string }>
 }
 export interface MergeState {
+  rebase?: RebaseState
   active: boolean
   incoming: string
   head: string
@@ -125,6 +133,36 @@ export interface MergeState {
   files: MergeConflict[]
   staged: FileChange[]
   message: string
+}
+export interface RebaseState {
+  sourceBranch: string
+  targetName: string
+  targetOid: string
+  originalHead: string
+  pausedOid: string
+  step: number
+  total: number
+  backend: string
+  owned: boolean
+  message: string
+  signature: string
+}
+export interface RebaseStep {
+  author: string
+  email: string
+  date: string
+  sha: string
+  parents: string[]
+  subject: string
+  message: string
+  type: 'pick' | 'reword' | 'squash' | 'drop'
+}
+export interface RebasePlan {
+  signature: string
+  steps: RebaseStep[]
+  canInteractive: boolean
+  reason: string
+  dirty: boolean
 }
 export interface MergeVersion {
   exists: boolean
@@ -200,6 +238,15 @@ export interface SyncPlan {
   sourceRef: string
   destinationRef: string
   expiresAt: number
+  remoteCheck?: {
+    state: 'absent' | 'deleted' | 'current' | 'forward' | 'behind' | 'diverged' | 'error'
+    oid?: string
+    ahead?: number
+    behind?: number
+    checkedAt: number
+    message?: string
+  }
+  publish?: PublishTarget & { remotes: string[] }
   remotes: { name: string; address: string }[]
 }
 export interface CheckoutProtection {
@@ -208,7 +255,15 @@ export interface CheckoutProtection {
   paths: string[]
 }
 export interface ActionResult {
+  branchDeleteBlocked?: 'unmerged'
   checkoutProtection?: CheckoutProtection
+  remoteCheckoutProtection?: {
+    id: string
+    branch: string
+    remote: string
+    localOid: string
+    remoteOid: string
+  }
   syncProblem?: 'diverged' | 'push-rejected'
   details?: string
   snapshot: Snapshot | null
@@ -220,7 +275,28 @@ export interface ActionResult {
   cleanupError?: string
   steps?: { remote: string; ok: boolean; message?: string }[]
 }
+export interface NavigationRequest extends OperationContext {
+  kind: 'info' | 'rebase' | 'delete-remote' | 'compare-head' | 'compare-working'
+  fullRef: string
+  expectedOid: string
+  file?: string
+}
+export interface NavigationInfo {
+  rebase?: RebasePlan
+  fullRef: string
+  referenceOid: string
+  oid: string
+  head: string
+  branch: string
+  canFastForward: boolean
+  alreadyMerged: boolean
+  related: boolean
+  remote?: { remote: string; remoteRef: string; oid: string; signature: string; checkedAt: number }
+  files?: FileChange[]
+  diff?: DiffResult | null
+}
 export interface DesktopBridge {
+  navigationRead?(repo: string, request: NavigationRequest): Promise<NavigationInfo>
   mergeRead?(repo: string, file: string | null): Promise<MergeRead>
   stashRead?(repo: string, oid: string, file: string | null): Promise<StashDetails>
   selectedCommitPlan?(
@@ -257,6 +333,46 @@ export interface DesktopBridge {
   openResource(resource: 'git-docs' | 'git-book'): Promise<void>
 }
 export type GitAction =
+  | ({ action: 'checkout-remote'; fullRef: string; expectedOid: string } & OperationContext)
+  | ({
+      action: 'checkout-remote-confirm'
+      planId: string
+      choice: 'create' | 'reset'
+      name?: string
+    } & OperationContext)
+  | ({
+      action: 'rebase-start'
+      fullRef: string
+      expectedOid: string
+      planSignature: string
+      steps?: RebaseStep[]
+    } & OperationContext)
+  | ({
+      action: 'rebase-continue' | 'rebase-skip' | 'rebase-abort'
+      mergeSignature: string
+      confirm?: boolean
+    } & OperationContext)
+  | ({
+      action: 'merge-branch' | 'fast-forward'
+      fullRef: string
+      expectedOid: string
+      confirm: boolean
+    } & OperationContext)
+  | ({
+      action: 'create-tag'
+      fullRef: string
+      expectedOid: string
+      name: string
+      annotated: boolean
+      message: string
+    } & OperationContext)
+  | ({
+      action: 'delete-remote-branch'
+      fullRef: string
+      expectedOid: string
+      confirm: boolean
+      remoteSignature: string
+    } & OperationContext)
   | ({
       action: 'gitflow-finish'
       branch: string
@@ -346,6 +462,7 @@ export type GitAction =
     }
   | {
       action: 'delete-branch'
+      force?: boolean
       name: string
       expectedOid: string
       expectedHead: string

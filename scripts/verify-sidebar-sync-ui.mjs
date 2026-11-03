@@ -154,12 +154,12 @@ export async function verifySidebarSync(page, { url, screenshotDirectory } = {})
     }
   }
   await row('local', 'feature/unpublished').click({ button: 'right' })
-  const push = page.getByRole('menuitem', { name: '推送此分支…', exact: true })
+  const push = page.getByRole('menuitem', { name: '推送', exact: true })
   await expect(push).toBeEnabled()
   await push.click()
   const dialog = page.getByRole('dialog', { name: '推送指定分支', exact: true })
   await expect(dialog.getByRole('alert')).toContainText('尚未关联远端分支')
-  await expect(dialog.getByRole('button', { name: '确认推送', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: '推送', exact: true })).toBeDisabled()
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
   return {
     unlinkedPushExplainedOnDemand: true,

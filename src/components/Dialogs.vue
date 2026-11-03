@@ -4,14 +4,94 @@ import { useRepositoryStore } from '../stores/repository'
 import Icon from './Icon.vue'
 import { desktop, isDesktop, joinPath, pathName } from '../services/desktop'
 import DirectoryBrowser from './DirectoryBrowser.vue'
+import { branchReference } from '../references'
 
 const store = useRepositoryStore()
 const localReady = computed(() => isDesktop() || store.connected)
 const path = ref('')
 const branch = ref('')
 const switchAfter = ref(false)
+const upstreamRef = ref(''),
+  choiceError = ref('')
+const upstreamChoices = computed(() =>
+  store.repo.branches.filter((b) => b.kind === 'remote' && !b.symbolicTarget),
+)
+async function confirmRemote(choice: 'create' | 'reset') {
+  const p = store.remoteCheckout
+  if (!p || store.busy) return
+  choiceError.value = ''
+  const ok = await store.run(
+    'checkout-remote-confirm',
+    { planId: p.id, choice, ...(choice === 'create' ? { name: branch.value.trim() } : {}) },
+    p.intent,
+  )
+  if (ok || ['partial', 'cancelled'].includes(store.lastActionResult?.outcome || '')) {
+    store.remoteCheckout = null
+    store.modal = null
+  } else choiceError.value = store.lastActionResult?.error || '检出未完成，请刷新后重试。'
+}
+async function fetchUpstream() {
+  const p = store.upstreamRequest
+  if (!p || store.busy) return
+  await store.run('fetch', {}, p.intent)
+  if (store.repo.path === p.intent.repo) store.modal = 'upstream'
+}
 const frozen = ref<ReturnType<typeof store.captureOperation> | null>(null)
-const checkoutOid = ref('')
+const publishRemote = ref(''),
+  publishBranch = ref(''),
+  publishRemotes = ref<string[]>([])
+const publishDirty = computed(
+  () =>
+    publishRemotes.value.length > 0 &&
+    (!store.syncPreview?.publish ||
+      publishRemote.value !== store.syncPreview.publish.remote ||
+      publishBranch.value !== store.syncPreview.publish.branch),
+)
+watch(
+  () => store.syncPreview?.publish,
+  (target) => {
+    if (target) {
+      publishRemote.value = target.remote
+      publishBranch.value = target.branch
+      publishRemotes.value = [...target.remotes]
+    }
+  },
+)
+
+const pushBlocked = computed(() =>
+  ['error', 'behind', 'diverged'].includes(store.syncPreview?.remoteCheck?.state || ''),
+)
+const pushStatus = computed(() => {
+  const check = store.syncPreview?.remoteCheck
+  if (store.busy) return '正在检查远端目标…'
+  if (publishDirty.value) return '目标已修改，请核对远端状态。'
+  if (!check) return '本机核心尚不支持远端检查，请重启开发服务或桌面应用。'
+  if (check.state === 'error') return check.message
+  if (check.state === 'absent')
+    return store.syncPreview?.publish
+      ? '远端未找到目标分支，将创建并关联此分支。'
+      : '远端未找到目标分支，将创建此分支。'
+  if (check.state === 'deleted') return '关联的远端分支已被删除，继续将重新创建。'
+  if (check.state === 'behind' || check.state === 'diverged')
+    return check.behind
+      ? `远端有 ${check.behind} 个未整合的提交，请先获取并检查。`
+      : '无法确认本地包含远端历史，请先获取完整历史并检查。'
+  if (check.state === 'current')
+    return store.syncPreview?.publish ? '提交一致，推送后建立关联。' : '已与远端同步。'
+  return `将推送 ${check.ahead || 0} 个提交${store.syncPreview?.publish ? '并建立关联' : ''}。`
+})
+const pushLabel = computed(() => {
+  if (store.busy) return '正在处理…'
+  const check = store.syncPreview?.remoteCheck
+  if (check?.state === 'absent') return '创建并推送'
+  if (check?.state === 'deleted') return '重新创建并推送'
+  return store.syncPreview?.publish ? '推送并关联' : '推送'
+})
+async function checkPublishTarget() {
+  if (!store.busy && publishDirty.value && publishRemote.value && publishBranch.value.trim())
+    await store.setPublishTarget(publishRemote.value, publishBranch.value.trim())
+}
+
 const remoteUrl = ref('')
 const cloneDestination = ref(''),
   createDestination = ref('')
@@ -33,20 +113,30 @@ let previousFocus: HTMLElement | null = null
 watch(
   () => store.modal,
   async (value) => {
+    publishRemotes.value = []
+    publishRemote.value = ''
+    publishBranch.value = ''
     if (value) {
       if (
-        ['stash-delete', 'merge-conflicts', 'gitflow-finish', 'checkout-protected'].includes(value)
+        [
+          'stash-delete',
+          'merge-conflicts',
+          'gitflow-finish',
+          'checkout-protected',
+          'navigation',
+        ].includes(value)
       ) {
         dialog.value?.close()
         return
       }
       previousFocus = document.activeElement as HTMLElement
       branch.value = ''
+      choiceError.value = ''
+      upstreamRef.value = ''
+      if (value === 'checkout-remote' && store.remoteCheckout)
+        branch.value = `${store.remoteCheckout.branch}-local`
       switchAfter.value = false
       frozen.value = store.captureOperation()
-      checkoutOid.value =
-        store.repo.branches.find((b) => b.kind === 'local' && b.name === store.pendingBranch)
-          ?.hash || ''
       pickerError.value = ''
       await nextTick()
       dialog.value?.showModal()
@@ -119,9 +209,13 @@ function openRecent(recent: string) {
     <div
       v-if="
         store.modal &&
-        !['stash-delete', 'merge-conflicts', 'gitflow-finish', 'checkout-protected'].includes(
-          store.modal,
-        )
+        ![
+          'stash-delete',
+          'merge-conflicts',
+          'gitflow-finish',
+          'checkout-protected',
+          'navigation',
+        ].includes(store.modal)
       "
       class="dialog-content"
     >
@@ -385,6 +479,112 @@ function openRecent(recent: string) {
           </button>
         </div>
       </template>
+      <template v-else-if="store.modal === 'checkout-remote' && store.remoteCheckout">
+        <h2 id="dialog-title">检出 {{ store.remoteCheckout.remote }}</h2>
+        <p>
+          本地分支
+          {{ store.remoteCheckout.branch }}
+          与远程分支指向不同提交。可以新建本地分支，或将同名本地分支重置到远程提交。
+        </p>
+        <p>重置会移动本地分支；未推送提交将不再属于该分支。本地文件更改会自动贮藏并尝试恢复。</p>
+        <form @submit.prevent="confirmRemote('create')">
+          <label for="remote-checkout-name">新本地分支名称</label>
+          <input
+            id="remote-checkout-name"
+            ref="input"
+            v-model="branch"
+            class="form-input"
+            required
+            :disabled="store.busy"
+          />
+          <p
+            v-if="choiceError"
+            class="directory-error"
+            role="alert"
+          >
+            {{ choiceError }}
+          </p>
+          <div class="dialog-actions">
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="store.busy"
+              @click="close"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="danger-button"
+              :disabled="store.busy"
+              @click="confirmRemote('reset')"
+            >
+              重置本地分支并检出
+            </button>
+            <button
+              class="primary-button"
+              :disabled="store.busy || !branch.trim()"
+            >
+              新建分支并检出
+            </button>
+          </div>
+        </form>
+      </template>
+      <template v-else-if="store.modal === 'upstream' && store.upstreamRequest">
+        <h2 id="dialog-title">设置上游分支</h2>
+        <p>
+          {{ store.upstreamRequest.branch.name }} 尚未关联远程分支。请选择拉取目标，设置后继续拉取。
+        </p>
+        <form @submit.prevent="store.confirmUpstream(upstreamRef)">
+          <label for="pull-upstream">远程分支</label>
+          <select
+            id="pull-upstream"
+            v-model="upstreamRef"
+            class="form-input"
+            :disabled="store.busy"
+            required
+          >
+            <option
+              disabled
+              value=""
+            >
+              选择远程分支
+            </option>
+            <option
+              v-for="item in upstreamChoices"
+              :key="branchReference(item)"
+              :value="branchReference(item)"
+            >
+              {{ item.name }}
+            </option>
+          </select>
+          <p v-if="!upstreamChoices.length">尚未获取到远程分支，请先获取远端更新。</p>
+          <div class="dialog-actions">
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="store.busy"
+              @click="close"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              class="secondary-button"
+              :disabled="store.busy"
+              @click="fetchUpstream"
+            >
+              获取远程分支
+            </button>
+            <button
+              class="primary-button"
+              :disabled="store.busy || !upstreamRef"
+            >
+              设置并继续拉取
+            </button>
+          </div>
+        </form>
+      </template>
       <template v-else-if="store.modal === 'branch'">
         <span class="dialog-icon"
           ><Icon
@@ -434,37 +634,6 @@ function openRecent(recent: string) {
           </button>
         </form>
       </template>
-      <template v-else-if="store.modal === 'checkout'">
-        <span class="dialog-icon"
-          ><Icon
-            name="GitBranch"
-            :size="26"
-        /></span>
-        <h2 id="dialog-title">切换分支</h2>
-        <p>
-          从 <strong>{{ store.repo.branch }}</strong> 切换到
-          <strong>{{ store.pendingBranch }}</strong
-          >。如果现有更改会被覆盖，Git 将阻止切换。
-        </p>
-        <div class="dialog-actions">
-          <button
-            class="secondary-button"
-            :disabled="store.busy"
-            @click="close"
-          >
-            取消</button
-          ><button
-            class="primary-button"
-            :disabled="store.busy"
-            @click="
-              frozen &&
-              store.run('checkout', { name: store.pendingBranch, expectedOid: checkoutOid }, frozen)
-            "
-          >
-            确认切换
-          </button>
-        </div>
-      </template>
       <template v-else-if="store.modal === 'push' || store.modal === 'pull'">
         <span class="dialog-icon"
           ><Icon
@@ -472,7 +641,7 @@ function openRecent(recent: string) {
             :size="26"
         /></span>
         <h2 id="dialog-title">
-          {{ store.modal === 'push' ? '推送指定分支' : '拉取远程分支（仅快进）' }}
+          {{ store.modal === 'push' ? '推送指定分支' : '拉取远程分支' }}
         </h2>
         <p
           v-if="store.syncTarget"
@@ -480,29 +649,126 @@ function openRecent(recent: string) {
         >
           操作分支：{{ store.syncTarget.name }}
         </p>
-        <p v-if="store.busy && !store.syncPreview">正在读取同步目标…</p>
+        <p v-if="store.busy && !store.syncPreview">
+          {{ store.modal === 'push' ? '正在检查远端目标…' : '正在读取同步目标…' }}
+        </p>
+        <section
+          v-if="store.modal === 'push' && publishRemotes.length"
+          class="publish-targets"
+          aria-label="首次推送目标"
+        >
+          <strong>{{ store.syncPreview?.branch || store.syncTarget?.name }} → 远端目标</strong>
+          <label for="publish-remote">远程</label>
+          <select
+            id="publish-remote"
+            v-model="publishRemote"
+            @change="checkPublishTarget"
+            class="form-input"
+            :disabled="store.busy"
+          >
+            <option
+              v-for="remote in publishRemotes"
+              :key="remote"
+              :value="remote"
+            >
+              {{ remote }}
+            </option>
+          </select>
+          <label for="publish-branch">远端分支</label>
+          <input
+            id="publish-branch"
+            v-model="publishBranch"
+            @blur="checkPublishTarget"
+            @keydown.enter.prevent="checkPublishTarget"
+            class="form-input"
+            :disabled="store.busy"
+            spellcheck="false"
+          />
+
+          <button
+            v-if="publishDirty"
+            class="secondary-button"
+            :disabled="store.busy || !publishRemote || !publishBranch.trim()"
+            @click="store.setPublishTarget(publishRemote, publishBranch)"
+          >
+            核对目标
+          </button>
+        </section>
         <div
-          v-if="store.syncPreview"
+          v-if="store.syncPreview && store.modal !== 'push'"
           class="sync-preview"
         >
           <small>本地分支</small><strong>{{ store.syncPreview.sourceRef }}</strong
           ><code>{{ store.syncPreview.head }}</code
-          ><small>{{ store.modal === 'push' ? '推送目标' : '远程上游' }}</small
+          ><small>远程上游</small
           ><strong
             >{{ store.syncPreview.remotes[0]?.name }} /
             {{ store.syncPreview.destinationRef }}</strong
           ><small>{{ store.syncPreview.remotes[0]?.address }}</small>
-          <p v-if="store.modal === 'push'">
-            仅推送上述已提交内容，未提交修改保留在工作区。当前工作区保持在
-            {{
-              store.syncPreview.worktreeBranch || store.repo.branch
-            }}。不强推、不附带标签、不递归推送子模块。
-          </p>
-          <p v-else-if="store.pullMethod === 'ff-only'">
-            将上述远程上游仅快进合入 {{ store.syncPreview.branch }}。要求干净工作区，不自动
-            stash，不产生合并提交。
+          <p v-if="store.pullMethod === 'ff-only'">
+            将上述远程上游仅快进合入 {{ store.syncPreview.branch }}，不产生合并提交。
+            本地更改会自动贮藏，成功后恢复；发生冲突或操作中断时保留贮藏记录。
           </p>
         </div>
+        <section
+          v-if="store.modal === 'push' && store.syncPreview"
+          class="push-check"
+          aria-label="远端检查结果"
+        >
+          <strong v-if="!store.syncPreview.publish"
+            >{{ store.syncPreview.branch }} → {{ store.syncPreview.remotes[0]?.name }} /
+            {{ store.syncPreview.destinationRef.replace(/^refs\/heads\//, '') }}</strong
+          >
+          <p
+            role="status"
+            :class="{
+              'directory-error': pushBlocked || store.syncPreview.remoteCheck?.state === 'deleted',
+            }"
+          >
+            {{ pushStatus }}
+          </p>
+          <button
+            v-if="pushBlocked"
+            class="secondary-button"
+            :disabled="store.busy"
+            @click="
+              store.syncPreview.publish
+                ? store.setPublishTarget(publishRemote, publishBranch)
+                : store.retrySync('push')
+            "
+          >
+            重试检查
+          </button>
+          <button
+            v-if="
+              ['behind', 'diverged'].includes(store.syncPreview.remoteCheck?.state || '') &&
+              !store.syncPreview.publish
+            "
+            class="secondary-button"
+            :disabled="store.busy"
+            @click="store.fetchBeforePull()"
+          >
+            获取并检查
+          </button>
+          <p
+            v-if="
+              ['behind', 'diverged'].includes(store.syncPreview.remoteCheck?.state || '') &&
+              store.syncPreview.publish
+            "
+          >
+            请先获取并整合目标分支的更新，或选择另一个远端分支名称。
+          </p>
+          <details>
+            <summary>详细信息</summary>
+            <p>{{ store.syncPreview.sourceRef }} → {{ store.syncPreview.destinationRef }}</p>
+            <code>{{ store.syncPreview.head }}</code>
+            <p>{{ store.syncPreview.remotes[0]?.address }}</p>
+            <p>
+              仅推送已提交内容，工作区保留在
+              {{ store.syncPreview.worktreeBranch || store.repo.branch }}。不附带标签。
+            </p>
+          </details>
+        </section>
         <p
           v-if="store.syncError"
           class="directory-error"
@@ -556,7 +822,7 @@ function openRecent(recent: string) {
             "
             @click="store.setPullMethod('merge')"
           >
-            合并远端更新
+            尽可能快进（否则合并）
           </button>
           <p v-if="store.repo.merge === undefined">
             本机核心需要重启，才能加载新增的合并处理功能。
@@ -564,7 +830,7 @@ function openRecent(recent: string) {
           <p>
             {{
               store.pullMethod === 'merge'
-                ? '分叉时合并双方提交；有冲突则进入处理界面，完成前可以检查结果。不自动推送。'
+                ? '尽可能快进；分叉时合并并提交，有冲突则进入处理界面。本地更改自动贮藏，成功后恢复。不自动推送。'
                 : '只允许快进；双方都有独有提交时停止，可选择合并远端更新。'
             }}
           </p>
@@ -603,10 +869,15 @@ function openRecent(recent: string) {
             重新读取目标</button
           ><button
             class="primary-button"
-            :disabled="store.busy || !store.syncPreview"
+            :disabled="
+              store.busy ||
+              !store.syncPreview ||
+              publishDirty ||
+              (store.modal === 'push' && (pushBlocked || !store.syncPreview.remoteCheck))
+            "
             @click="store.confirmSync()"
           >
-            {{ store.modal === 'push' ? '确认推送' : '确认拉取' }}
+            {{ store.modal === 'push' ? pushLabel : '确认拉取' }}
           </button>
         </div>
       </template>

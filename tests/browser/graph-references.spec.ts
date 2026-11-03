@@ -385,12 +385,14 @@ test('combined labels expand on hover and focus without moving the graph or hidi
   await refs.getByRole('button', { name: '关闭引用列表', exact: true }).click()
   await expect(remote).toBeFocused()
   await remote.click({ button: 'right' })
-  await expect(page.locator('.context-menu-context')).toContainText('远程跟踪分支')
-  await expect(page.locator('.context-menu-heading')).toHaveText(remoteName)
+  await expect(page.getByRole('menu')).toHaveAccessibleName(`${remoteName} 右键菜单`)
+  await expect(
+    page.getByRole('menu').getByRole('menuitem', { name: '创建本地跟踪分支…', exact: true }),
+  ).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(remote).toBeFocused()
   await primary.click({ button: 'right' })
-  await expect(page.locator('.context-menu-context')).toContainText('本地分支')
+  await expect(page.getByRole('menu')).toHaveAccessibleName(`${localName} 右键菜单`)
   await page.keyboard.press('Escape')
   await page.mouse.move(1200, 100)
   await page.getByRole('textbox', { name: '搜索提交', exact: true }).focus()

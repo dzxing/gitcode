@@ -32,8 +32,13 @@ const branchHint = computed(() => {
   let hint = `单击筛选 ${props.branch.name}`
   if (props.branch.current) hint += '；当前分支'
   if (props.branch.kind === 'local' && !props.branch.current) {
-    hint += store.busy ? '；操作进行中，暂不能切换' : '，双击打开切换确认'
+    hint += store.busy
+      ? '；操作进行中，暂不能切换'
+      : props.branch.worktreePath
+        ? '，双击打开所在工作区'
+        : '，双击切换分支'
   }
+  if (props.branch.kind === 'remote' && !props.branch.symbolicTarget) hint += '；双击检出远程分支'
   if (tracking.value.description) hint += `；${tracking.value.description}`
   return hint
 })
@@ -108,9 +113,14 @@ async function toggleFavorite() {
 }
 function checkout() {
   hideName()
-  if (store.busy || props.branch.kind !== 'local' || props.branch.current) return
-  store.pendingBranch = props.branch.name
-  store.modal = 'checkout'
+  if (
+    store.busy ||
+    props.branch.kind === 'tag' ||
+    props.branch.symbolicTarget ||
+    props.branch.current
+  )
+    return
+  void store.checkoutBranch(props.branch)
 }
 function filterBranch(event: MouseEvent) {
   // A double-click emits two clicks before dblclick; apply the toggle only once.

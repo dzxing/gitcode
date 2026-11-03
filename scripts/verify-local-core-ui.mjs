@@ -61,7 +61,7 @@ export async function verifyLocalCore(
     await expect(page.locator('.changes-scroll .file-name')).toContainText('hello.txt')
     await page.getByRole('checkbox', { name: '选择暂存 hello.txt', exact: true }).check()
     await page.getByRole('button', { name: /^暂存所选/ }).click()
-    await expect(page.locator('.commit-form-heading')).toContainText('1 个已暂存文件')
+    await expect(page.locator('.commit-button')).toContainText('提交 1 个文件')
     await page
       .getByRole('textbox', { name: '提交说明', exact: true })
       .fill('Browser core verification')
@@ -128,7 +128,7 @@ export async function verifyLocalCore(
     assert.equal(await git.indexFingerprint(repo), beforeIndex)
     await result.getByRole('button', { name: '开始新分支…', exact: true }).click()
     await expect(overview.getByLabel('分支名称', { exact: true })).toBeVisible()
-    await expect(overview.locator('#flow-start-reason')).toContainText('工作区有未提交更改')
+    await expect(overview).toContainText('本地更改会自动贮藏')
     await expect(overview.getByRole('button', { name: '创建并切换', exact: true })).toBeDisabled()
     // Exercise Start on a clean disposable worktree without touching the user's repo.
     await writeFile(path.join(repo, 'hello.txt'), 'Created through browser verification\n')
@@ -183,7 +183,7 @@ export async function verifyLocalCore(
         '[data-sidebar-section="local"] [data-branch-name="release/browser-ui-check"] .branch-main',
       )
       .click({ button: 'right' })
-    await page.getByRole('menuitem', { name: /^完成发布/ }).click()
+    await page.getByRole('menuitem', { name: '完成 release/browser-ui-check', exact: true }).click()
     const finishDialog = page.getByRole('dialog', { name: '完成发布', exact: true })
     await expect(finishDialog).toBeVisible()
     await expect(finishDialog.locator('.flow-finish-source')).toContainText(

@@ -13,10 +13,11 @@ test('application menu accepts only named commands and uses text editing roles',
   assert.equal(isCommand('file.recent.5'), true)
   assert.equal(isCommand('file.recent.6'), false)
   assert.equal(isCommand('git.reset'), false)
+  assert.equal(isCommand('view.resetLayout'), true)
   assert.equal(editCommands.has('reset'), false)
   assert.throws(() => sanitizeState({ enabled: ['shell.execute'], recent: [] }))
   const state = sanitizeState({
-    enabled: ['file.closeTab', 'edit.undo', 'view.sha'],
+    enabled: ['file.closeTab', 'edit.undo', 'view.sha', 'view.resetLayout'],
     recent: ['repo'],
     sha: true,
   })
@@ -28,6 +29,11 @@ test('application menu accepts only named commands and uses text editing roles',
   assert.equal(close.accelerator, 'CmdOrCtrl+W')
   close.click()
   assert.deepEqual(calls, ['file.closeTab'])
+  const resetLayout = flat.find((item) => item.id === 'view.resetLayout')
+  assert.equal(resetLayout.enabled, true)
+  assert.equal(resetLayout.label, '重置视图')
+  resetLayout.click()
+  assert.deepEqual(calls, ['file.closeTab', 'view.resetLayout'])
   assert.equal(flat.find((item) => item.id === 'edit.undo').role, 'undo')
   assert.equal(flat.find((item) => item.id === 'view.sha').checked, true)
   assert.equal(

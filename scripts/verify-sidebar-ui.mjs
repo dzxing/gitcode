@@ -12,6 +12,7 @@ const config = {
   versionTag: '',
 }
 const fixture = {
+  remotes: ['origin'],
   path: '/ui-verification/gitcode',
   name: 'UI verification',
   head: hash,
@@ -240,10 +241,9 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
   )
   await page.emulateMedia({ reducedMotion: 'reduce' })
   await expect(page.locator('#sidebar-group-local')).toHaveCSS('transition-duration', '0s')
-  await expect(page.locator('[data-sidebar-section="local"] .disclosure-chevron')).toHaveCSS(
-    'transition-duration',
-    '0s',
-  )
+  await expect(
+    page.locator('[data-sidebar-section="local"] .section-toggle .disclosure-chevron'),
+  ).toHaveCSS('transition-duration', '0s')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   const targetBranch = page.locator(
     '[data-sidebar-section="local"] [data-branch-name="feature/task2"] .branch-main',
@@ -272,15 +272,13 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
   } finally {
     await page.mouse.up()
   }
-  // A real double-click includes both click events. Opening/cancelling must never call Git.
+  // A real double-click includes both click events, but attempts checkout only once.
   await targetBranch.dblclick()
-  const checkoutDialog = page.getByRole('dialog', { name: '切换分支', exact: true })
-  await expect(checkoutDialog).toBeVisible()
+  await expect.poll(() => page.evaluate(() => window.__uiGitWrites)).toBe(1)
+  await expect(page.getByRole('dialog', { name: '切换分支', exact: true })).toHaveCount(0)
   await expect(targetBranch).toHaveAttribute('aria-pressed', 'true')
-  await checkoutDialog.getByRole('button', { name: '取消', exact: true }).click()
-  await expect(checkoutDialog).not.toBeVisible()
+  // This read-only mock rejects the request; branch selection must remain unchanged.
   await expect(page.locator('.branch-selector summary strong')).toHaveText(originalHead)
-  assert.equal(await page.evaluate(() => window.__uiGitWrites), 0)
   // Single-click can still clear the history filter after a double-click.
   await targetBranch.click()
   await expect(targetBranch).toHaveAttribute('aria-pressed', 'false')
@@ -302,31 +300,30 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
   await targetBranch.click()
   await flowBranch.click({ button: 'right' })
   await expect(targetBranch).toHaveAttribute('aria-pressed', 'true')
-  await page.getByRole('menuitem', { name: '筛选已加载历史', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: '筛选已加载历史', exact: true })).toHaveCount(0)
+  await expect(flowBranch).toHaveAttribute('aria-pressed', 'false')
+  await page.keyboard.press('Escape')
+  await flowBranch.click()
   await expect(targetBranch).toHaveAttribute('aria-pressed', 'false')
   await expect(flowBranch).toHaveAttribute('aria-pressed', 'true')
   await page.locator('.filter-banner button').click()
   await expect(flowBranch).toHaveAttribute('aria-pressed', 'false')
   await targetBranch.click({ button: 'right' })
   const branchMenu = page.getByRole('menu')
-  await expect(branchMenu.locator('.context-menu-heading')).toHaveText('feature/task2')
-  await expect(branchMenu.locator('.context-menu-context')).toContainText('当前检出 main')
-  await expect(branchMenu.getByRole('menuitem', { name: /^拉取此分支的远程上游/ })).toBeDisabled()
-  await expect(
-    branchMenu.getByText('请先切换到此分支，再拉取其远程上游', { exact: true }),
-  ).toBeVisible()
-  await expect(branchMenu.getByRole('menuitem', { name: /^完成功能分支/ })).toBeVisible()
-  await branchMenu.getByRole('menuitem', { name: '推送此分支…', exact: true }).click()
+  await expect(branchMenu).toHaveAccessibleName('feature/task2 右键菜单')
+  await expect(branchMenu.getByRole('menuitem', { name: '拉取' })).toBeEnabled()
+  await expect(branchMenu.getByRole('menuitem', { name: /^完成 feature\// })).toBeVisible()
+  await branchMenu.getByRole('menuitem', { name: '推送', exact: true }).click()
   const pushDialog = page.getByRole('dialog', { name: '推送指定分支', exact: true })
   await expect(pushDialog).toBeVisible()
-  await expect(pushDialog.locator('.sync-preview')).toContainText('refs/heads/feature/task2')
-  await expect(pushDialog.locator('.sync-preview')).toContainText('当前工作区保持在 main')
+  await expect(pushDialog.locator('.push-check details')).toContainText('refs/heads/feature/task2')
+  await expect(pushDialog.locator('.push-check details')).toContainText('工作区保留在 main')
   const selectedPlan = await page.evaluate(() => window.__uiSyncPlans.at(-1))
   assert.equal(selectedPlan.sourceRef, 'refs/heads/feature/task2')
   assert.equal(selectedPlan.expectedBranch, 'main')
   await pushDialog.getByRole('button', { name: '取消', exact: true }).click()
   await expect(pushDialog).not.toBeVisible()
-  assert.equal(await page.evaluate(() => window.__uiGitWrites), 0)
+  assert.equal(await page.evaluate(() => window.__uiGitWrites), 1)
   await expect(page.locator('.branch-selector summary strong')).toHaveText(originalHead)
   const splitter = page.getByRole('separator', { name: '调整侧栏宽度' })
   const splitterBox = await splitter.boundingBox()
@@ -371,6 +368,11 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
     Math.abs(panelButton.x - collapseBox.x - collapseBox.width - 6) <= 0.5,
     'Commands are separated from counts',
   )
+  const remoteSettingsBox = await bounds(
+    page.getByRole('button', { name: '仓库导航显示设置', exact: true }),
+  )
+  assert.equal(remoteSettingsBox.width, createBranchButton.width)
+  assert.equal(remoteSettingsBox.height, createBranchButton.height)
   for (const id of ['remote', 'tag']) {
     const head = page.locator(`[data-sidebar-section="${id}"] .section-head`)
     const toggle = head.locator('.section-toggle')
@@ -485,7 +487,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
   const localDevelop = page.locator('[data-sidebar-section="local"] [data-branch-name="develop"]')
   const flowDevelop = page.locator('[data-sidebar-section="gitflow"] [data-branch-name="develop"]')
   await page.locator('[data-sidebar-section="local"] .section-toggle').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: /^名称降序/ }).click()
+  await page.getByRole('menuitemcheckbox', { name: /^名称降序/ }).click()
   await expect
     .poll(() => names('local'))
     .toEqual(['main', 'feature/task10', 'feature/task2', 'develop'])
@@ -503,7 +505,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.locator('.branch-selector summary strong')).toHaveText(branchBefore)
   await page.locator('[data-sidebar-section="remote"] .section-toggle').click({ button: 'right' })
-  await page.getByRole('menuitem', { name: /^名称降序/ }).click()
+  await page.getByRole('menuitemcheckbox', { name: /^名称降序/ }).click()
   await expect.poll(() => names('remote')).toEqual(['origin/main', 'origin/develop'])
   await expect
     .poll(() => names('local'))
@@ -663,7 +665,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
       'desktop-cursors',
       'pressed-feedback',
       'disabled-reason',
-      'double-click-confirm-only',
+      'double-click-one-checkout-attempt',
       'resize-cursor-restored',
       'natural-sort',
       'header-alignment',

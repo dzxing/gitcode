@@ -74,7 +74,10 @@ test('sidebar full names escape clipping without moving rows or adding checkout 
       snapshot: async () => structuredClone(state),
       commit: async () => ({ body: 'read-only', files: [] }),
       diff: async () => ({ diff: '', truncated: false }),
-      action: blocked,
+      action: async () => {
+        document.documentElement.dataset.checkoutAttempts = '1'
+        return blocked()
+      },
       create: blocked,
       chooseDirectory: async () => state.path,
       cancel: async () => {},
@@ -139,11 +142,13 @@ test('sidebar full names escape clipping without moving rows or adding checkout 
   await expect(tip).toHaveCount(0)
   await page.mouse.move(1000, 100)
   await main.dblclick()
-  const checkout = page.getByRole('dialog', { name: '切换分支', exact: true })
-  await expect(checkout).toBeVisible()
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.dataset.checkoutAttempts))
+    .toBe('1')
+  await expect(page.getByRole('dialog', { name: '切换分支', exact: true })).toHaveCount(0)
   await expect(tip).toHaveCount(0)
-  await checkout.getByRole('button', { name: '取消', exact: true }).click()
   await expect(page.locator('.branch-selector summary strong')).toHaveText('main')
+  await page.mouse.move(1000, 100)
   await main.hover()
   await expect(tip).toHaveText(local)
   await page.getByRole('textbox', { name: '筛选分支', exact: true }).fill('main')

@@ -145,7 +145,39 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
       >
         重新核对恢复目标
       </button>
-      <div class="stash-restore-buttons">
+      <section
+        v-if="stash.pendingRestore"
+        class="stash-restore-confirm"
+        aria-label="确认恢复到有修改的工作区"
+      >
+        <p role="status">
+          当前有未暂存修改，恢复可能产生冲突。Git 不会强制覆盖本地修改；若发生冲突，贮藏记录会保留。
+        </p>
+        <div class="stash-restore-buttons">
+          <button
+            class="secondary-button"
+            :disabled="store.busy"
+            @click="stash.cancelRestore"
+          >
+            取消恢复
+          </button>
+          <button
+            class="primary-button"
+            :disabled="!!stash.restoreBlocked"
+            @click="stash.confirmRestore"
+          >
+            {{
+              stash.pendingRestore.operation === 'stash-pop'
+                ? '继续恢复，成功后移除'
+                : '继续恢复并保留'
+            }}
+          </button>
+        </div>
+      </section>
+      <div
+        v-else
+        class="stash-restore-buttons"
+      >
         <button
           class="primary-button"
           :disabled="!!stash.restoreBlocked"
@@ -280,6 +312,16 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
 }
 .stash-file.selected {
   background: var(--view-selection-bg);
+}
+.stash-restore-confirm {
+  font-size: 11px;
+  line-height: 1.7;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px;
+}
+.stash-restore-confirm p {
+  margin: 0 0 10px;
 }
 .stash-restore-controls {
   flex-shrink: 0;

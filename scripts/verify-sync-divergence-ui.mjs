@@ -94,7 +94,7 @@ export async function verifySyncDivergence(
       .getByRole('textbox', { name: '提交说明', exact: true })
       .fill('Commit while remote has advanced')
     const committed = await action(() =>
-      page.getByRole('button', { name: /提交全部已暂存/ }).click(),
+      page.getByRole('button', { name: /提交 \d+ 个文件/ }).click(),
     )
     assert.equal(committed.outcome, 'succeeded', committed.error)
     const localHead = committed.snapshot.head
@@ -121,25 +121,21 @@ export async function verifySyncDivergence(
       .getByRole('button', { name: '推送', exact: true })
       .click()
     const push = page.getByRole('dialog', { name: '推送指定分支', exact: true })
-    await expect(push.getByRole('button', { name: '确认推送', exact: true })).toBeEnabled()
-    const pushed = await action(() =>
-      push.getByRole('button', { name: '确认推送', exact: true }).click(),
-    )
-    assert.equal(pushed.outcome, 'failed')
-    assert.match(pushed.error, /rejected|fetch first|non-fast-forward|拒绝/i)
-    await expect(push.getByRole('alert')).toContainText(pushed.error)
+    await expect(push.getByRole('button', { name: '推送', exact: true })).toBeDisabled()
+    await expect(push.getByRole('status')).toContainText('未整合')
+    const pushed = { outcome: 'blocked', error: '预检发现远端有未整合提交', warning: undefined }
     await expect(push).toBeVisible()
     assert.equal(await git.head(local), localHead)
     assert.equal(
       (await git.git(bare, ['rev-parse', 'refs/heads/test/divergence'])).trim(),
       remoteHead,
     )
-    await expect(push.getByRole('button', { name: '确认推送', exact: true })).toBeDisabled()
-    await expect(push.getByRole('button', { name: '重新读取目标', exact: true })).toBeVisible()
+    await expect(push.getByRole('button', { name: '推送', exact: true })).toBeDisabled()
+    await expect(push.getByRole('button', { name: '重试检查', exact: true })).toBeVisible()
     await capture('push-rejected')
     if (mergeAfter) {
       const fetched = await action(() =>
-        push.getByRole('button', { name: '获取并检查更新', exact: true }).click(),
+        push.getByRole('button', { name: '获取并检查', exact: true }).click(),
       )
       assert.equal(fetched.outcome, 'succeeded', fetched.error)
     } else {
@@ -149,7 +145,8 @@ export async function verifySyncDivergence(
         .getByRole('button', { name: '拉取', exact: true })
         .click()
     }
-    const pull = page.getByRole('dialog', { name: '拉取远程分支（仅快进）', exact: true })
+    const pull = page.getByRole('dialog', { name: '拉取远程分支', exact: true })
+    await pull.getByRole('button', { name: '仅快进', exact: true }).click()
     await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeEnabled()
     const pulled = await action(() =>
       pull.getByRole('button', { name: '确认拉取', exact: true }).click(),
@@ -213,17 +210,57 @@ export async function verifySyncDivergence(
     assert.equal(await git.head(local), localHead)
     let mergeReport
     if (mergeAfter) {
-      await expect(pull.getByRole('button', { name: '合并远端更新', exact: true })).toBeEnabled()
-      await pull.getByRole('button', { name: '合并远端更新', exact: true }).click()
-      await expect(pull.getByRole('button', { name: '合并远端更新', exact: true })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      )
+      await expect(
+        pull.getByRole('button', { name: '尽可能快进（否则合并）', exact: true }),
+      ).toBeEnabled()
+      await pull.getByRole('button', { name: '尽可能快进（否则合并）', exact: true }).click()
+      await expect(
+        pull.getByRole('button', { name: '尽可能快进（否则合并）', exact: true }),
+      ).toHaveAttribute('aria-pressed', 'true')
       await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeEnabled()
       const integrated = await action(() =>
         pull.getByRole('button', { name: '确认拉取', exact: true }).click(),
       )
       assert.equal(integrated.outcome, sameLine ? 'partial' : 'succeeded', integrated.error)
+      if (!sameLine) {
+        assert.equal(integrated.snapshot.merge, null)
+        assert.deepEqual(
+          (await git.git(local, ['show', '-s', '--format=%P', 'HEAD'])).trim().split(' '),
+          [localHead, remoteHead],
+        )
+        assert.equal(
+          (await git.git(bare, ['rev-parse', 'refs/heads/test/divergence'])).trim(),
+          remoteHead,
+        )
+        await capture('clean-merge-auto-committed')
+        await page
+          .locator('.toolbar-actions')
+          .getByRole('button', { name: '推送', exact: true })
+          .click()
+        const pushAgain = page.getByRole('dialog', { name: '推送指定分支', exact: true })
+        await expect(pushAgain.getByRole('button', { name: '推送', exact: true })).toBeEnabled()
+        const pushedMerge = await action(() =>
+          pushAgain.getByRole('button', { name: '推送', exact: true }).click(),
+        )
+        assert.equal(pushedMerge.outcome, 'succeeded', pushedMerge.error)
+        assert.equal(
+          (await git.git(bare, ['rev-parse', 'refs/heads/test/divergence'])).trim(),
+          integrated.snapshot.head,
+        )
+        return {
+          sameLine,
+          localHead,
+          remoteHead,
+          mergeReport: {
+            completed: true,
+            autoCommitted: true,
+            mergeHead: integrated.snapshot.head,
+            parents: [localHead, remoteHead],
+            notImplicitlyPushed: true,
+            explicitPushSucceeded: true,
+          },
+        }
+      }
       const list = () =>
         page.getByRole('dialog', { name: sameLine ? '解决冲突' : '检查合并结果', exact: true })
       await expect(list()).toBeVisible()
@@ -333,9 +370,9 @@ export async function verifySyncDivergence(
           .getByRole('button', { name: '推送', exact: true })
           .click()
         const pushAgain = page.getByRole('dialog', { name: '推送指定分支', exact: true })
-        await expect(pushAgain.getByRole('button', { name: '确认推送', exact: true })).toBeEnabled()
+        await expect(pushAgain.getByRole('button', { name: '推送', exact: true })).toBeEnabled()
         const finalPush = await action(() =>
-          pushAgain.getByRole('button', { name: '确认推送', exact: true }).click(),
+          pushAgain.getByRole('button', { name: '推送', exact: true }).click(),
         )
         assert.equal(finalPush.outcome, 'succeeded', finalPush.error)
         assert.equal(

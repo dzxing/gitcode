@@ -37,6 +37,16 @@ async function body(req) {
 function dispatch(git, method, args) {
   const jobs = new Map([
     [
+      'navigation-read',
+      [
+        2,
+        ([repo, request]) =>
+          git.job(async (signal) =>
+            git.navigation.read(await git.repository(repo, signal), request, signal),
+          ),
+      ],
+    ],
+    [
       'runtime',
       [
         0,
@@ -156,7 +166,9 @@ function createLocalCore({
   now = Date.now,
 } = {}) {
   const sessions = new Map()
+  const activeRequests = new Set()
   let closing = false
+  let draining = false
   async function dispose(token) {
     const session = sessions.get(token)
     if (!session) return
@@ -208,11 +220,12 @@ function createLocalCore({
       if (![`${PREFIX}session`, `${PREFIX}rpc`, `${PREFIX}close`].includes(req.url))
         throw failure(404, '未知的本机接口。')
       if (req.url === `${PREFIX}session`) {
+        if (draining) throw failure(503, '本机 Git 核心正在重新加载。')
         const value = await body(req)
         if (!value || Array.isArray(value) || Object.keys(value).length)
           throw failure(400, '无效的会话请求。')
         await sweep()
-        if (closing) throw failure(503, '本机 Git 核心正在关闭。')
+        if (closing || draining) throw failure(503, '本机 Git 核心正在重新加载。')
         if (sessions.size >= 32)
           throw failure(429, '本机连接数量已满，请关闭不再使用的 GitCode 页面后重试。')
         const token = randomBytes(32).toString('hex')
@@ -242,6 +255,7 @@ function createLocalCore({
       if (!value || typeof value.method !== 'string') throw failure(400, '缺少本机操作。')
       if (closing || sessions.get(token) !== session)
         throw failure(401, '本机连接已关闭，请重新连接。')
+      if (draining && value.method !== 'cancel') throw failure(503, '本机 Git 核心正在重新加载。')
       session.busy++
       try {
         return send(200, {
@@ -261,7 +275,16 @@ function createLocalCore({
   }
   return {
     middleware: (req, res, next) => {
-      void handle(req, res, next)
+      const request = handle(req, res, next)
+      activeRequests.add(request)
+      void request.then(
+        () => activeRequests.delete(request),
+        () => activeRequests.delete(request),
+      )
+    },
+    drain: async () => {
+      draining = true
+      while (activeRequests.size) await Promise.allSettled([...activeRequests])
     },
     close: async () => {
       closing = true

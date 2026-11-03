@@ -40,3 +40,113 @@ export function sortSidebarBranches(
     return order === 'name-desc' ? -name : name
   })
 }
+
+export interface BranchTreeNode {
+  key: string
+  label: string
+  branch?: Branch
+  children: BranchTreeNode[]
+  count: number
+  current: boolean
+}
+export interface BranchDirectoryTree {
+  favorites: { branch: Branch; label: string }[]
+  children: BranchTreeNode[]
+  count: number
+}
+export function branchDirectoryTree(
+  branches: readonly Branch[],
+  scope: readonly string[],
+  favorites: readonly string[],
+  order: BranchSort = 'name-asc',
+  query = '',
+  labelFor: (branch: Branch) => string = (branch) => branch.name,
+): BranchDirectoryTree {
+  const result: BranchDirectoryTree = { favorites: [], children: [], count: 0 }
+  const nodes = new Map<string, BranchTreeNode>(),
+    pinned = new Set(favorites)
+  for (const branch of sortSidebarBranches(branches, order, favorites)) {
+    if (branch.symbolicTarget || !branch.name.toLowerCase().includes(query.trim().toLowerCase()))
+      continue
+    const label = labelFor(branch)
+    result.count++
+    if (pinned.has(branchReference(branch))) {
+      result.favorites.push({ branch, label })
+      continue
+    }
+    let children = result.children
+    const segments = label.split('/')
+    for (let index = 0; index < segments.length; index++) {
+      const key = JSON.stringify([...scope, ...segments.slice(0, index + 1)])
+      let node = nodes.get(key)
+      if (!node) {
+        node = { key, label: segments[index], children: [], count: 0, current: false }
+        nodes.set(key, node)
+        children.push(node)
+      }
+      node.count++
+      node.current ||= branch.current
+      if (index === segments.length - 1) node.branch = branch
+      children = node.children
+    }
+  }
+  const sortNodes = (nodes: BranchTreeNode[]) => {
+    nodes.sort((a, b) => {
+      if (order === 'current-first' && a.current !== b.current)
+        return Number(b.current) - Number(a.current)
+      const name =
+        collator.compare(a.label, b.label) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0)
+      return order === 'name-desc' ? -name : name
+    })
+    nodes.forEach((node) => sortNodes(node.children))
+  }
+  sortNodes(result.children)
+  return result
+}
+export interface RemoteBranchGroup extends BranchDirectoryTree {
+  remote: string
+  key: string
+}
+export function remoteBranchGroups(
+  branches: readonly Branch[],
+  remotes: readonly string[],
+  favorites: readonly string[],
+  order: BranchSort = 'name-asc',
+  query = '',
+): RemoteBranchGroup[] {
+  const groups = new Map<string, Branch[]>()
+  const known = [...remotes].sort((a, b) => b.length - a.length)
+  if (!query.trim()) remotes.forEach((remote) => groups.set(remote, []))
+  for (const branch of branches) {
+    if (
+      branch.kind !== 'remote' ||
+      branch.symbolicTarget ||
+      !branch.name.toLowerCase().includes(query.trim().toLowerCase())
+    )
+      continue
+    const remote =
+      known.find((remote) => branch.name.startsWith(remote + '/')) || branch.name.split('/')[0]
+    const items = groups.get(remote) || []
+    items.push(branch)
+    groups.set(remote, items)
+  }
+  return [...groups]
+    .map(([remote, items]) => ({
+      remote,
+      key: JSON.stringify(['remote', remote]),
+      ...branchDirectoryTree(
+        items,
+        ['remote', remote],
+        favorites,
+        order,
+        query,
+        (branch) => branch.name.slice(remote.length + 1) || branch.name,
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.remote === 'origin') - Number(a.remote === 'origin') ||
+        collator.compare(a.remote, b.remote) ||
+        a.remote.localeCompare(b.remote),
+    )
+}

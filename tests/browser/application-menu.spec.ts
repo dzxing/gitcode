@@ -101,3 +101,18 @@ test('window close guards inactive tab drafts and requires explicit discard appr
   await dialog.getByRole('button', { name: '退出 GitCode', exact: true }).click()
   expect(await page.evaluate(() => (window as any).appCalls)).toContainEqual(['approve', 18])
 })
+
+test('native View reset command reaches the same panel layout handler', async ({ page }) => {
+  await mockApplication(page)
+  await openFixtureRepository(page)
+  const divider = page.getByRole('separator', { name: '调整侧栏宽度', exact: true })
+  await divider.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('.sidebar')).toHaveCSS('width', '260px')
+  expect(await page.evaluate(() => localStorage.getItem('gitcode.panel-widths'))).not.toBeNull()
+  await page.evaluate(() => {
+    ;(window as unknown as { appCommand: (id: string) => void }).appCommand('view.resetLayout')
+  })
+  await expect(page.locator('.sidebar')).toHaveCSS('width', '250px')
+  expect(await page.evaluate(() => localStorage.getItem('gitcode.panel-widths'))).toBeNull()
+})

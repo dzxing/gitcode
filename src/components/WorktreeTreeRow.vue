@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import Icon from './Icon.vue'
 import type { WorktreeChange, WorktreeNode } from '../worktree'
 import { stagingSelectionState } from '../worktree'
+import { useContextMenuStore } from '../stores/contextMenu'
+const menu = useContextMenuStore()
 
 const props = withDefaults(
   defineProps<{
@@ -44,6 +46,13 @@ const statusText: Record<string, string> = {
   T: '类型变更',
 }
 function keydown(event: KeyboardEvent) {
+  menu.keyboard(event, {
+    kind: 'files',
+    files: props.node.files,
+    staged: props.zone === 'staged',
+    label: props.node.path,
+  })
+  if (event.defaultPrevented) return
   const row = event.currentTarget as HTMLElement
   const root = row.closest('.worktree-tree')
   if (!root) return
@@ -101,6 +110,14 @@ function keydown(event: KeyboardEvent) {
       :data-worktree-path="node.file ? node.path : undefined"
       :style="{ '--worktree-depth': depth }"
       @keydown="keydown"
+      @contextmenu="
+        menu.open($event, {
+          kind: 'files',
+          files: node.files,
+          staged: zone === 'staged',
+          label: node.path,
+        })
+      "
     >
       <button
         v-if="node.kind !== 'file'"
@@ -123,7 +140,7 @@ function keydown(event: KeyboardEvent) {
         :aria-label="`${zone === 'staged' ? '选择取消暂存' : '选择暂存'} ${node.path}`"
         :checked="state.checked"
         :indeterminate="state.mixed"
-        :disabled="busy || state.disabled"
+        :disabled="busy || state.disabled || node.file.conflict"
         @click.stop
         @change="emit('choose', node.files, ($event.target as HTMLInputElement).checked)"
       />

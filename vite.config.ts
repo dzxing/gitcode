@@ -43,6 +43,6 @@ export default defineConfig(({ command }) => ({
       'Content-Security-Policy': "frame-ancestors 'self'",
       'Referrer-Policy': 'no-referrer',
     },
-    watch: { ignored: ['**/legacy/**', '**/electron/**'] },
+    watch: { ignored: ['**/legacy/**', '**/electron/node_modules/**', '**/electron/dist/**'] },
   },
 }))

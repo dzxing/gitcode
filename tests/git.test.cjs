@@ -241,6 +241,47 @@ test('literal pathspecs and stale paths', async (t) => {
   await assert.rejects(act(git, root, { action: 'reset' }))
 })
 
+test('worktree identity accepts another path to the same directory while protecting checked-out branches', async (t) => {
+  const { root, git, write, commit } = await repository(t)
+  await write('base.txt')
+  await commit()
+  const alias = root + '-alias'
+  await fs.symlink(root, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  t.after(() => fs.rm(alias, { force: true, recursive: true }))
+  await git.checkWorktree(alias, 'refs/heads/main', false)
+  await assert.rejects(git.checkWorktree(alias, 'refs/heads/main', true), /工作区/)
+})
+
+test('large file selections stage and unstage within Windows command-line limits without changing files', async (t) => {
+  const { root, git, write } = await repository(t)
+  const files = Array.from(
+    { length: 300 },
+    (_, i) => `文件 ${String(i).padStart(3, '0')} ${'x'.repeat(120)}.txt`,
+  )
+  await Promise.all(files.map((file) => write(file, 'original\n')))
+  const run = git.git.bind(git)
+  git.git = async (repo, args, options) => {
+    // Exercise the Windows process argument limit even when this test runs on Linux.
+    if (args.join(' ').length > 32767)
+      throw new Error('Windows command line exceeds 32767 characters')
+    return run(repo, args, options)
+  }
+  await act(git, root, { action: 'stage', paths: files })
+  assert.deepEqual((await git.status(root)).staged.map((f) => f.path).sort(), files.toSorted())
+  await act(git, root, { action: 'unstage', paths: files })
+  assert.equal((await git.status(root)).staged.length, 0)
+  await act(git, root, { action: 'stage', paths: files })
+  await act(git, root, { action: 'commit', message: 'long selected file list' })
+  await Promise.all(files.map((file) => write(file, 'working content\n')))
+  await act(git, root, { action: 'stage', paths: files })
+  await act(git, root, { action: 'unstage', paths: files })
+  const status = await git.status(root)
+  assert.equal(status.staged.length, 0)
+  assert.deepEqual(status.unstaged.map((f) => f.path).sort(), files.toSorted())
+  for (const file of files)
+    assert.equal(await fs.readFile(path.join(root, file), 'utf8'), 'working content\n')
+})
+
 test('Unicode diff truncation preserves character boundaries', async (t) => {
   const { root, git, write } = await repository(t)
   await write('large.txt', '字'.repeat(MAX_DIFF + 100))
@@ -536,7 +577,7 @@ test('partial success reports created branches and refresh errors without claimi
   assert.equal((await git.git(root, ['rev-parse', 'refs/heads/created/topic'])).trim(), head)
 })
 
-test('current-branch rename is supported and unmerged deletion is never forced', async (t) => {
+test('current-branch rename is supported and unmerged deletion is protected by default', async (t) => {
   const { root, git, write, commit } = await repository(t)
   await write('a.txt')
   const main = await commit()
@@ -561,7 +602,7 @@ test('current-branch rename is supported and unmerged deletion is never forced',
       expectedHead: main,
       expectedBranch: 'main/renamed',
     }),
-    /not fully merged|未完全合并/,
+    /合并检查/,
   )
   assert.equal((await git.git(root, ['rev-parse', 'refs/heads/unmerged'])).trim(), topic)
   assert.equal((await git.git(root, ['symbolic-ref', '--short', 'HEAD'])).trim(), 'main/renamed')
@@ -808,7 +849,7 @@ test('pull fast-forwards the fetched object; divergence refreshes refs and clean
   )
 })
 
-test('sync and toolbar operations reject externally changed HEAD and dirty autostash cases', async (t) => {
+test('sync rejects externally changed HEAD and can plan automatic protection of dirty worktrees', async (t) => {
   const { root, git, write, commit, head } = await remoteFixture(t)
   const plan = await planFor(git, root, 'push')
   await git.git(root, ['switch', '-c', 'other'])
@@ -833,7 +874,9 @@ test('sync and toolbar operations reject externally changed HEAD and dirty autos
   await git.git(root, ['switch', 'main'])
   await write('a.txt', 'dirty\n')
   await git.git(root, ['config', 'merge.autoStash', 'true'])
-  await assert.rejects(planFor(git, root, 'pull'), /干净工作区/)
+  const dirtyPlan = await planFor(git, root, 'pull')
+  assert.equal(dirtyPlan.kind, 'pull')
+  assert.equal(await fs.readFile(path.join(root, 'a.txt'), 'utf8'), 'dirty\n')
   assert.equal((await git.git(root, ['stash', 'list'])).trim(), '')
 })
 
@@ -1051,4 +1094,114 @@ test('both pull methods preserve ignored local files when the remote adds the sa
       '',
     )
   }
+})
+
+test('snapshot exposes configured remote names even before they have tracking branches', async (t) => {
+  const { root, git, bare } = await remoteFixture(t)
+  await git.git(root, ['remote', 'add', 'team/company', bare])
+  const snapshot = await git.snapshot(root)
+  assert.deepEqual(snapshot.remotes, ['origin', 'team/company'])
+  assert.equal(
+    snapshot.branches.some((branch) => branch.name.startsWith('team/company/')),
+    false,
+  )
+})
+
+test('unmerged local branches can be explicitly force deleted without changing current or remote branches', async (t) => {
+  const { root, git, write, commit } = await repository(t)
+  await write('base.txt')
+  const base = await commit('base')
+  await git.git(root, ['switch', '-c', 'feature/unmerged'])
+  await write('topic.txt', 'unique commit\n')
+  const tip = await commit('topic')
+  await git.git(root, ['switch', 'main'])
+  await git.git(root, ['update-ref', 'refs/remotes/origin/feature/unmerged', tip])
+  const request = {
+    action: 'delete-branch',
+    name: 'feature/unmerged',
+    expectedOid: tip,
+    expectedHead: base,
+    expectedBranch: 'main',
+  }
+  const rejected = await git.action(root, request)
+  assert.equal(rejected.outcome, 'failed')
+  assert.equal(rejected.branchDeleteBlocked, 'unmerged')
+  assert.match(rejected.error, /强制删除/)
+  assert.equal((await git.git(root, ['rev-parse', 'refs/heads/feature/unmerged'])).trim(), tip)
+  const invalid = await git.action(root, { ...request, force: 'true' })
+  assert.equal(invalid.outcome, 'failed')
+  assert.match(invalid.error, /无效/)
+  const deleted = await git.action(root, { ...request, force: true })
+  assert.equal(deleted.outcome, 'succeeded', deleted.error)
+  assert.equal(await git.head(root), base)
+  assert.equal(await git.currentBranch(root), 'main')
+  assert.equal((await git.git(root, ['branch', '--list', 'feature/unmerged'])).trim(), '')
+  assert.equal(
+    (await git.git(root, ['rev-parse', 'refs/remotes/origin/feature/unmerged'])).trim(),
+    tip,
+  )
+})
+
+test('force deletion still rejects changed branches and branches used by any worktree', async (t) => {
+  const { root, git, write, commit } = await repository(t)
+  await write('base.txt')
+  const base = await commit('base')
+  await git.git(root, ['branch', 'topic'])
+  const request = {
+    action: 'delete-branch',
+    name: 'topic',
+    force: true,
+    expectedOid: base,
+    expectedHead: base,
+    expectedBranch: 'main',
+  }
+  const current = await git.action(root, { ...request, name: 'main' })
+  assert.equal(current.outcome, 'failed')
+  assert.match(current.error, /工作区/)
+  const linked = path.join(root, 'linked')
+  await git.git(root, ['worktree', 'add', linked, 'topic'])
+  const inUse = await git.action(root, request)
+  assert.equal(inUse.outcome, 'failed')
+  assert.match(inUse.error, /工作区/)
+  await git.git(root, ['worktree', 'remove', linked])
+  await write('other.txt', 'advance\n')
+  const next = await commit('advance')
+  await git.git(root, ['update-ref', 'refs/heads/topic', next, base])
+  const stale = await git.action(root, { ...request, expectedHead: next })
+  assert.equal(stale.outcome, 'failed')
+  assert.match(stale.error, /目标分支已变化/)
+  assert.equal((await git.git(root, ['rev-parse', 'refs/heads/topic'])).trim(), next)
+})
+
+test('setting upstream validates both refs and worktree occupancy is exposed without changing branches', async (t) => {
+  const { root, git, write, commit } = await repository(t)
+  await write('base.txt')
+  const oid = await commit('base')
+  await git.git(root, ['remote', 'add', 'origin', path.join(root, 'unused-remote')])
+  await git.git(root, ['update-ref', 'refs/remotes/origin/topic', oid])
+  await git.git(root, ['branch', 'topic'])
+  const linked = root + '-linked'
+  t.after(() => fs.rm(linked, { recursive: true, force: true, maxRetries: 3 }))
+  await git.git(root, ['worktree', 'add', linked, 'topic'])
+  const snapshot = await git.snapshot(root)
+  assert.equal(snapshot.branches.find((b) => b.name === 'topic').worktreePath, linked)
+  assert.equal(snapshot.branches.find((b) => b.name === 'main').worktreePath, root)
+  const request = {
+    action: 'set-upstream',
+    name: 'main',
+    expectedOid: oid,
+    fullRef: 'refs/remotes/origin/topic',
+    upstreamOid: oid,
+  }
+  const result = await act(git, root, request)
+  assert.equal(result.snapshot.branches.find((b) => b.name === 'main').upstream, 'origin/topic')
+  assert.equal(await git.head(root), oid)
+  assert.equal(await git.currentBranch(root), 'main')
+  await git.git(root, ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/topic'])
+  await assert.rejects(
+    act(git, root, { ...request, fullRef: 'refs/remotes/origin/HEAD' }),
+    /符号引用/,
+  )
+  await assert.rejects(act(git, root, { ...request, upstreamOid: 'f'.repeat(40) }), /已变化/)
+  await assert.rejects(act(git, root, { ...request, fullRef: 'refs/heads/topic' }), /远程上游/)
 })

@@ -37,6 +37,13 @@ export const useStashStore = defineStore('stash', () => {
     set: (value) => updatePrefs({ creating: value }),
   })
   const restoreIndex = ref(false)
+  const pendingRestore = ref<{
+    operation: 'stash-apply' | 'stash-pop'
+    oid: string
+    changes: string
+    restoreIndex: boolean
+  } | null>(null)
+  const changeSignature = () => JSON.stringify([repository.repo.staged, repository.repo.unstaged])
   type Intent = ReturnType<typeof repository.captureOperation>
   let version = 0,
     detailFile = ''
@@ -125,8 +132,8 @@ export const useStashStore = defineStore('stash', () => {
             ? '恢复目标或贮藏列表已变化，请重新核对'
             : repository.modal
               ? '请先关闭当前弹窗'
-              : repository.changes
-                ? '恢复前请先处理当前工作区修改（含未跟踪文件）'
+              : repository.repo.staged.length
+                ? '恢复前请先提交或取消暂存当前已暂存的修改'
                 : ''),
   )
   const file = computed(() => (selected.value ? repository.selectedFile?.path || '' : ''))
@@ -141,6 +148,7 @@ export const useStashStore = defineStore('stash', () => {
     detailFile = ''
   }
   async function load(entry: StashEntry, savedFile = '', source: 'working' | 'staged' = 'working') {
+    pendingRestore.value = null
     clearRead()
     error.value = ''
     selectionIntent.value = repository.captureOperation()
@@ -171,6 +179,7 @@ export const useStashStore = defineStore('stash', () => {
     error.value = ''
   }
   function openList(entry?: StashEntry, operation?: StashOperation) {
+    pendingRestore.value = null
     if (repository.busy || repository.modal || repository.isNewTab) return
     const item = entry || entries.value[0]
     if (!item) {
@@ -263,11 +272,22 @@ export const useStashStore = defineStore('stash', () => {
     }
     return ok
   }
-  async function restore(operation: 'stash-apply' | 'stash-pop') {
+  async function restore(operation: 'stash-apply' | 'stash-pop', confirmed = false) {
     if (restoreBlocked.value || !selectionIntent.value || !selected.value) {
       error.value = restoreBlocked.value
       return false
     }
+    if (repository.repo.unstaged.length && !confirmed) {
+      pendingRestore.value = {
+        operation,
+        oid: selected.value.oid,
+        changes: changeSignature(),
+        restoreIndex: restoreIndex.value,
+      }
+      error.value = ''
+      return false
+    }
+    pendingRestore.value = null
     const entry = { ...selected.value },
       intent = { ...selectionIntent.value },
       signature = selectionSignature.value
@@ -279,6 +299,7 @@ export const useStashStore = defineStore('stash', () => {
         stashRef: entry.ref,
         stashSignature: signature,
         restoreIndex: restoreIndex.value,
+        confirmUnstaged: confirmed,
       },
       intent,
     )
@@ -292,7 +313,25 @@ export const useStashStore = defineStore('stash', () => {
         '操作未完成，请检查工作区；不要重复恢复。'
     return ok
   }
+  async function confirmRestore() {
+    const pending = pendingRestore.value
+    if (
+      !pending ||
+      pending.oid !== selected.value?.oid ||
+      pending.changes !== changeSignature() ||
+      pending.restoreIndex !== restoreIndex.value
+    ) {
+      pendingRestore.value = null
+      error.value = '工作区或恢复选项已变化，请重新选择恢复操作。'
+      return false
+    }
+    return restore(pending.operation, true)
+  }
+  function cancelRestore() {
+    pendingRestore.value = null
+  }
   function requestDelete() {
+    pendingRestore.value = null
     if (repository.busy || repository.modal || !selected.value || selectedMissing.value) return
     deleteTarget.value = {
       entry: { ...selected.value },
@@ -330,6 +369,7 @@ export const useStashStore = defineStore('stash', () => {
   }
   function close() {
     if (!repository.busy) {
+      pendingRestore.value = null
       creating.value = false
       repository.clearSelection()
     }
@@ -349,6 +389,7 @@ export const useStashStore = defineStore('stash', () => {
   watch(
     [() => repository.activeTabId, () => repository.repo.path],
     ([tab, path], [previousTab, previousPath]) => {
+      pendingRestore.value = null
       clearRead()
       error.value = ''
       deleteTarget.value = null
@@ -370,12 +411,14 @@ export const useStashStore = defineStore('stash', () => {
   watch(
     () => selected.value?.oid,
     (oid) => {
+      pendingRestore.value = null
       if (!oid) {
         clearRead()
         error.value = ''
         selectionIntent.value = null
       }
     },
+    { flush: 'sync' },
   )
   watch([() => repository.selectedCommit, () => selected.value], ([commit, entry]) => {
     if (commit || entry) creating.value = false
@@ -397,6 +440,9 @@ export const useStashStore = defineStore('stash', () => {
     includeUntracked,
     creating,
     restoreIndex,
+    pendingRestore,
+    confirmRestore,
+    cancelRestore,
     entries,
     supported,
     baseBlocked,

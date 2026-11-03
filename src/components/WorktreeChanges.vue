@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import Icon from './Icon.vue'
+import FileViewToggle from './FileViewToggle.vue'
 import WorktreeTreeRow from './WorktreeTreeRow.vue'
 import { useRepositoryStore } from '../stores/repository'
 import { useMergeStore } from '../stores/merge'
@@ -20,6 +21,19 @@ const store = useRepositoryStore(),
 const menuElement = ref<HTMLDetailsElement>()
 const view = computed(() => worktree.view(store.repo.path))
 const root = ref<HTMLElement>()
+const collapsedZones = ref(new Set<StagingZone>())
+watch(
+  () => store.repo.path,
+  () => {
+    collapsedZones.value = new Set()
+  },
+)
+function toggleZone(zone: StagingZone) {
+  const next = new Set(collapsedZones.value)
+  if (next.has(zone)) next.delete(zone)
+  else next.add(zone)
+  collapsedZones.value = next
+}
 const zones = computed(() => {
   const metadata = new Map(
     collectWorktreeChanges(store.repo.staged, store.repo.unstaged).map((file) => [file.path, file]),
@@ -31,17 +45,50 @@ const zones = computed(() => {
       oldPath: version.oldPath,
     }))
     const matching = filterWorktreeChanges(files, view.value.query)
-    const selected = worktree.selected(store.repo.path, zone, files)
+    const eligible = matching.filter((file) => !file.conflict)
+    const selected = worktree.selected(
+      store.repo.path,
+      zone,
+      files.filter((file) => !file.conflict),
+    )
     const visible = new Set(matching.map((file) => file.path))
+    const paths = selected.size ? [...selected] : eligible.map((file) => file.path)
+    const nodes = buildStagingTree(matching, zone, view.value.layout, view.value.compress)
+    const rowCount = (items: typeof nodes): number =>
+      items.reduce(
+        (count, node) =>
+          count +
+          1 +
+          (node.kind !== 'file' && !view.value.collapsed.includes(node.key)
+            ? rowCount(node.children)
+            : 0),
+        0,
+      )
+    const rows = rowCount(nodes)
+    const label = selected.size
+      ? `${zone === 'staged' ? '取消暂存所选' : '暂存所选'}（${paths.length}）`
+      : view.value.query.trim()
+        ? `${zone === 'staged' ? '取消暂存匹配' : '暂存匹配'}（${paths.length}）`
+        : zone === 'staged'
+          ? '全部取消暂存'
+          : '全部暂存'
     return {
       id: zone,
+      paths,
+      label,
+      rows,
+      maxHeight:
+        40 +
+        rows * (density.modes.worktree === 'compact' ? 32 : 40) +
+        (selected.size ? 28 : 0) +
+        (zone === 'staged' && selected.size ? 34 : 0),
       title: zone === 'staged' ? '已暂存' : '未暂存',
       files,
       matching,
       selected,
       hidden: [...selected].filter((path) => !visible.has(path)).length,
-      state: stagingSelectionState(matching, selected),
-      nodes: buildStagingTree(matching, zone, view.value.layout, view.value.compress),
+      state: stagingSelectionState(eligible, selected),
+      nodes,
     }
   })
 })
@@ -66,7 +113,13 @@ watch(
   { immediate: true },
 )
 function choose(zone: StagingZone, files: WorktreeChange[], checked: boolean) {
-  if (!store.busy) worktree.choose(store.repo.path, zone, files, checked)
+  if (!store.busy)
+    worktree.choose(
+      store.repo.path,
+      zone,
+      files.filter((file) => !file.conflict),
+      checked,
+    )
 }
 function inspect(zone: StagingZone, file: WorktreeChange, trigger?: HTMLElement) {
   if (file.conflict) {
@@ -99,7 +152,7 @@ async function act(zone: StagingZone, paths: string[], trigger?: HTMLElement) {
     )?.focus()
   } else if (trigger?.isConnected) trigger.focus()
 }
-function dismissMenu(event: PointerEvent | KeyboardEvent) {
+function dismissMenu(event: PointerEvent | KeyboardEvent | FocusEvent) {
   if (event.type === 'keydown') {
     if ((event as KeyboardEvent).key !== 'Escape') return
     event.preventDefault()
@@ -111,12 +164,14 @@ function dismissMenu(event: PointerEvent | KeyboardEvent) {
 }
 function clearMenuListeners() {
   document.removeEventListener('pointerdown', dismissMenu)
+  document.removeEventListener('focusin', dismissMenu)
   document.removeEventListener('keydown', dismissMenu)
 }
 function menuToggle() {
   clearMenuListeners()
   if (menuElement.value?.open) {
     document.addEventListener('pointerdown', dismissMenu)
+    document.addEventListener('focusin', dismissMenu)
     document.addEventListener('keydown', dismissMenu)
   }
 }
@@ -150,6 +205,26 @@ onBeforeUnmount(clearMenuListeners)
             :size="12"
           /></button
       ></label>
+      <div
+        class="worktree-layout-toggle"
+        role="group"
+        aria-label="文件分组方式"
+      >
+        <button
+          aria-label="列表视图"
+          :aria-pressed="view.layout === 'list'"
+          @click="worktree.update(store.repo.path, { layout: 'list' })"
+        >
+          列表
+        </button>
+        <button
+          aria-label="目录视图"
+          :aria-pressed="view.layout === 'tree'"
+          @click="worktree.update(store.repo.path, { layout: 'tree' })"
+        >
+          目录
+        </button>
+      </div>
       <details
         ref="menuElement"
         class="worktree-view-menu"
@@ -157,7 +232,7 @@ onBeforeUnmount(clearMenuListeners)
       >
         <summary
           aria-label="工作区视图选项"
-          title="分组与显示方式"
+          title="密度与目录设置"
         >
           <Icon
             name="Settings2"
@@ -165,25 +240,8 @@ onBeforeUnmount(clearMenuListeners)
           />
         </summary>
         <div class="worktree-menu-content">
-          <strong>分组</strong>
-          <label
-            ><input
-              type="radio"
-              name="worktree-layout"
-              aria-label="目录视图"
-              :checked="view.layout === 'tree'"
-              @change="worktree.update(store.repo.path, { layout: 'tree' })"
-            />目录</label
-          >
-          <label
-            ><input
-              type="radio"
-              name="worktree-layout"
-              aria-label="列表视图"
-              :checked="view.layout === 'list'"
-              @change="worktree.update(store.repo.path, { layout: 'list' })"
-            />列表</label
-          >
+          <strong>文件显示密度</strong>
+          <FileViewToggle context="worktree" />
           <label
             ><input
               type="checkbox"
@@ -205,9 +263,15 @@ onBeforeUnmount(clearMenuListeners)
         :key="zone.id"
         :data-staging-zone="zone.id"
         class="staging-zone"
+        :class="{ 'is-collapsed': collapsedZones.has(zone.id), 'is-empty': !zone.rows }"
+        :style="{
+          '--zone-weight': Math.max(1, zone.rows),
+          maxHeight: collapsedZones.has(zone.id) || !zone.rows ? undefined : `${zone.maxHeight}px`,
+        }"
       >
         <div class="staging-zone-header">
           <input
+            v-if="zone.matching.length"
             type="checkbox"
             class="zone-select-all"
             :aria-label="`全选${zone.title}匹配文件`"
@@ -216,18 +280,47 @@ onBeforeUnmount(clearMenuListeners)
             :disabled="store.busy || zone.state.disabled"
             @change="choose(zone.id, zone.matching, ($event.target as HTMLInputElement).checked)"
           />
+          <span
+            v-else
+            class="zone-checkbox-spacer"
+            aria-hidden="true"
+          ></span>
           <h3
             class="staging-zone-title"
             tabindex="-1"
           >
-            {{ zone.title }} <small>{{ zone.files.length }}</small>
+            <button
+              :aria-label="`${collapsedZones.has(zone.id) ? '展开' : '折叠'}${zone.title}`"
+              :aria-expanded="!collapsedZones.has(zone.id)"
+              :aria-controls="`staging-files-${zone.id}`"
+              @click="toggleZone(zone.id)"
+            >
+              <Icon
+                name="ChevronRight"
+                :size="12"
+                :class="{ 'is-open': !collapsedZones.has(zone.id) }"
+              />{{ zone.title }}
+              <small>{{
+                view.query.trim()
+                  ? `${zone.matching.length}/${zone.files.length}`
+                  : zone.files.length
+              }}</small>
+            </button>
           </h3>
           <button
+            v-if="zone.files.length"
             class="staging-batch-action"
-            :disabled="store.busy || !zone.selected.size"
-            @click="act(zone.id, [...zone.selected], $event.currentTarget as HTMLElement)"
+            :disabled="store.busy || !zone.paths.length"
+            :title="
+              zone.selected.size
+                ? `操作已勾选的 ${zone.selected.size} 项${zone.hidden ? `，包含隐藏 ${zone.hidden} 项` : ''}`
+                : view.query.trim()
+                  ? '仅操作筛选匹配的文件'
+                  : '操作此分组的全部文件'
+            "
+            @click="act(zone.id, zone.paths, $event.currentTarget as HTMLElement)"
           >
-            {{ zone.id === 'staged' ? '取消暂存所选' : '暂存所选' }}（{{ zone.selected.size }}）
+            {{ zone.label }}
           </button>
         </div>
         <div
@@ -254,6 +347,8 @@ onBeforeUnmount(clearMenuListeners)
           勾选用于取消暂存；提交范围仍为全部已暂存
         </p>
         <div
+          :id="`staging-files-${zone.id}`"
+          v-show="!collapsedZones.has(zone.id)"
           class="worktree-tree file-list"
           :class="density.modes.worktree === 'compact' ? 'file-list-compact' : 'file-list-detailed'"
           role="tree"
@@ -403,7 +498,64 @@ onBeforeUnmount(clearMenuListeners)
 .staging-zones {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.staging-zone {
+  display: flex;
+  flex-direction: column;
+  flex: var(--zone-weight) 1 0;
+  min-height: 70px;
+}
+.staging-zone.is-collapsed,
+.staging-zone.is-empty {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+.staging-zone-header,
+.zone-selection-summary,
+.staging-selection-note {
+  flex-shrink: 0;
+}
+.staging-zone-title button {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 5px;
+  text-align: left;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+}
+.zone-checkbox-spacer {
+  width: 13px;
+  flex-shrink: 0;
+}
+.staging-zone[data-staging-zone='unstaged'] .staging-batch-action:not(:disabled) {
+  color: var(--accent);
+}
+.staging-zone-title svg {
+  transition: transform 120ms ease;
+  flex-shrink: 0;
+}
+.staging-zone-title svg.is-open {
+  transform: rotate(90deg);
+}
+.worktree-layout-toggle {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.worktree-layout-toggle button {
+  padding: 4px 5px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  border-radius: 3px;
+}
+.worktree-layout-toggle button[aria-pressed='true'] {
+  color: var(--bright);
+  background: var(--view-selection-bg);
 }
 .staging-zone + .staging-zone {
   border-top: 1px solid var(--line);
@@ -467,6 +619,8 @@ onBeforeUnmount(clearMenuListeners)
   line-height: 1.5;
 }
 .worktree-tree {
+  flex: 1;
+  overflow: auto;
   min-height: 0;
   padding: 0 6px 6px;
 }
@@ -476,7 +630,7 @@ onBeforeUnmount(clearMenuListeners)
   justify-content: center;
   flex-direction: column;
   gap: 10px;
-  padding: 24px 12px;
+  padding: 7px 12px;
   color: var(--muted);
   font-size: 11px;
 }

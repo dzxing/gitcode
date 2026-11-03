@@ -211,7 +211,6 @@ export const useGitFlowStore = defineStore('gitflow', () => {
       baseBlocked.value ||
       readinessBlocked.value ||
       state.value?.operationError ||
-      (repo.changes ? '工作区有未提交更改，请先查看并处理。' : '') ||
       flowNameError(state.value?.config[type.value] || config.value[type.value], name.value) ||
       (localBranches.value.some((b) => b.name === fullName.value)
         ? '同名本地分支已存在，请修改名称或在侧栏查看该分支。'

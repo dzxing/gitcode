@@ -914,7 +914,7 @@ strong {
 .sidebar-disclosure.is-open {
   grid-template-rows: 1fr;
   opacity: 1;
-  visibility: visible;
+  visibility: inherit;
   transition-delay: 0s;
 }
 .sidebar-disclosure-inner {
@@ -1157,6 +1157,10 @@ strong {
   z-index: 8;
   cursor: col-resize;
   touch-action: none;
+}
+.resize-handle[aria-disabled='true'] {
+  cursor: default;
+  pointer-events: none;
 }
 .resize-handle.left {
   left: calc(var(--sidebar-width) - 3px);
@@ -3465,14 +3469,16 @@ strong {
   display: block;
 }
 
-/* Repository context menus. No Git operation runs until an item is chosen. */
+/* Browser preview of context menus. Desktop uses Electron Menu.popup. */
 .context-menu {
   position: fixed;
   z-index: 120;
-  width: 264px;
+  width: max-content;
+  min-width: min(224px, calc(100vw - 16px));
   max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 16px);
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 5px;
   border: 1px solid #505765;
   border-radius: 6px;
@@ -3481,27 +3487,15 @@ strong {
   box-shadow: 0 8px 32px #0008;
   font-size: 12px;
 }
-.context-menu-heading {
-  padding: 7px 9px 8px;
-  font-weight: 600;
-  color: #a5afbd;
-  overflow-wrap: anywhere;
-}
-.context-menu-context {
-  padding: 0 9px 8px;
-  color: var(--muted);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
 .context-menu > button {
   width: 100%;
   min-height: 30px;
-  padding: 6px 9px;
+  padding: 6px 9px 6px 30px;
+  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 2px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
   border-radius: 3px;
   text-align: left;
 }
@@ -3516,27 +3510,20 @@ strong {
   color: var(--control-disabled-color);
   cursor: default;
 }
-.context-menu > button small {
-  font-size: 11px;
-  color: var(--text-secondary);
+.context-menu-check {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  text-align: center;
 }
-.context-menu > button:not(:disabled):is(:hover, :focus-visible) small {
-  color: var(--text-on-selection);
-}
-.context-menu > button:disabled small {
-  color: var(--muted);
-}
-.context-menu > button span,
-.context-menu > button small {
-  max-width: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.context-menu > button.danger {
-  color: #efa5ab;
-}
-.context-menu > button.danger:disabled {
-  color: #8a939f;
+.context-menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .context-menu-separator {
   height: 1px;
@@ -4375,4 +4362,97 @@ strong {
   overflow: auto;
   white-space: pre-wrap;
   font: 11px/1.6 var(--mono);
+}
+
+.publish-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.publish-targets label {
+  margin: 0;
+}
+.publish-targets p {
+  margin: 2px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.publish-targets .secondary-button {
+  align-self: flex-start;
+}
+
+/* Keep push targets compact; status text is the primary feedback. */
+.publish-targets {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 8px;
+}
+.publish-targets > strong,
+.publish-targets > button {
+  grid-column: 1 / -1;
+}
+.publish-targets > label {
+  align-self: center;
+}
+.push-check {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.push-check > p,
+.push-check details p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.push-check details {
+  font-size: 12px;
+}
+.push-check details code {
+  overflow-wrap: anywhere;
+}
+
+.branch-folder-toggle {
+  display: grid;
+  grid-template-columns: 12px 14px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: var(--tree-column-gap);
+  width: 100%;
+  height: 28px;
+  padding: 0 46px 0
+    calc(var(--branch-base-inset) + var(--branch-depth, 1) * var(--branch-indent) - 10px);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+}
+.branch-folder-toggle:hover {
+  background: var(--control-hover-bg);
+}
+.branch-folder-toggle:active {
+  background: var(--control-pressed-bg);
+}
+.branch-folder-toggle > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.branch-folder-toggle > svg {
+  color: var(--icon-color);
+}
+
+.sidebar-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sidebar-heading-actions .icon-button {
+  width: 26px;
+  height: 26px;
 }

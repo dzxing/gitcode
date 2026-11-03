@@ -2,8 +2,12 @@ import type { Page } from '@playwright/test'
 import { repositoryFixture } from '../fixtures/repository'
 
 // Test-only preload bridge. No fixture data is imported by the application.
-export async function openFixtureRepository(page: Page, gitflow = false) {
-  const snapshot = structuredClone(repositoryFixture)
+export async function openFixtureRepository(
+  page: Page,
+  gitflow = false,
+  initialSnapshot = repositoryFixture,
+) {
+  const snapshot = structuredClone(initialSnapshot)
   snapshot.path = '/test-fixtures/repository'
   if (gitflow)
     snapshot.gitflow = {

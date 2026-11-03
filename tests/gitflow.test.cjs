@@ -60,6 +60,29 @@ async function setup(t, commit = true) {
   return { repo, git, request, action, plan, initialize, start }
 }
 
+test('GitFlow start retains the created branch without overwriting an ignored local file', async (t) => {
+  const f = await setup(t)
+  await f.initialize()
+  await fs.writeFile(path.join(f.repo, '.gitignore'), 'private.txt\n')
+  await f.git.git(f.repo, ['add', '.gitignore'])
+  await f.git.git(f.repo, ['commit', '-m', 'ignore local data'])
+  await f.git.git(f.repo, ['switch', 'develop'])
+  await fs.writeFile(path.join(f.repo, 'private.txt'), 'tracked target\n')
+  await f.git.git(f.repo, ['add', 'private.txt'])
+  await f.git.git(f.repo, ['commit', '-m', 'target tracks path'])
+  const target = await f.git.head(f.repo)
+  await f.git.git(f.repo, ['switch', 'main'])
+  await fs.writeFile(path.join(f.repo, 'private.txt'), 'local data to preserve\n')
+  const result = await f.start()
+  assert.equal(result.outcome, 'partial', JSON.stringify(result))
+  assert.equal(result.snapshot.branch, 'main')
+  assert.equal(
+    await fs.readFile(path.join(f.repo, 'private.txt'), 'utf8'),
+    'local data to preserve\n',
+  )
+  assert.equal((await f.git.git(f.repo, ['rev-parse', 'refs/heads/feature/login'])).trim(), target)
+})
+
 test('GitFlow save writes conventional repository keys, keeps unrelated config and does not create branches', async (t) => {
   const { repo, git, action } = await setup(t)
   await git.git(repo, ['config', 'remote.origin.url', 'https://example.com/repo'])
@@ -191,12 +214,15 @@ test('GitFlow Start freezes configured bases, creates local only, and supports o
   assert.match(hotfix.output, /尚未推送/)
 })
 
-test('GitFlow Start rejects uncommitted work, stale source, duplicates and unfinished merges', async (t) => {
+test('GitFlow Start restores local work and rejects stale source, duplicates and unfinished merges', async (t) => {
   const { git, repo, initialize, start, request } = await setup(t)
   await initialize()
   const source = (await git.git(repo, ['rev-parse', 'develop'])).trim()
   await fs.writeFile(path.join(repo, 'dirty.txt'), 'keep')
-  assert.match((await start()).error, /未提交/)
+  const protectedStart = await start('feature', 'protected')
+  assert.equal(protectedStart.outcome, 'succeeded', JSON.stringify(protectedStart))
+  assert.equal(await fs.readFile(path.join(repo, 'dirty.txt'), 'utf8'), 'keep')
+  assert.equal(protectedStart.snapshot.stashes.length, 0)
   await fs.rm(path.join(repo, 'dirty.txt'))
   await git.git(repo, ['switch', 'develop'])
   await git.git(repo, ['commit', '--allow-empty', '-m', 'advance'])
@@ -300,6 +326,30 @@ test('GitFlow canonicalizes worktreeConfig boolean aliases before allowing write
   assert.equal(saved.outcome, 'failed')
   assert.match(saved.error, /worktree/)
   assert.equal((await start('feature', 'read-only-rules', false)).outcome, 'succeeded')
+})
+
+test('GitFlow accepts worktree scalar overrides but rejects duplicate values in that scope', async (t) => {
+  const { repo, git, action, initialize, start } = await setup(t)
+  await initialize()
+  await git.git(repo, ['config', 'extensions.worktreeConfig', 'true'])
+  await git.git(repo, ['branch', 'integration'])
+  await git.git(repo, ['config', '--worktree', 'gitflow.branch.develop', 'integration'])
+  let snapshot = await git.snapshot(repo)
+  assert.equal(snapshot.gitflow.config.develop, 'integration')
+  assert.equal(snapshot.gitflow.ready, true, snapshot.gitflow.error)
+  assert.equal(snapshot.gitflow.error, '')
+  assert.match(snapshot.gitflow.writeError, /worktree/)
+  assert.equal((await start('feature', 'worktree-override', false)).outcome, 'succeeded')
+  const saved = await action({
+    action: 'gitflow-save',
+    config: { ...rules, develop: 'integration' },
+  })
+  assert.equal(saved.outcome, 'failed')
+  assert.match(saved.error, /worktree/)
+  await git.git(repo, ['config', '--worktree', '--add', 'gitflow.branch.develop', 'develop'])
+  snapshot = await git.snapshot(repo)
+  assert.equal(snapshot.gitflow.ready, false)
+  assert.match(snapshot.gitflow.error, /重复/)
 })
 
 test('GitFlow init does not offer a plan for conflicting branch namespaces', async (t) => {

@@ -314,3 +314,48 @@ test('browser HTTP transport performs directory, Git, GitFlow and sync operation
   assert.equal(isolated.body.result.outcome, 'failed')
   assert.match(isolated.body.result.error, /同步目标已失效/)
 })
+
+test('development restart drains an active operation and rejects new work without cancelling it', async (t) => {
+  let finish, started
+  const running = new Promise((resolve) => {
+    started = resolve
+  })
+  const completed = new Promise((resolve) => {
+    finish = resolve
+  })
+  let shutdowns = 0
+  const core = createLocalCore({
+    serviceFactory: () => ({
+      runtime: async () => {
+        started()
+        await completed
+        return { platform: 'test' }
+      },
+      cancel: async () => {
+        finish()
+      },
+      shutdown: async () => {
+        shutdowns++
+      },
+    }),
+  })
+  t.after(() => core.close())
+  const token = await connect(core)
+  const pending = rpc(core, token, 'runtime')
+  await running
+  let drained = false
+  const draining = core.drain().then(() => {
+    drained = true
+  })
+  await Promise.resolve()
+  assert.equal(drained, false)
+  assert.equal(shutdowns, 0)
+  assert.equal((await rpc(core, token, 'runtime')).status, 503)
+  assert.equal((await rpc(core, token, 'cancel')).status, 200)
+  assert.equal((await pending).status, 200)
+  await draining
+  assert.equal(drained, true)
+  assert.equal(shutdowns, 0)
+  await core.close()
+  assert.equal(shutdowns, 1)
+})

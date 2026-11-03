@@ -179,10 +179,14 @@ class StashOperations {
       ]
     } else if (request.action === 'stash-apply' || request.action === 'stash-pop') {
       const state = await this.available(repo, signal)
-      if (state.staged.length || state.unstaged.length)
-        throw new Error('恢复前请先处理当前工作区修改（含未跟踪文件）。')
+      if (state.staged.length) throw new Error('恢复前请先提交或取消暂存当前已暂存的修改。')
+      if (state.unstaged.length && request.confirmUnstaged !== true)
+        throw new Error('当前工作区有未暂存修改，请确认后再恢复；恢复可能产生冲突。')
       if (typeof request.restoreIndex !== 'boolean') throw new Error('请选择是否恢复原暂存状态。')
       await this.resolve(repo, entry.oid, signal)
+      // Native stash apply may overwrite ignored files when restoring a staged
+      // addition. Ignored files are outside the dirty-worktree confirmation.
+      await this.git.merge.checkIgnoredPaths(repo, entry.oid, signal)
       args = [
         '-c',
         'stash.index=false',

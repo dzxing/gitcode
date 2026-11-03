@@ -219,6 +219,54 @@ try {
     assert.equal(stash.entries.length, 1)
     assert.equal(repo.selectedStash.oid, entry.oid)
   })
+  await test('unstaged restoration requires explicit confirmation and staging still blocks it', async () => {
+    const { repo, stash } = setup()
+    repo.repo.unstaged = [{ path: 'local.txt', status: '?' }]
+    let writes = 0
+    action = async (_path, request) => {
+      writes++
+      assert.equal(request.confirmUnstaged, true)
+      return { snapshot: { ...repo.repo }, outcome: 'succeeded', output: '' }
+    }
+    stash.openList(entry, 'stash-apply')
+    await flush()
+    assert.equal(writes, 0)
+    assert.equal(stash.pendingRestore.operation, 'stash-apply')
+    stash.cancelRestore()
+    assert.equal(stash.pendingRestore, null)
+    assert.equal(writes, 0)
+    await stash.restore('stash-pop')
+    repo.repo.unstaged.push({ path: 'newer.txt', status: '?' })
+    assert.equal(await stash.confirmRestore(), false)
+    assert.match(stash.error, /已变化/)
+    assert.equal(writes, 0)
+    await stash.restore('stash-apply')
+    assert.equal(await stash.confirmRestore(), true)
+    assert.equal(writes, 1)
+    stash.openList(entry)
+    await flush()
+    repo.repo.staged = [{ path: 'staged.txt', status: 'M' }]
+    assert.match(stash.restoreBlocked, /已暂存/)
+    assert.equal(await stash.restore('stash-apply'), false)
+    assert.equal(writes, 1)
+  })
+  await test('changing the selected stash or repository cancels pending restore consent', async () => {
+    const { repo, stash } = setup()
+    repo.repo.unstaged = [{ path: 'local.txt', status: '?' }]
+    stash.openList(entry, 'stash-pop')
+    await flush()
+    assert.ok(stash.pendingRestore)
+    repo.clearSelection()
+    await nextTick()
+    assert.equal(stash.pendingRestore, null)
+    assert.equal(await stash.confirmRestore(), false)
+    stash.openList(entry, 'stash-apply')
+    await flush()
+    repo.repo = { ...repo.repo, path: '/other' }
+    await nextTick()
+    assert.equal(stash.pendingRestore, null)
+    assert.equal(await stash.confirmRestore(), false)
+  })
   await test('changed restoration targets require explicit recheck; preview alone does not authorize a new target', async () => {
     const { repo, stash } = setup()
     stash.openList(entry)

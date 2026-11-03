@@ -1,6 +1,6 @@
 {
   "name": "gitcode-workbench",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A local Git workbench built with Electron and Vue",
   "type": "module",
@@ -13,8 +13,9 @@
     "desktop": "node scripts/desktop.mjs",
     "desktop:wsl": "node scripts/desktop.mjs --wsl",
     "desktop:build": "bun run build && node scripts/package-desktop.mjs",
-    "test": "node tests/git.test.cjs && node tests/git-checkout.test.cjs && node tests/git-selected.test.cjs && node tests/git-stash.test.cjs && node tests/git-merge.test.cjs && node tests/gitflow.test.cjs && node tests/gitflow-finish.test.cjs && node tests/preload.test.cjs && node tests/application-menu.test.cjs && node tests/local-core.test.cjs && node tests/frontend.mjs && node tests/worktree.test.mjs && node tests/staging.test.mjs && node tests/stash-view.test.mjs && node tests/stash-graph.test.mjs && node tests/merge-view.test.mjs",
+    "test": "node tests/git.test.cjs && node tests/git-publish.test.cjs && node tests/git-checkout.test.cjs && node tests/git-selected.test.cjs && node tests/git-stash.test.cjs && node tests/git-auto-stash.test.cjs && node tests/git-merge.test.cjs && node tests/git-rebase.test.cjs && node tests/git-navigation.test.cjs && node tests/gitflow.test.cjs && node tests/gitflow-finish.test.cjs && node tests/preload.test.cjs && node tests/context-menu.test.cjs && node tests/application-menu.test.cjs && node tests/local-core.test.cjs && node tests/frontend.mjs && node tests/graph-view.test.mjs && node tests/worktree.test.mjs && node tests/staging.test.mjs && node tests/stash-view.test.mjs && node tests/stash-graph.test.mjs && node tests/merge-view.test.mjs",
     "test:ui": "playwright test",
+    "test:core-reload": "node tests/local-core-reload.test.mjs",
     "fonts:install": "node scripts/install-fonts.mjs",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint src scripts/local-core-plugin.ts vite.config.ts playwright.config.ts eslint.config.js --max-warnings 0",

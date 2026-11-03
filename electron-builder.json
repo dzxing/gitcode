@@ -3,6 +3,7 @@
   "productName": "GitCode",
   "electronVersion": "45.0.0",
   "asar": true,
+  "asarUnpack": ["electron/rebase-editor.cjs"],
   "npmRebuild": false,
   "directories": {
     "output": "release",

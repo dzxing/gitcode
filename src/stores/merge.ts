@@ -108,6 +108,11 @@ export const useMergeStore = defineStore('merge', () => {
       return
     }
     repo.clearSelection()
+    if (state.value?.rebase) {
+      if (repo.modal === 'merge-conflicts') repo.modal = null
+      abortSignature.value = ''
+      return
+    }
     if (!session.value.message && state.value?.active) session.value.message = state.value.message
     repo.modal = 'merge-conflicts'
     abortSignature.value = ''

@@ -46,7 +46,6 @@ export const useGitFlowFinishStore = defineStore('gitflow-finish', () => {
     if (!flow.value?.finishSupported) return '请重启开发服务或桌面应用，加载 GitFlow 完成功能'
     if (!flow.value.ready) return '请先配置并初始化 GitFlow'
     if (progress.value) return '已有未完成流程，请先继续或停止后续步骤'
-    if (repo.changes) return '请先提交或贮藏工作区修改'
     if (repo.repo.merge) return '请先完成或中止当前合并'
     if (flow.value.operationError) return flow.value.operationError
     if (!type.value || !candidates.value.some((candidate) => candidate.name === branch.value)) {

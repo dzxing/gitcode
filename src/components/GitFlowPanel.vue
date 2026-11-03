@@ -707,7 +707,9 @@ function showWorktree() {
               >
                 查看工作区更改
               </button>
-              <p class="gitflow-muted">仅创建本地分支，不自动获取、推送或暂存更改。</p>
+              <p class="gitflow-muted">
+                本地更改会自动贮藏，操作成功后恢复；冲突或中断时保留记录。不自动推送。
+              </p>
               <button
                 class="primary-button"
                 :disabled="!!flow.startBlocked"

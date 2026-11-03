@@ -3,6 +3,7 @@ import type {
   GitAction,
   GitFlowConfig,
   OperationContext,
+  NavigationRequest,
   SyncContext,
 } from '../types'
 import type { NativeWindow } from './window'
@@ -61,6 +62,11 @@ async function invoke<T>(work: (bridge: DesktopBridge) => Promise<T>): Promise<T
 }
 
 export const desktop = {
+  navigationRead: (repo: string, request: NavigationRequest) =>
+    invoke((bridge) => {
+      if (!bridge.navigationRead) throw new Error('请重启开发服务或桌面应用以加载导航操作。')
+      return bridge.navigationRead(repo, request)
+    }),
   mergeRead: (repo: string, file: string | null = null) =>
     invoke((bridge) => {
       if (!bridge.mergeRead) throw new Error('本机核心尚不支持合并处理，请重启开发服务或桌面应用。')

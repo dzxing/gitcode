@@ -1,6 +1,6 @@
 import { test } from '@playwright/test'
 import { verifyStash } from '../../scripts/verify-stash-ui.mjs'
-test('inline stash creation, graph selection, shared diffs and direct recovery preserve drafts; only deletion confirms', async ({
+test('inline stash creation, graph selection, shared diffs and direct recovery preserve drafts; dirty recovery confirms inline and deletion uses a dialog', async ({
   page,
   baseURL,
 }) => {

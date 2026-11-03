@@ -22,6 +22,8 @@ export const useSidebarStore = defineStore('sidebar', () => {
   const order = ref(normalizeSidebarOrder(saved)),
     warning = ref('')
   interface BranchPreferences {
+    groupDirectories: boolean
+    collapsedDirectories: string[]
     favorites: string[]
     sorts: Partial<Record<SidebarSection, BranchSort>>
   }
@@ -32,7 +34,14 @@ export const useSidebarStore = defineStore('sidebar', () => {
     if (input && typeof input === 'object' && !Array.isArray(input)) {
       for (const [path, value] of Object.entries(input)) {
         if (!value || typeof value !== 'object' || path === '__proto__') continue
-        const raw = value as { favorites?: unknown; sorts?: unknown }
+        const raw = value as {
+          favorites?: unknown
+          sorts?: unknown
+          groupDirectories?: unknown
+          remoteTree?: unknown
+          remoteCollapsed?: unknown
+          collapsedDirectories?: unknown
+        }
         const favorites = Array.isArray(raw.favorites)
           ? [
               ...new Set(
@@ -51,7 +60,32 @@ export const useSidebarStore = defineStore('sidebar', () => {
               : null
           if (BRANCH_SORTS.some((item) => item.id === mode)) sorts[section] = mode as BranchSort
         }
-        preferences.value[path] = { favorites, sorts }
+        preferences.value[path] = {
+          favorites,
+          sorts,
+          groupDirectories:
+            typeof raw.groupDirectories === 'boolean'
+              ? raw.groupDirectories
+              : raw.remoteTree !== false,
+          collapsedDirectories: Array.isArray(raw.collapsedDirectories)
+            ? [
+                ...new Set(
+                  raw.collapsedDirectories.filter((key): key is string => typeof key === 'string'),
+                ),
+              ]
+            : Array.isArray(raw.remoteCollapsed)
+              ? raw.remoteCollapsed.flatMap((key) => {
+                  try {
+                    const parts: unknown = JSON.parse(String(key))
+                    return Array.isArray(parts) && parts.every((part) => typeof part === 'string')
+                      ? [JSON.stringify(['remote', ...parts])]
+                      : []
+                  } catch {
+                    return []
+                  }
+                })
+              : [],
+        }
       }
     }
   } catch {
@@ -60,7 +94,7 @@ export const useSidebarStore = defineStore('sidebar', () => {
   function branchPreferences(path: string): BranchPreferences {
     return Object.hasOwn(preferences.value, path)
       ? preferences.value[path]
-      : { favorites: [], sorts: {} }
+      : { favorites: [], sorts: {}, groupDirectories: true, collapsedDirectories: [] }
   }
   function persistBranches(path: string, next: BranchPreferences) {
     preferences.value = { ...preferences.value, [path]: next }
@@ -68,7 +102,7 @@ export const useSidebarStore = defineStore('sidebar', () => {
       localStorage.setItem(branchStorageKey, JSON.stringify(preferences.value))
       warning.value = ''
     } catch {
-      warning.value = '分支排序和收藏仅在本次会话保留。'
+      warning.value = '导航显示设置和收藏仅在本次会话保留。'
     }
   }
   function isFavorite(path: string, branch: Branch) {
@@ -92,6 +126,25 @@ export const useSidebarStore = defineStore('sidebar', () => {
   }
   function sortedBranches(path: string, section: SidebarSection, branches: readonly Branch[]) {
     return sortSidebarBranches(branches, sortMode(path, section), branchPreferences(path).favorites)
+  }
+  function groupDirectories(path: string) {
+    return branchPreferences(path).groupDirectories
+  }
+  function toggleGroupDirectories(path: string) {
+    const current = branchPreferences(path)
+    persistBranches(path, { ...current, groupDirectories: !current.groupDirectories })
+  }
+  function collapsedDirectories(path: string, key: string) {
+    return branchPreferences(path).collapsedDirectories.includes(key)
+  }
+  function toggleDirectoryCollapsed(path: string, key: string) {
+    const current = branchPreferences(path)
+    persistBranches(path, {
+      ...current,
+      collapsedDirectories: current.collapsedDirectories.includes(key)
+        ? current.collapsedDirectories.filter((item) => item !== key)
+        : [...current.collapsedDirectories, key],
+    })
   }
   function persist() {
     try {
@@ -130,5 +183,9 @@ export const useSidebarStore = defineStore('sidebar', () => {
     sortMode,
     setSort,
     sortedBranches,
+    groupDirectories,
+    toggleGroupDirectories,
+    collapsedDirectories,
+    toggleDirectoryCollapsed,
   }
 })

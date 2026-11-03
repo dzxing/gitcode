@@ -1,14 +1,19 @@
 <script setup lang="ts">
+import { version as appVersion } from '../../package.json'
 import { computed, ref } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import Icon from './Icon.vue'
 import SidebarBranchRow from './SidebarBranchRow.vue'
+import BranchTreeFolder from './BranchTreeFolder.vue'
+import BranchTreeNode from './BranchTreeNode.vue'
+import BranchDirectoryList from './BranchDirectoryList.vue'
 import SidebarCollapse from './SidebarCollapse.vue'
 import StashSection from './StashSection.vue'
 import { useContextMenuStore } from '../stores/contextMenu'
 import { flowKind, useGitFlowStore } from '../stores/gitflow'
 import { useSidebarStore } from '../stores/sidebar'
-import { SIDEBAR_SECTIONS } from '../sidebar'
+import { SIDEBAR_SECTIONS, remoteBranchGroups } from '../sidebar'
+import { branchReference } from '../references'
 
 const store = useRepositoryStore(),
   menu = useContextMenuStore(),
@@ -21,7 +26,7 @@ const filter = computed({
     },
   }),
   collapsed = ref(new Set<string>())
-const matches = (name: string) => name.toLowerCase().includes(filter.value.toLowerCase())
+const matches = (name: string) => name.toLowerCase().includes(filter.value.trim().toLowerCase())
 const flowGroups = computed(() =>
   [
     {
@@ -96,7 +101,11 @@ const sections = computed(() =>
     const branches = sidebar.sortedBranches(
       store.repo.path,
       id,
-      store.repo.branches.filter((b) => b.kind === id),
+      store.repo.branches.filter((b) =>
+        id === 'gitflow'
+          ? b.kind === 'local' && !!flow.state?.ready && !!flowKind(flow.state.config, b.name)
+          : b.kind === id && !(id === 'remote' && b.symbolicTarget),
+      ),
     )
     return {
       id,
@@ -105,6 +114,17 @@ const sections = computed(() =>
       visible: branches.filter((b) => matches(b.name)),
     }
   }),
+)
+const remoteGroups = computed(() =>
+  remoteBranchGroups(
+    store.repo.branches,
+    store.repo.remotes || [],
+    store.repo.branches
+      .filter((branch) => sidebar.isFavorite(store.repo.path, branch))
+      .map(branchReference),
+    sidebar.sortMode(store.repo.path, 'remote'),
+    filter.value,
+  ),
 )
 function showHistory() {
   if (store.selectedCommit && !store.selectedStash) return
@@ -122,19 +142,33 @@ function toggle(key: string) {
 <template>
   <aside class="sidebar">
     <div class="sidebar-heading">
-      <span>仓库导航</span
-      ><button
-        class="icon-button"
-        :disabled="store.busy"
-        title="打开仓库"
-        aria-label="打开仓库"
-        @click="store.modal = 'open'"
-      >
-        <Icon
-          name="Plus"
-          :size="15"
-        />
-      </button>
+      <span>仓库导航</span>
+      <div class="sidebar-heading-actions">
+        <button
+          class="icon-button"
+          aria-label="仓库导航显示设置"
+          title="仓库导航显示设置"
+          aria-haspopup="menu"
+          @click="menu.open($event, { kind: 'navigation' })"
+        >
+          <Icon
+            name="Settings2"
+            :size="13"
+          />
+        </button>
+        <button
+          class="icon-button"
+          :disabled="store.busy"
+          title="打开仓库"
+          aria-label="打开仓库"
+          @click="store.modal = 'open'"
+        >
+          <Icon
+            name="Plus"
+            :size="15"
+          />
+        </button>
+      </div>
     </div>
     <nav
       class="workspace-nav"
@@ -261,7 +295,11 @@ function toggle(key: string) {
           :open="!collapsed.has(section.id)"
         >
           <div
-            v-if="section.id === 'gitflow' && flow.state?.ready"
+            v-if="
+              section.id === 'gitflow' &&
+              flow.state?.ready &&
+              sidebar.groupDirectories(store.repo.path)
+            "
             class="branch-list"
           >
             <div
@@ -284,43 +322,30 @@ function toggle(key: string) {
                 v-if="group.visible.length"
                 class="gitflow-subgroup"
               >
-                <button
+                <BranchTreeFolder
                   v-if="group.folder"
-                  class="gitflow-group-label"
-                  :data-flow-group="group.key"
-                  :aria-controls="`sidebar-flow-${group.key}`"
-                  :aria-expanded="!collapsed.has(`gitflow-${group.key}`)"
-                  @click="toggle(`gitflow-${group.key}`)"
+                  :node-key="JSON.stringify(['gitflow', group.key])"
+                  :label="group.title"
+                  :depth="1"
+                  :query="filter"
+                  :flow-group="group.key"
                 >
-                  <Icon
-                    name="ChevronRight"
-                    class="disclosure-chevron"
-                    :class="{ 'is-open': !collapsed.has(`gitflow-${group.key}`) }"
-                    :size="12"
-                  /><Icon
-                    name="FolderOpen"
-                    :size="14"
-                  /><span>{{ group.title }}</span
-                  ><small>{{
-                    group.branches.filter((branch) => !sidebar.isFavorite(store.repo.path, branch))
-                      .length
-                  }}</small>
-                </button>
-                <SidebarCollapse
-                  :id="`sidebar-flow-${group.key}`"
-                  :open="!group.folder || !collapsed.has(`gitflow-${group.key}`)"
-                >
-                  <div class="branch-list">
-                    <SidebarBranchRow
-                      v-for="branch in group.visible"
-                      :key="branch.fullRef || branch.name"
-                      :branch="branch"
-                      section="gitflow"
-                      :depth="group.folder ? 2 : 1"
-                      :label="group.folder ? branch.name.slice(group.prefix.length) : branch.name"
-                    />
-                  </div>
-                </SidebarCollapse>
+                  <BranchDirectoryList
+                    :branches="group.visible"
+                    section="gitflow"
+                    :query="filter"
+                    :scope="['gitflow', group.key]"
+                    :label-prefix="group.prefix"
+                    :depth="2"
+                  />
+                </BranchTreeFolder>
+                <BranchDirectoryList
+                  v-else
+                  :branches="group.visible"
+                  section="gitflow"
+                  :query="filter"
+                  :scope="['gitflow', group.key]"
+                />
               </div>
             </template>
             <p
@@ -331,7 +356,7 @@ function toggle(key: string) {
             </p>
           </div>
           <div
-            v-else-if="section.id === 'gitflow'"
+            v-else-if="section.id === 'gitflow' && !flow.state?.ready"
             class="gitflow-setup"
           >
             <p>{{ flowSetupNote }}</p>
@@ -345,6 +370,68 @@ function toggle(key: string) {
                 :size="13"
               />{{ flowSetupLabel }}
             </button>
+          </div>
+          <div
+            v-else-if="section.id === 'remote' && sidebar.groupDirectories(store.repo.path)"
+            class="branch-list remote-branch-tree"
+          >
+            <BranchTreeFolder
+              v-for="group in remoteGroups"
+              :key="group.key"
+              :node-key="group.key"
+              :label="group.remote"
+              :depth="1"
+              :query="filter"
+              remote
+            >
+              <SidebarBranchRow
+                v-for="item in group.favorites"
+                :key="item.branch.fullRef || item.branch.name"
+                :branch="item.branch"
+                :label="item.label"
+                :depth="2"
+                section="remote"
+              />
+              <BranchTreeNode
+                v-for="node in group.children"
+                :key="node.key"
+                :node="node"
+                :depth="2"
+                :query="filter"
+                section="remote"
+              />
+              <p
+                v-if="!group.count"
+                class="section-empty"
+              >
+                暂无远程分支
+              </p>
+            </BranchTreeFolder>
+            <p
+              v-if="!remoteGroups.length"
+              class="section-empty"
+            >
+              {{ filter ? '无匹配分支' : '暂无远程分支' }}
+            </p>
+          </div>
+          <div
+            v-else-if="
+              sidebar.groupDirectories(store.repo.path) &&
+              (section.id === 'local' || section.id === 'tag')
+            "
+            class="branch-list"
+          >
+            <BranchDirectoryList
+              :branches="section.visible"
+              :section="section.id"
+              :query="filter"
+            />
+            <p
+              v-if="!section.visible.length"
+              class="section-empty"
+            >
+              {{ filter ? '无匹配分支' : `暂无${section.title}` }}
+            </p>
           </div>
           <div
             v-else
@@ -382,7 +469,7 @@ function toggle(key: string) {
       </button>
       <div class="sidebar-version">
         <span class="mini-brand">Git<span>Code</span></span
-        ><span>v0.1.0 <i>Preview</i></span>
+        ><span>v{{ appVersion }} <i>Preview</i></span>
       </div>
     </div>
   </aside>

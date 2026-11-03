@@ -56,21 +56,46 @@ class GitFlowOperations {
     const values = entries(raw),
       localValues = entries(local)
     const signature = createHash('sha256').update(bytes).update('\0').update(raw).digest('hex')
-    const config = Object.fromEntries(
-      Object.entries(keys).map(([name, key]) => [name, values.get(key)?.at(-1)]),
-    )
-    const complete = Object.values(keys).every((key) => values.has(key))
-    let writeError = ''
-    if (
+    const worktreeConfig =
       values.has('extensions.worktreeconfig') &&
       (
         await this.git.git(repo, ['config', '--bool', '--get', 'extensions.worktreeConfig'], {
           signal,
         })
       ).trim() === 'true'
+    if (worktreeConfig) {
+      // Worktree scalar overrides legitimately appear after the common config.
+      // Keep duplicate detection within the effective worktree scope, rather
+      // than treating normal inherited overrides as conflicting multi-values.
+      const worktreeFile = path.resolve(
+        repo,
+        (
+          await this.git.git(repo, ['rev-parse', '--git-path', 'config.worktree'], { signal })
+        ).trim(),
+      )
+      const exists = await fs.stat(worktreeFile).catch((error) => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      const worktreeValues = exists
+        ? entries(
+            await this.git.git(repo, ['config', '--worktree', '--null', '--list', '--includes'], {
+              signal,
+            }),
+          )
+        : new Map()
+      for (const key of Object.values(keys))
+        if (worktreeValues.has(key)) values.set(key, worktreeValues.get(key))
+    }
+    const config = Object.fromEntries(
+      Object.entries(keys).map(([name, key]) => [name, values.get(key)?.at(-1)]),
     )
+    const complete = Object.values(keys).every((key) => values.has(key))
+    let writeError = ''
+    if (worktreeConfig)
       writeError = '此仓库启用了独立 worktree 配置，暂不支持在应用中修改 GitFlow 配置。'
     if (
+      !worktreeConfig &&
       Object.values(keys).some(
         (key) =>
           JSON.stringify(values.get(key) || []) !== JSON.stringify(localValues.get(key) || []),
@@ -367,9 +392,6 @@ class GitFlowOperations {
       if (!oid) throw new Error(`缺少基础分支 ${name}，请先初始化。`)
     }
     await this.git.noInProgress(repo, signal)
-    const state = await this.git.status(repo, signal)
-    if (state.staged.length || state.unstaged.length)
-      throw new Error('工作区有未提交更改，请先提交或自行处理，再开始 GitFlow 分支。')
     if (
       typeof request.name !== 'string' ||
       !request.name ||
@@ -392,51 +414,74 @@ class GitFlowOperations {
       ).trim()
     )
       throw new Error('同名本地分支已存在，请刷新检查。')
-    try {
-      await this.git.git(repo, ['branch', '--no-track', '--', name, request.sourceOid], { signal })
-    } catch (error) {
-      try {
-        const actual = (
-          await this.git.git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], {
-            allowedCodes: [0, 1],
-            signal: AbortSignal.timeout(5000),
-          })
-        ).trim()
-        if (actual)
-          return {
-            outcome: 'partial',
-            output: '',
-            error: error.message,
-            warning: `已检测到分支 ${name}，创建命令未正常返回。请刷新核对实际状态，不要重复创建。`,
-          }
-      } catch {
-        return {
-          outcome: 'partial',
-          output: '',
-          error: error.message,
-          warning: '无法核实分支是否已创建，请刷新检查，不要重复执行。',
-        }
-      }
-      throw error
-    }
-    if (request.switchAfter) {
-      try {
-        await this.git.checkContext(repo, request, signal)
+    return this.git.autoStash.run(
+      repo,
+      'GitFlow Start',
+      signal,
+      async () => {
+        await this.guarded(repo, request, signal)
         await this.git.checkReference(repo, source, request.sourceOid, signal)
-        await this.git.checkReference(repo, `refs/heads/${name}`, request.sourceOid, signal)
-        await this.git.git(repo, ['switch', name], { signal })
-      } catch (error) {
-        return {
-          outcome: 'partial',
-          output: '',
-          warning: `${name} 已创建，但切换未完成：${error.message}。请刷新检查，不要重复创建。`,
+        try {
+          await this.git.git(repo, ['branch', '--no-track', '--', name, request.sourceOid], {
+            signal,
+          })
+        } catch (error) {
+          try {
+            const actual = (
+              await this.git.git(repo, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], {
+                allowedCodes: [0, 1],
+                signal: AbortSignal.timeout(5000),
+              })
+            ).trim()
+            if (actual)
+              return {
+                outcome: 'partial',
+                output: '',
+                error: error.message,
+                warning: `已检测到分支 ${name}，创建命令未正常返回。请刷新核对实际状态，不要重复创建。`,
+              }
+          } catch {
+            return {
+              outcome: 'partial',
+              output: '',
+              error: error.message,
+              warning: '无法核实分支是否已创建，请刷新检查，不要重复执行。',
+            }
+          }
+          throw error
         }
-      }
-    }
-    return {
-      outcome: 'succeeded',
-      output: `已创建 ${name}${request.switchAfter ? ' 并切换' : ''}；仅保存在本地，尚未推送。`,
-    }
+        if (request.switchAfter) {
+          try {
+            await this.git.checkContext(repo, request, signal)
+            await this.git.checkReference(repo, source, request.sourceOid, signal)
+            await this.git.checkReference(repo, `refs/heads/${name}`, request.sourceOid, signal)
+            await this.git.git(
+              repo,
+              [
+                '-c',
+                'submodule.recurse=false',
+                'switch',
+                '--no-overwrite-ignore',
+                '--no-guess',
+                name,
+              ],
+              { signal },
+            )
+          } catch (error) {
+            return {
+              outcome: 'partial',
+              output: '',
+              warning: `${name} 已创建，但切换未完成：${error.message}。请刷新检查，不要重复创建。`,
+            }
+          }
+        }
+        return {
+          outcome: 'succeeded',
+          output: `已创建 ${name}${request.switchAfter ? ' 并切换' : ''}；仅保存在本地，尚未推送。`,
+        }
+      },
+      request.switchAfter ? name : await this.git.currentBranch(repo, signal),
+    )
   }
 }
 module.exports = { GitFlowOperations, classify }

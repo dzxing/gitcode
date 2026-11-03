@@ -26,6 +26,17 @@ const incomingLabel = computed(
 const file = computed(() => merge.session.file),
   blocks = computed(() => conflictBlocks(merge.session.draft)),
   disabled = computed(() => repo.busy || merge.loading || merge.stale)
+const rebase = computed(() => merge.session.state?.rebase)
+const oursLabel = computed(() =>
+  rebase.value ? `目标基线 ${rebase.value.targetName}` : `当前分支 · ${file.value?.branch || ''}`,
+)
+const theirsLabel = computed(() =>
+  rebase.value
+    ? `正在重放 ${rebase.value.sourceBranch}`
+    : file.value?.incoming
+      ? incomingLabel.value
+      : '恢复的修改',
+)
 function apply(side: 'ours' | 'theirs' | 'both') {
   merge.session.draft = resolveBlock(
     merge.session.draft,
@@ -75,7 +86,15 @@ function reloadFile() {
         :disabled="disabled || !file.supported"
         @click="merge.resolve('ours')"
       >
-        {{ file.ours.exists ? '整文件采用当前分支' : '接受当前侧删除' }}</button
+        {{
+          file.ours.exists
+            ? rebase
+              ? '整文件采用目标基线'
+              : '整文件采用当前分支'
+            : rebase
+              ? '接受 A 侧删除'
+              : '接受当前侧删除'
+        }}</button
       ><button
         class="secondary-button"
         :disabled="disabled || !file.supported"
@@ -83,10 +102,14 @@ function reloadFile() {
       >
         {{
           file.theirs.exists
-            ? merge.session.state?.active
-              ? '整文件采用合入版本'
-              : '整文件采用恢复版本'
-            : '接受恢复侧删除'
+            ? rebase
+              ? '整文件采用重放提交'
+              : merge.session.state?.active
+                ? '整文件采用合入版本'
+                : '整文件采用恢复版本'
+            : rebase
+              ? '接受 B 侧删除'
+              : '接受恢复侧删除'
         }}</button
       ><button
         class="text-button"
@@ -131,9 +154,15 @@ function reloadFile() {
         放弃并返回列表
       </button>
     </div>
-    <div class="merge-three-panes">
+    <div
+      class="merge-three-panes"
+      :class="{ 'rebase-three-panes': rebase }"
+    >
       <div class="merge-pane">
-        <h3>当前分支 · {{ file.branch }}</h3>
+        <h3 :title="rebase ? `${oursLabel} · ${rebase.targetOid}` : oursLabel">
+          {{ rebase ? 'A · ' : '' }}{{ oursLabel
+          }}{{ rebase ? ` · ${rebase.targetOid.slice(0, 7)}` : '' }}
+        </h3>
         <pre tabindex="0">{{
           file.ours.exists ? (file.ours.text ?? '非文本内容') : '该侧没有此文件'
         }}</pre>
@@ -152,8 +181,9 @@ function reloadFile() {
         </details>
       </div>
       <div class="merge-pane">
-        <h3 :title="file.incoming ? `${incomingLabel} · ${file.incoming}` : '恢复的修改'">
-          {{ file.incoming ? `${incomingLabel} · ${file.incoming.slice(0, 7)}` : '恢复的修改' }}
+        <h3 :title="file.incoming ? `${theirsLabel} · ${file.incoming}` : theirsLabel">
+          {{ rebase ? 'B · ' : ''
+          }}{{ file.incoming ? `${theirsLabel} · ${file.incoming.slice(0, 7)}` : theirsLabel }}
         </h3>
         <pre tabindex="0">{{
           file.theirs.exists ? (file.theirs.text ?? '非文本内容') : '该侧没有此文件'
@@ -181,13 +211,19 @@ function reloadFile() {
         :disabled="disabled"
         @click="apply('ours')"
       >
-        本块采用当前分支</button
+        {{ rebase ? '本块采用目标基线' : '本块采用当前分支' }}</button
       ><button
         class="secondary-button"
         :disabled="disabled"
         @click="apply('theirs')"
       >
-        {{ merge.session.state?.active ? '本块采用合入版本' : '本块采用恢复版本' }}</button
+        {{
+          rebase
+            ? '本块采用重放提交'
+            : merge.session.state?.active
+              ? '本块采用合入版本'
+              : '本块采用恢复版本'
+        }}</button
       ><button
         class="secondary-button"
         :disabled="disabled"
@@ -205,9 +241,11 @@ function reloadFile() {
     </p>
     <footer>
       <span>{{
-        merge.session.state?.active
-          ? '保存只标记此文件已解决，不完成整个合并。'
-          : '保存后标记此文件已解决；贮藏保留，无需合并提交。'
+        rebase
+          ? '保存并标记此文件已解决，之后继续变基。'
+          : merge.session.state?.active
+            ? '保存只标记此文件已解决，不完成整个合并。'
+            : '保存后标记此文件已解决；贮藏保留，无需合并提交。'
       }}</span
       ><button
         class="primary-button"
@@ -286,6 +324,24 @@ function reloadFile() {
 }
 .merge-pane:last-child {
   border-right: 0;
+}
+.rebase-three-panes {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(140px, 1fr) minmax(140px, 1fr);
+}
+.rebase-three-panes > .merge-pane:first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+.rebase-three-panes > .merge-pane:last-child {
+  grid-column: 2;
+  grid-row: 1;
+}
+.rebase-three-panes > .merge-result {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  border-right: 0;
+  border-top: 1px solid var(--line);
 }
 .merge-pane h3 {
   padding: 8px;

@@ -86,14 +86,10 @@ export async function verifyStashRepositoryScope(page, { url, screenshotDirector
     await capture('stash-aligned-with-base')
     const beforeGraph = await page.locator('.stash-base-edge').getAttribute('d')
     await page.locator('.branch-selector > summary').click()
-    await page
-      .locator('.branch-dropdown')
-      .getByRole('button', { name: 'feature/target', exact: true })
-      .click()
     await action(() =>
       page
-        .getByRole('dialog', { name: '切换分支', exact: true })
-        .getByRole('button', { name: '确认切换', exact: true })
+        .locator('.branch-dropdown')
+        .getByRole('button', { name: 'feature/target', exact: true })
         .click(),
     )
     await expect(page.locator('.branch-selector strong')).toHaveText('feature/target')

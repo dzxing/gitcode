@@ -39,12 +39,20 @@ export async function verifyStagingZones(
         response.url().endsWith('/__gitcode/rpc') &&
         response.request().postDataJSON()?.method === 'action',
     )
-    await click()
-    const payload = await (await response).json()
+    const [received] = await Promise.all([response, click()])
+    const payload = await received.json()
     assert.equal(payload.error, undefined, JSON.stringify(payload))
     return payload.result
   }
   const batch = (name, label) => zone(name).getByRole('button', { name: new RegExp(`^${label}`) })
+  const openContext = async (row) => {
+    await row.scrollIntoViewIfNeeded()
+    await row.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    await row.click({ button: 'right' })
+    await expect(page.getByRole('menu')).toBeVisible()
+  }
   const diff = () => page.getByRole('region', { name: '文件差异', exact: true })
   const filter = () => page.getByRole('textbox', { name: '筛选工作区文件', exact: true })
   const refresh = async () => {
@@ -52,9 +60,7 @@ export async function verifyStagingZones(
     await expect(page.getByRole('button', { name: '刷新文件状态', exact: true })).toBeEnabled()
   }
   const layout = async (name) => {
-    await page.getByLabel('工作区视图选项', { exact: true }).click()
-    await page.getByRole('radio', { name, exact: true }).check()
-    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name, exact: true }).click()
   }
   const dismissNotices = async () => {
     const close = page.locator('.toast').getByRole('button', { name: '关闭提示', exact: true })
@@ -98,7 +104,7 @@ export async function verifyStagingZones(
     await expect(page.locator('.status-path')).toHaveAttribute('title', repo)
     await expect(zone('unstaged')).toBeVisible()
     await expect(zone('staged')).toBeVisible()
-    await expect(page.locator('.commit-button')).toContainText('提交全部已暂存（2）')
+    await expect(page.locator('.commit-button')).toContainText('提交 2 个文件')
 
     // An MM path is two versions, with separate checkbox identity and previews.
     const initialIndex = await readFile(path.join(repo, '.git/index'))
@@ -137,7 +143,7 @@ export async function verifyStagingZones(
     assert.deepEqual(await readFile(path.join(repo, '.git/index')), initialIndex)
     const staged = await requestAction(() => batch('unstaged', '暂存所选').click())
     assert.equal(staged.outcome, 'succeeded', JSON.stringify(staged))
-    await expect(batch('unstaged', '暂存所选')).toBeDisabled()
+    await expect(batch('unstaged', '暂存匹配')).toBeDisabled()
     await filter().fill('')
     await layout('列表视图')
     for (const name of ['src/one.txt', 'src/two.txt']) {
@@ -199,7 +205,7 @@ export async function verifyStagingZones(
     // Commit scope is the entire index, even when only A is checked for unstaging.
     await choose('staged', 'A.txt').check()
     await expect(choose('staged', 'B.txt')).not.toBeChecked()
-    await expect(page.locator('.commit-button')).toContainText('提交全部已暂存（2）')
+    await expect(page.locator('.commit-button')).toContainText('提交 2 个文件')
     await page
       .getByRole('textbox', { name: '提交说明', exact: true })
       .fill('Commit entire staged index')
@@ -210,7 +216,7 @@ export async function verifyStagingZones(
     }
     const committed = await requestAction(() => page.locator('.commit-button').click())
     assert.equal(committed.outcome, 'succeeded', JSON.stringify(committed))
-    await expect(page.locator('.commit-button')).toContainText('提交全部已暂存（0）')
+    await expect(page.locator('.commit-button')).toContainText('提交 0 个文件')
     const paths = (await git.git(repo, ['diff', '--name-only', '-z', base, 'HEAD']))
       .split('\0')
       .filter(Boolean)
@@ -230,10 +236,82 @@ export async function verifyStagingZones(
     await git.git(repo, ['commit', '--allow-empty', '-m', 'External head change'])
     await refresh()
     await expect(choose('unstaged', 'C.txt')).not.toBeChecked()
+    // Without explicit selection, a filter limits the batch scope to matching files.
+    await filter().fill('src/one')
+    const matchingOnly = await requestAction(() => batch('unstaged', '暂存匹配').click())
+    assert.equal(matchingOnly.outcome, 'succeeded')
+    assert.deepEqual(
+      (await git.status(repo)).staged.map((f) => f.path),
+      ['src/one.txt'],
+    )
+    await filter().fill('')
+    await requestAction(() => batch('staged', '全部取消暂存').click())
+    const beforeAll = (await git.status(repo)).unstaged.map((f) => f.path).sort()
+    await requestAction(() => batch('unstaged', '全部暂存').click())
+    assert.deepEqual((await git.status(repo)).staged.map((f) => f.path).sort(), beforeAll)
+    await expect(zone('unstaged').locator('.zone-select-all')).toHaveCount(0)
+    await expect(zone('unstaged').locator('.staging-batch-action')).toHaveCount(0)
+    await requestAction(() => batch('staged', '全部取消暂存').click())
+    assert.deepEqual((await git.status(repo)).unstaged.map((f) => f.path).sort(), beforeAll)
+
+    // Description is optional until populated, and survives view and density changes.
+    const description = page.getByRole('textbox', { name: '提交详细说明', exact: true })
+    await expect(description).not.toBeVisible()
+    await page.getByRole('button', { name: '详细说明（可选）', exact: true }).click()
+    await description.fill('Keep this description while changing views')
+    await layout('目录视图')
+    await expect(description).toHaveValue('Keep this description while changing views')
+    await page.getByLabel('工作区视图选项', { exact: true }).click()
+    await page.getByRole('button', { name: '详细', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await expect(description).toBeVisible()
+    await page.getByLabel('工作区视图选项', { exact: true }).click()
+    await page.getByRole('button', { name: '紧凑', exact: true }).click()
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: '折叠未暂存', exact: true }).click()
+    await expect(zone('unstaged').getByRole('tree')).not.toBeVisible()
+    await page.getByRole('button', { name: '展开未暂存', exact: true }).click()
+    await expect(zone('unstaged').getByRole('tree')).toBeVisible()
+    await expect(description).toHaveValue('Keep this description while changing views')
+
+    // Independent scroll regions keep staged changes reachable under a large working set.
+    await Promise.all(
+      Array.from({ length: 70 }, (_, i) => put(`bulk/file-${i}.txt`, `draft ${i}\n`)),
+    )
+    await Promise.all(
+      Array.from({ length: 3 }, (_, i) => put(`ready/file-${i}.txt`, `staged ${i}\n`)),
+    )
+    await git.git(repo, ['add', '--', 'ready/'])
+    await refresh()
+    await layout('列表视图')
+    const unstagedTree = zone('unstaged').getByRole('tree')
+    await expect
+      .poll(() => unstagedTree.evaluate((e) => e.scrollHeight > e.clientHeight))
+      .toBe(true)
+    await unstagedTree.evaluate((e) => {
+      e.scrollTop = e.scrollHeight
+    })
+    await expect(
+      zone('staged').getByRole('button', { name: '折叠已暂存', exact: true }),
+    ).toBeInViewport()
+    await expect(page.locator('.commit-button')).toBeInViewport()
+    const contextPath = 'bulk/file-69.txt'
+    await openContext(file('unstaged', contextPath))
+    await requestAction(() =>
+      page.getByRole('menu').getByRole('menuitem', { name: '暂存 1 个文件', exact: true }).click(),
+    )
+    assert.equal(await git.git(repo, ['show', `:${contextPath}`]), 'draft 69\n')
+    await layout('目录视图')
+    await openContext(zone('unstaged').locator('.worktree-folder-main[title="src"]'))
+    await requestAction(() =>
+      page.getByRole('menu').getByRole('menuitem', { name: '暂存 2 个文件', exact: true }).click(),
+    )
+    assert.equal(await git.git(repo, ['show', ':src/one.txt']), 'working src/one.txt\n')
     if (screenshotDirectory) {
       await dismissNotices()
       await page.screenshot({ path: path.join(screenshotDirectory, 'dual-zone-after-commit.png') })
     }
+    await description.fill('')
     return {
       transport: 'browser-http',
       realGit: true,
@@ -250,6 +328,10 @@ export async function verifyStagingZones(
       commitIncludesAllIndexRegardlessOfCheckbox: paths,
       unrelatedWorkingChangesPreserved: true,
       changedHeadClearsSelection: true,
+      defaultAllAndFilteredScopeVerified: true,
+      optionalDescriptionSurvivesViewChanges: true,
+      independentScrollingAndCollapse: true,
+      fileAndDirectoryContextActions: true,
       gitActions: actions.length,
     }
   } finally {

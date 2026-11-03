@@ -1,6 +1,14 @@
 import { test } from '@playwright/test'
 import { verifyGitFlowFinish } from '../../scripts/verify-gitflow-finish-ui.mjs'
 for (const type of ['feature', 'release', 'hotfix'])
+  test(`GitFlow ${type} Finish automatically protects and restores uncommitted files`, async ({
+    page,
+    baseURL,
+  }) => {
+    test.setTimeout(90000)
+    await verifyGitFlowFinish(page, { url: baseURL, type, dirty: true })
+  })
+for (const type of ['feature', 'release', 'hotfix'])
   test(`GitFlow ${type} Start and Finish execute real local operations`, async ({
     page,
     baseURL,

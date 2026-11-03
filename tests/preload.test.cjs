@@ -41,6 +41,16 @@ test('preload exposes named operations, never raw IPC or Node capabilities', asy
     ['gitk:action', '/repo', { action: 'stage', paths: ['a'] }],
     ['gitk:directory', '/home'],
   ])
+  await exposed.gitk.navigationRead('/repo', {
+    kind: 'info',
+    fullRef: 'refs/heads/main',
+    expectedOid: 'abc',
+  })
+  assert.deepEqual(calls.at(-1), [
+    'gitk:navigation-read',
+    '/repo',
+    { kind: 'info', fullRef: 'refs/heads/main', expectedOid: 'abc' },
+  ])
   await exposed.gitk.stashRead('/repo', 'abc', 'src/a.txt')
   assert.deepEqual(calls.at(-1), ['gitk:stash-read', '/repo', 'abc', 'src/a.txt'])
   await exposed.gitk.syncPlan('/repo', 'push', { expectedHead: 'abc', expectedBranch: 'main' })
@@ -66,6 +76,15 @@ test('preload exposes named operations, never raw IPC or Node capabilities', asy
     '/repo',
     { expectedHead: 'abc', expectedBranch: 'main', paths: ['src/a.txt'] },
   ])
+  assert.equal(exposed.gitkContextMenu.invoke, undefined)
+  const contextRequest = {
+    requestId: 1,
+    items: [{ id: 'copy-name', label: '复制分支名', enabled: true }],
+  }
+  await exposed.gitkContextMenu.popup(contextRequest)
+  assert.deepEqual(calls.at(-1), ['gitk:context-menu:popup', contextRequest])
+  await exposed.gitkContextMenu.close(1)
+  assert.deepEqual(calls.at(-1), ['gitk:context-menu:close', 1])
   assert.equal(exposed.gitkApp.invoke, undefined)
   await exposed.gitkApp.edit('copy')
   assert.deepEqual(calls.at(-1), ['gitk:app:edit', 'copy'])

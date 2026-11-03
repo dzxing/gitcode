@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import FileList from './FileList.vue'
 import FileViewToggle from './FileViewToggle.vue'
@@ -7,10 +7,31 @@ import Icon from './Icon.vue'
 import WorktreeChanges from './WorktreeChanges.vue'
 import StashInspector from './StashInspector.vue'
 import StashCreateForm from './StashCreateForm.vue'
+import RebaseInspector from './RebaseInspector.vue'
 import { useStashStore } from '../stores/stash'
+import { useRebaseStore } from '../stores/rebase'
+import { useStagingStore } from '../stores/staging'
 
 const store = useRepositoryStore()
+const descriptionExpanded = ref(false)
+watch(
+  () => store.repo.path,
+  () => {
+    descriptionExpanded.value = false
+  },
+)
+const showDescription = computed(() => descriptionExpanded.value || !!description.value)
 const stash = useStashStore()
+const rebase = useRebaseStore()
+const staging = useStagingStore()
+const scopeHint = computed(
+  () =>
+    !!staging.view(store.repo.path).query.trim() ||
+    !!staging.view(store.repo.path).selected.staged.length,
+)
+const detailMessage = computed(() =>
+  store.rebasePlanning ? rebase.previewMessage : store.commitBody,
+)
 const description = computed({
   get: () => store.commitDescription,
   set: (value) => {
@@ -59,7 +80,8 @@ defineExpose({ submit })
 
 <template>
   <aside class="inspector">
-    <StashInspector v-if="store.selectedStash" />
+    <RebaseInspector v-if="store.repo.merge?.rebase" />
+    <StashInspector v-else-if="store.selectedStash" />
     <template v-else-if="store.selectedCommit">
       <header class="panel-header">
         <div class="panel-title"><Icon name="GitCommitHorizontal" /><strong>提交详情</strong></div>
@@ -67,6 +89,7 @@ defineExpose({ submit })
           class="icon-button"
           aria-label="返回工作区"
           title="返回工作区"
+          :disabled="store.rebasePlanning"
           @click="store.clearSelection()"
         >
           <Icon name="X" />
@@ -83,7 +106,9 @@ defineExpose({ submit })
             />
           </button>
         </div>
-        <h2>{{ store.selectedCommit.subject }}</h2>
+        <h2>
+          {{ store.rebasePlanning ? detailMessage.split('\n')[0] : store.selectedCommit.subject }}
+        </h2>
         <div class="detail-author">
           <span class="avatar large">{{
             store.selectedCommit.author.slice(0, 1).toUpperCase()
@@ -95,9 +120,9 @@ defineExpose({ submit })
         </div>
         <p class="detail-date">{{ new Date(store.selectedCommit.date).toLocaleString('zh-CN') }}</p>
         <pre
-          v-if="store.commitBody.includes('\n')"
+          v-if="detailMessage.includes('\n')"
           class="commit-body"
-          >{{ store.commitBody.split('\n').slice(1).join('\n').trim() }}</pre>
+          >{{ detailMessage.split('\n').slice(1).join('\n').trim() }}</pre>
         <div class="detail-full-hash">{{ store.selectedCommit.hash }}</div>
         <div
           v-if="store.selectedCommit.parents.length"
@@ -168,7 +193,7 @@ defineExpose({ submit })
           ><span class="pill">{{ store.changes }}</span>
         </div>
         <div class="inspector-header-actions">
-          <FileViewToggle context="worktree" /><button
+          <button
             class="icon-button"
             :class="{ spin: store.busy }"
             :disabled="store.busy"
@@ -183,17 +208,6 @@ defineExpose({ submit })
           </button>
         </div>
       </header>
-      <div class="changes-summary">
-        <span
-          ><span class="live-dot"></span
-          >{{ store.changes ? `${store.changes} 个文件等待处理` : '工作区是干净的' }}</span
-        ><span class="branch-chip"
-          ><Icon
-            name="GitBranch"
-            :size="12"
-          />{{ store.repo.branch }}</span
-        >
-      </div>
       <WorktreeChanges />
       <div
         class="worktree-compose-tabs"
@@ -228,17 +242,32 @@ defineExpose({ submit })
         class="commit-form"
         @submit.prevent="submit"
       >
-        <div class="commit-form-heading">
-          <Icon name="GitCommitHorizontal" /><strong>创建提交</strong
-          ><span>{{ store.repo.staged.length }} 个已暂存文件</span>
-        </div>
-        <div class="commit-editor">
+        <div
+          class="commit-editor"
+          :class="{ 'description-collapsed': !showDescription }"
+        >
           <input
             v-model="title"
             placeholder="用一句话描述这次更改…"
             aria-label="提交说明"
             maxlength="500"
-          /><textarea
+          /><button
+            type="button"
+            class="description-toggle"
+            :aria-expanded="showDescription"
+            aria-controls="commit-description"
+            :disabled="!!description"
+            @click="descriptionExpanded = !descriptionExpanded"
+          >
+            详细说明{{ description ? '' : '（可选）'
+            }}<Icon
+              name="ChevronRight"
+              :size="11"
+              :class="{ 'is-open': showDescription }"
+            /></button
+          ><textarea
+            v-show="showDescription"
+            id="commit-description"
             v-model="description"
             placeholder="补充说明（可选）"
             aria-label="提交详细说明"
@@ -253,6 +282,7 @@ defineExpose({ submit })
         <div
           id="commit-hint"
           class="commit-hint"
+          :class="{ 'commit-hint-hidden': !commitBlocked && !scopeHint }"
           role="status"
         >
           <Icon
@@ -271,7 +301,7 @@ defineExpose({ submit })
             :name="store.busy ? 'LoaderCircle' : 'Check'"
             :class="{ spin: store.busy }"
             :size="16"
-          /><span>提交全部已暂存（{{ store.repo.staged.length }}）</span><kbd>Ctrl ↵</kbd>
+          /><span>提交 {{ store.repo.staged.length }} 个文件</span><kbd>Ctrl ↵</kbd>
         </button>
       </form>
     </template>
@@ -279,6 +309,50 @@ defineExpose({ submit })
 </template>
 
 <style scoped>
+.commit-hint.commit-hint-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.commit-button {
+  margin-top: 8px;
+}
+.inspector .description-toggle {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 4px 11px 7px;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+.description-toggle svg {
+  transition: transform 120ms ease;
+}
+.description-toggle svg.is-open {
+  transform: rotate(90deg);
+}
+.commit-editor.description-collapsed .message-length {
+  bottom: 6px;
+}
+.inspector .commit-form {
+  flex-shrink: 0;
+  padding: 10px 12px 12px;
+}
+.inspector .commit-editor textarea {
+  height: 72px;
+  max-height: 125px;
+}
+.inspector .commit-hint {
+  margin: 7px 0;
+  font-size: 10px;
+}
+
 .worktree-compose-tabs {
   display: flex;
   flex-shrink: 0;

@@ -16,8 +16,20 @@ import { useMergeStore } from '../stores/merge'
 import DiffViewer from './DiffViewer.vue'
 import { useContextMenuStore } from '../stores/contextMenu'
 import { useStashStore } from '../stores/stash'
+import { branchReference } from '../references'
+import { useGraphViewStore } from '../stores/graphView'
 
 const store = useRepositoryStore()
+const graphView = useGraphViewStore()
+const graphBranches = computed(() =>
+  graphView.visibleBranches(store.repo.path, store.repo.branches),
+)
+const graphReferenceKeys = computed(() => new Set(graphBranches.value.map(branchReference)))
+function resolveVisibleReferences(commit: Commit) {
+  return resolveCommitReferences(commit, store.repo.branches).filter(
+    (reference) => !reference.branch || graphReferenceKeys.value.has(reference.key),
+  )
+}
 const menu = useContextMenuStore()
 const stash = useStashStore()
 const merge = useMergeStore()
@@ -57,16 +69,13 @@ const referenceData = computed(
   () =>
     new Map(
       store.visibleCommits.map((commit) => {
-        const references = resolveCommitReferences(commit, store.repo.branches)
+        const references = resolveVisibleReferences(commit)
         return [commit.hash, { references, groups: groupCommitReferences(references) }]
       }),
     ),
 )
 function references(commit: Commit) {
-  return (
-    referenceData.value.get(commit.hash)?.references ||
-    resolveCommitReferences(commit, store.repo.branches)
-  )
+  return referenceData.value.get(commit.hash)?.references || resolveVisibleReferences(commit)
 }
 function referenceGroups(commit: Commit): ReferenceGroup[] {
   return referenceData.value.get(commit.hash)?.groups || groupCommitReferences(references(commit))
@@ -165,11 +174,7 @@ async function activateReference(commit: Commit, reference: CommitReference, eve
   }
   if (store.busy || store.modal || branch.current) return
   const trigger = event.currentTarget as HTMLElement
-  const succeeded = await store.run(
-    'checkout',
-    { name: branch.name, expectedOid: branch.hash },
-    store.captureOperation(),
-  )
+  const succeeded = await store.checkoutBranch(branch)
   if (succeeded) {
     await nextTick()
     // The visible reference key changes to HEAD after a successful checkout.
@@ -290,6 +295,22 @@ function clearHistoryFilters() {
           /></button
       ></label>
     </header>
+    <div
+      v-if="
+        store.repo.branches.some((branch) => graphView.isHidden(store.repo.path, branch)) ||
+        graphView.soloActive(store.repo.path, store.repo.branches)
+      "
+      class="filter-banner"
+      role="status"
+    >
+      <span>{{
+        graphView.soloActive(store.repo.path, store.repo.branches)
+          ? 'Solo：仅显示选定引用的历史'
+          : '部分引用已从图谱隐藏'
+      }}</span>
+      <button @click="graphView.reset(store.repo.path)">显示全部引用</button>
+      <span v-if="graphView.warning">{{ graphView.warning }}</span>
+    </div>
     <div
       v-if="store.branchFilter"
       class="filter-banner"

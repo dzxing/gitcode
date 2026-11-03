@@ -93,6 +93,8 @@ test('file density preserves selections and drafts, distinguishes paths and pers
   }
   await page.goto('/')
   await open()
+  const settings = () => page.getByLabel('工作区视图选项', { exact: true }).click()
+  await settings()
   const mode = page.getByRole('group', { name: '文件列表显示方式' })
   await expect(mode.getByRole('button', { name: '紧凑', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -106,7 +108,9 @@ test('file density preserves selections and drafts, distinguishes paths and pers
     .fill('Keep draft while changing density')
   await page.locator('[data-file-path="src/a/index.ts"]').click()
   await expect(page.getByRole('region', { name: '文件差异' })).toBeVisible()
+  await settings()
   await mode.getByRole('button', { name: '紧凑', exact: true }).click()
+  await page.keyboard.press('Escape')
   await expect(page.locator('.changes-scroll .file-row').first()).toHaveCSS('height', '32px')
   await expect(page.locator('.changes-scroll .file-list-compact')).toHaveCount(2)
   await expect(page.locator('.file-row.selected [data-file-path="src/a/index.ts"]')).toHaveCount(1)
@@ -137,6 +141,7 @@ test('file density preserves selections and drafts, distinguishes paths and pers
   expect(label!.x + label!.width).toBeLessThanOrEqual(status!.x)
   expect(status!.x + status!.width).toBeLessThanOrEqual(action!.x)
   await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
   await page.locator('.commit-select').first().click()
   await expect(mode.getByRole('button', { name: '紧凑', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -147,16 +152,19 @@ test('file density preserves selections and drafts, distinguishes paths and pers
   await page.keyboard.press('Enter')
   await expect(page.locator('.file-row').first()).toHaveCSS('height', '40px')
   await page.getByRole('button', { name: '返回工作区', exact: true }).click()
+  await settings()
   await expect(mode.getByRole('button', { name: '紧凑', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
   await page.reload()
   await open()
+  await settings()
   await expect(mode.getByRole('button', { name: '紧凑', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
+  await page.keyboard.press('Escape')
   await page.locator('.commit-select').first().click()
   await expect(mode.getByRole('button', { name: '详细', exact: true })).toHaveAttribute(
     'aria-pressed',

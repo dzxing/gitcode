@@ -85,10 +85,28 @@ class SyncOperations {
       if (!this.validRemote(result[0])) throw new Error('当前不支持该远程传输协议。')
       if (result[0].startsWith('-') || /[\r\n\0]/.test(result[0]))
         throw new Error('无效的远程地址。')
+      // Push inspection passes the already expanded URL to ls-remote/fetch,
+      // while publication uses the named remote. A second insteadOf expansion
+      // would inspect a different endpoint from the one receiving the push.
+      if (push)
+        for (const record of raw.split('\0').filter(Boolean)) {
+          const separator = record.indexOf('\n')
+          const key = record.slice(0, separator),
+            prefix = record.slice(separator + 1)
+          if (
+            separator >= 0 &&
+            /^url\..*\.insteadof$/i.test(key) &&
+            prefix &&
+            result[0].startsWith(prefix)
+          )
+            throw new Error('远程地址存在多级重写，无法可靠核对推送目标。请使用明确的远程地址。')
+        }
       return result[0]
     }
     const entries = []
     let destinationRef = ''
+    let trackedDestination = false
+    let publish
     if (kind === 'fetch') {
       for (const remote of remotes.filter(
         (name) => !boolean(config.get(`remote.${name}.skipfetchall`)),
@@ -123,16 +141,37 @@ class SyncOperations {
         throw new Error('同步需要已提交的本地分支，当前可能是空仓库或分离 HEAD。')
       const pullRemote = config.get(`branch.${branch}.remote`)
       const merge = config.all(`branch.${branch}.merge`)
-      if (!pullRemote || merge.length !== 1 || !merge[0]?.startsWith('refs/heads/'))
+      const firstPush = kind === 'push' && !pullRemote && merge.length === 0
+      if (!firstPush && (!pullRemote || merge.length !== 1 || !merge[0]?.startsWith('refs/heads/')))
         throw new Error(`分支 ${branch} 尚无明确上游，请先通过 Git 配置上游后重试。`)
-      await git.git(repo, ['check-ref-format', merge[0]], { signal })
-      const remote =
-        kind === 'push'
+      if (expected.publish && !firstPush)
+        throw new Error('分支已有关联或当前不是首次推送，请重新读取目标。')
+      if (!firstPush) await git.git(repo, ['check-ref-format', merge[0]], { signal })
+      const requested = expected.publish
+      if (
+        requested &&
+        (typeof requested.remote !== 'string' || typeof requested.branch !== 'string')
+      )
+        throw new Error('请选择有效的推送远程和目标分支。')
+      const preferredRemote =
+        config.get(`branch.${branch}.pushremote`) || config.get('remote.pushdefault')
+      const remote = firstPush
+        ? requested?.remote ||
+          preferredRemote ||
+          (remotes.includes('origin') ? 'origin' : remotes[0])
+        : kind === 'push'
           ? config.get(`branch.${branch}.pushremote`) ||
             config.get('remote.pushdefault') ||
             pullRemote
           : pullRemote
-      destinationRef = kind === 'push' && remote !== pullRemote ? `refs/heads/${branch}` : merge[0]
+      if (firstPush) {
+        const target = requested ? await git.branchName(repo, requested.branch, signal) : branch
+        destinationRef = `refs/heads/${target}`
+        publish = { remote, branch: target, remotes }
+      } else
+        destinationRef =
+          kind === 'push' && remote !== pullRemote ? `refs/heads/${branch}` : merge[0]
+      trackedDestination = !firstPush && remote === pullRemote && destinationRef === merge[0]
       await git.git(repo, ['check-ref-format', destinationRef], { signal })
       if (kind === 'push') await git.noInProgress(repo, signal)
       if (
@@ -142,6 +181,44 @@ class SyncOperations {
       )
         throw new Error('该远程启用了镜像或自定义推送映射，当前不支持；不会回退到普通 git push。')
       let trackingRef = ''
+      if (firstPush) {
+        if (
+          remotes.some(
+            (other) =>
+              other !== remote &&
+              (remote.startsWith(other + '/') || other.startsWith(remote + '/')),
+          )
+        )
+          throw new Error('远程名称存在前缀重叠，无法可靠建立关联。')
+        const destinations = []
+        for (const mapping of config.all(`remote.${remote}.fetch`)) {
+          const [from, to, extra] = String(mapping).replace(/^\+/, '').split(':')
+          if (
+            extra !== undefined ||
+            !from?.startsWith('refs/heads/') ||
+            !to?.startsWith(`refs/remotes/${remote}/`)
+          )
+            continue
+          let mapped = ''
+          if (!from.includes('*') && from === destinationRef && !to.includes('*')) mapped = to
+          else if ((from.match(/\*/g) || []).length === 1 && (to.match(/\*/g) || []).length === 1) {
+            const [prefix, suffix] = from.split('*')
+            if (destinationRef.startsWith(prefix) && destinationRef.endsWith(suffix)) {
+              const middle = destinationRef.slice(
+                prefix.length,
+                suffix ? -suffix.length : undefined,
+              )
+              if (middle) mapped = to.replace('*', middle)
+            }
+          }
+          if (mapped) destinations.push(mapped)
+        }
+        const unique = [...new Set(destinations)]
+        if (unique.length !== 1)
+          throw new Error('远程缺少唯一的分支获取映射，无法建立推送关联。请先检查远程配置。')
+        trackingRef = unique[0]
+        await git.git(repo, ['check-ref-format', trackingRef], { signal })
+      }
       if (kind === 'pull') {
         await this.cleanForPull(repo, signal)
         trackingRef = (
@@ -174,6 +251,7 @@ class SyncOperations {
           contextBranch,
           kind,
           destinationRef,
+          publish,
           method,
         }),
       )
@@ -189,8 +267,83 @@ class SyncOperations {
       selection,
       sourceRef: branch ? `refs/heads/${branch}` : '',
       destinationRef,
+      trackedDestination,
+      publish,
       entries,
       fingerprint,
+    }
+  }
+  async remoteCheck(plan, signal) {
+    const git = this.service,
+      entry = plan.entries[0]
+    try {
+      const raw = await git.git(
+        plan.repo,
+        ['ls-remote', '--refs', '--', entry.url, plan.destinationRef],
+        { signal, timeout: 30000 },
+      )
+      const matches = raw
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => line.split('\t'))
+        .filter((fields) => fields[1] === plan.destinationRef)
+      if (!matches.length)
+        return {
+          state: plan.trackedDestination ? 'deleted' : 'absent',
+          oid: '',
+          checkedAt: Date.now(),
+        }
+      if (matches.length !== 1 || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(matches[0][0]))
+        throw new Error('远端返回的目标引用无效。')
+      const oid = matches[0][0]
+      // Fetch objects only: no tracking refs, FETCH_HEAD, index or worktree changes.
+      await git.git(plan.repo, ['fetch', ...fetchFlags, '--', entry.url, plan.destinationRef], {
+        signal,
+        timeout: 30000,
+      })
+      const counts = (
+        await git.git(plan.repo, ['rev-list', '--left-right', '--count', `${plan.head}...${oid}`], {
+          signal,
+        })
+      )
+        .trim()
+        .split(/\s+/)
+        .map(Number)
+      if (counts.length !== 2 || !counts.every(Number.isSafeInteger))
+        throw new Error('无法确认提交关系。')
+      // Counts in shallow histories cannot establish safe ancestry.
+      const safe = (
+        await git.git(plan.repo, ['merge-base', '--all', plan.head, oid], {
+          signal,
+          allowedCodes: [0, 1],
+        })
+      )
+        .trim()
+        .split('\n')
+        .includes(oid)
+      const [ahead, behind] = counts
+      return {
+        state:
+          oid === plan.head
+            ? 'current'
+            : safe
+              ? 'forward'
+              : behind && !ahead
+                ? 'behind'
+                : 'diverged',
+        oid,
+        ahead,
+        behind,
+        checkedAt: Date.now(),
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error
+      return {
+        state: 'error',
+        message: '未能确认远端状态。请检查网络与认证后重试。',
+        checkedAt: Date.now(),
+      }
     }
   }
   async plan(repo, kind, expected, signal) {
@@ -198,6 +351,7 @@ class SyncOperations {
     if (typeof expected?.expectedHead !== 'string' || typeof expected?.expectedBranch !== 'string')
       throw new Error('缺少同步上下文，请刷新。')
     const value = await this.configuration(repo, kind, expected, signal)
+    if (kind === 'push') value.remoteCheck = await this.remoteCheck(value, signal)
     const id = randomUUID(),
       expiresAt = Date.now() + 300000
     for (const [key, plan] of this.plans) if (plan.expiresAt < Date.now()) this.plans.delete(key)
@@ -213,6 +367,8 @@ class SyncOperations {
       sourceRef: value.sourceRef,
       destinationRef: value.destinationRef,
       expiresAt,
+      ...(value.publish ? { publish: value.publish } : {}),
+      ...(value.remoteCheck ? { remoteCheck: value.remoteCheck } : {}),
       remotes: value.entries.map(({ remote, url }) => ({ name: remote, address: displayUrl(url) })),
     }
   }
@@ -224,6 +380,9 @@ class SyncOperations {
         expectedHead: plan.contextHead,
         expectedBranch: plan.contextBranch,
         method: plan.method,
+        ...(plan.publish
+          ? { publish: { remote: plan.publish.remote, branch: plan.publish.branch } }
+          : {}),
         ...plan.selection,
       },
       signal,
@@ -233,12 +392,10 @@ class SyncOperations {
   }
   async cleanForPull(repo, signal) {
     const git = this.service
-    if (
-      (await git.git(repo, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { signal }))
-        .length
-    )
-      throw new Error('当前版本仅支持干净工作区拉取。请先提交，或通过外部 Git 将更改存入 stash。')
     await git.noInProgress(repo, signal)
+    const state = await git.status(repo, signal)
+    if ([...state.staged, ...state.unstaged].some((f) => f.status === 'U'))
+      throw new Error('请先解决已有冲突，再拉取远端更新。')
   }
   async execute(repo, request, signal) {
     const plan = this.plans.get(request.planId)
@@ -278,6 +435,14 @@ class SyncOperations {
         }
       } else if (plan.kind === 'push') {
         const entry = plan.entries[0]
+        if (!plan.remoteCheck || ['error', 'behind', 'diverged'].includes(plan.remoteCheck.state))
+          throw new Error(
+            plan.remoteCheck?.state === 'error'
+              ? plan.remoteCheck.message
+              : '远端包含尚未整合的提交，请先获取并检查更新。',
+          )
+        // Explicit expected tip protects both create and update intent. Ancestry was
+        // checked above; the lease must never be used to permit divergent updates.
         output = await git.git(
           repo,
           [
@@ -289,6 +454,7 @@ class SyncOperations {
             'push.recurseSubmodules=no',
             'push',
             '--no-force',
+            `--force-with-lease=${plan.destinationRef}:${plan.remoteCheck.oid}`,
             '--no-follow-tags',
             '--recurse-submodules=no',
             '--porcelain',
@@ -299,6 +465,19 @@ class SyncOperations {
           { signal, timeout: 300000 },
         )
         steps.push({ remote: entry.remote, ok: true })
+        if (plan.publish) {
+          await this.verify(plan, signal)
+          await git.git(
+            repo,
+            ['branch', `--set-upstream-to=${entry.trackingRef}`, '--', plan.branch],
+            { signal },
+          )
+          await git.git(
+            repo,
+            ['config', '--local', `branch.${plan.branch}.pushRemote`, entry.remote],
+            { signal },
+          )
+        }
       } else {
         temporary = `refs/gitcode/requests/${randomUUID()}`
         const entry = plan.entries[0]
@@ -329,27 +508,9 @@ class SyncOperations {
         steps.push({ remote: entry.remote, ok: true })
         await this.verify(plan, signal)
         await this.cleanForPull(repo, signal)
-        if (plan.method === 'merge') mergeResult = await git.merge.start(repo, temporaryOid, signal)
-        else {
-          await git.merge.checkIgnoredPaths(repo, temporaryOid, signal)
-          output += await git.git(
-            repo,
-            [
-              '-c',
-              'merge.autoStash=false',
-              '-c',
-              'submodule.recurse=false',
-              'merge',
-              '--ff-only',
-              '--no-autostash',
-              '--no-overwrite-ignore',
-              '--no-edit',
-              '--no-stat',
-              temporaryOid,
-            ],
-            { signal, timeout: 300000 },
-          )
-        }
+        mergeResult = await git.merge.integrate(repo, temporaryOid, signal, {
+          ffOnly: plan.method !== 'merge',
+        })
       }
     } catch (error) {
       failure = error
@@ -374,14 +535,16 @@ class SyncOperations {
           details = git.safeError(error)
           syncProblem = 'diverged'
           failure = new Error(
-            `本地有 ${counts[0]} 个、远端有 ${counts[1]} 个独有提交，无法快进。请选择“合并远端更新”继续。`,
+            `本地有 ${counts[0]} 个、远端有 ${counts[1]} 个独有提交，无法快进。请选择“尽可能快进（否则合并）”继续。`,
           )
         }
       }
       if (
         !signal?.aborted &&
         plan.kind === 'push' &&
-        /Updates were rejected|non-fast-forward|fetch first/i.test(git.safeError(error))
+        /Updates were rejected|non-fast-forward|fetch first|stale info|尚未整合/i.test(
+          git.safeError(error),
+        )
       ) {
         details = git.safeError(error)
         syncProblem = 'push-rejected'
@@ -421,9 +584,11 @@ class SyncOperations {
       ...(failure && plan.kind === 'push'
         ? {
             warning:
-              syncProblem === 'push-rejected'
-                ? '请获取并核对目标分支，再重新确认同步操作。'
-                : '推送未正常结束，远端结果可能无法确认。请获取并核对目标分支，不要直接重复执行。',
+              plan.publish && steps.some((step) => step.ok)
+                ? '提交已推送，但远端关联未完成。请核对当前分支与关联配置，不要重复发布。'
+                : syncProblem === 'push-rejected'
+                  ? '请获取并核对目标分支，再重新确认同步操作。'
+                  : '推送未正常结束，远端结果可能无法确认。请获取并核对目标分支，不要直接重复执行。',
           }
         : {}),
       ...(failure ? { error: git.safeError(failure) } : {}),

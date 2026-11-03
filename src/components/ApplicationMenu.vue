@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { version as appVersion } from '../../package.json'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import { useContextMenuStore } from '../stores/contextMenu'
@@ -12,7 +13,7 @@ import { pathName } from '../services/desktop'
 import Icon from './Icon.vue'
 
 const props = defineProps<{ platform: string }>()
-const emit = defineEmits<{ search: [] }>()
+const emit = defineEmits<{ search: []; resetView: [] }>()
 const store = useRepositoryStore(),
   context = useContextMenuStore(),
   bridge = applicationBridge()
@@ -53,13 +54,22 @@ const unsubscribers: (() => void)[] = []
 let mounted = false,
   publishing = false,
   publishAgain = false
-const blocked = computed(() => !!store.modal || layerOpen.value || quitId.value !== null)
+const blocked = computed(
+  () => !!store.modal || store.rebasePlanning || layerOpen.value || quitId.value !== null,
+)
 const state = computed<ApplicationMenuState>(() => {
   const enabled: string[] = ['file.quit']
   if (!blocked.value) {
     enabled.push('help.shortcuts', 'help.gitDocs', 'help.gitBook', 'help.about')
     if (!store.busy) {
-      enabled.push('file.newTab', 'file.open', 'file.clone', 'file.create', 'file.closeTab')
+      enabled.push(
+        'file.newTab',
+        'file.open',
+        'file.clone',
+        'file.create',
+        'file.closeTab',
+        'view.resetLayout',
+      )
       store.recent.forEach((_, i) => enabled.push(`file.recent.${i}`))
       if (!store.isNewTab)
         enabled.push(
@@ -237,6 +247,7 @@ async function run(id: string) {
     else if (id === 'view.time') store.showTime = !store.showTime
     else if (id === 'view.sha') store.showSha = !store.showSha
     else if (id === 'view.resetColumns') store.resetColumns()
+    else if (id === 'view.resetLayout') emit('resetView')
     else if (id === 'help.shortcuts') store.modal = 'help'
     else if (id === 'help.gitDocs') await store.openResource('git-docs')
     else if (id === 'help.gitBook') await store.openResource('git-book')
@@ -245,7 +256,7 @@ async function run(id: string) {
         ? await bridge.info()
         : {
             name: 'GitCode',
-            version: '0.1.0',
+            version: appVersion,
             electron: store.connected ? '浏览器 + 本机核心' : '浏览器界面体验',
             platform: store.runtime?.platform || navigator.platform,
           }
@@ -684,7 +695,8 @@ onUnmounted(() => {
           }}
         </p>
         <p v-if="store.draftTabs.length">
-          以下 {{ store.draftTabs.length }} 个标签有尚未保存的草稿（提交说明或冲突处理结果）：
+          以下
+          {{ store.draftTabs.length }} 个标签有尚未保存的草稿（提交说明、变基编排或冲突处理结果）：
         </p>
         <ul v-if="store.draftTabs.length">
           <li
@@ -701,7 +713,11 @@ onUnmounted(() => {
             v-model="discardDrafts"
             type="checkbox"
             :disabled="!!quitMode"
-          />{{ store.mergeDraftTabs.size ? '确认丢弃这些草稿' : '确认丢弃这些说明草稿' }}</label
+          />{{
+            store.mergeDraftTabs.size || store.rebasePlanning
+              ? '确认丢弃这些草稿'
+              : '确认丢弃这些说明草稿'
+          }}</label
         >
         <p
           v-if="quitError"

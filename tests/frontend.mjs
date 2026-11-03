@@ -58,7 +58,8 @@ try {
   const { default: ContextMenu } = await vite.ssrLoadModule('/src/components/ContextMenu.vue')
   const { useSidebarStore } = await vite.ssrLoadModule('/src/stores/sidebar.ts')
   const { useWorktreeStore } = await vite.ssrLoadModule('/src/stores/worktree.ts')
-  const { normalizeSidebarOrder, sortSidebarBranches } = await vite.ssrLoadModule('/src/sidebar.ts')
+  const { normalizeSidebarOrder, sortSidebarBranches, remoteBranchGroups, branchDirectoryTree } =
+    await vite.ssrLoadModule('/src/sidebar.ts')
   const { branchTracking } = await vite.ssrLoadModule('/src/branchTracking.ts')
   const { buildGraph, buildHistoryGraph } = await vite.ssrLoadModule('/src/graph.ts')
   const { resolveCommitReferences, groupCommitReferences } =
@@ -471,6 +472,146 @@ try {
     )
   })
 
+  await test('Remote tree groups remotes, pins once, sorts numeric paths and preserves full branch identities', () => {
+    const names = [
+      'upstream/main',
+      'origin/feature/dev10',
+      'origin/feature/dev2',
+      'origin/feature/team/task',
+      'origin/main',
+      'team/company/topic',
+    ]
+    const branches = names.map((name) => ({
+      name,
+      fullRef: `refs/remotes/${name}`,
+      kind: 'remote',
+      current: false,
+    }))
+    const pinned = 'refs/remotes/origin/feature/dev10'
+    const groups = remoteBranchGroups(
+      branches,
+      ['upstream', 'origin', 'empty', 'team/company'],
+      [pinned],
+    )
+    assert.deepEqual(
+      groups.map((group) => group.remote),
+      ['origin', 'empty', 'team/company', 'upstream'],
+    )
+    assert.equal(groups[0].favorites[0].branch, branches[1])
+    assert.equal(groups[0].favorites[0].label, 'feature/dev10')
+    const feature = groups[0].children.find((node) => node.label === 'feature')
+    assert.deepEqual(
+      feature.children.map((node) => node.label),
+      ['dev2', 'team'],
+    )
+    assert.equal(feature.children[0].branch, branches[2])
+    assert.equal(groups[0].count, 4)
+    assert.equal(groups[1].count, 0)
+    assert.equal(groups[2].children[0].label, 'topic')
+    const filtered = remoteBranchGroups(branches, ['origin'], [pinned], 'name-asc', 'dev2')
+    assert.equal(filtered.length, 1)
+    assert.equal(filtered[0].children[0].children[0].branch, branches[2])
+    const ordinary = remoteBranchGroups(branches, [], [], 'name-desc')[0].children.find(
+      (node) => node.label === 'feature',
+    )
+    assert.deepEqual(
+      ordinary.children.map((node) => node.label),
+      ['team', 'dev10', 'dev2'],
+    )
+    const alias = {
+      ...branches[4],
+      name: 'origin/HEAD',
+      fullRef: 'refs/remotes/origin/HEAD',
+      symbolicTarget: 'refs/remotes/origin/main',
+    }
+    assert.equal(remoteBranchGroups([alias], [], []).length, 0)
+  })
+  await test('Remote directory preference and collapse state persist per repository without changing other branches', () => {
+    const key = 'gitcode.branch-preferences',
+      previous = storage.get(key)
+    try {
+      freshStore()
+      const sidebar = useSidebarStore()
+      assert.equal(sidebar.groupDirectories('/tree-test'), true)
+      sidebar.toggleGroupDirectories('/tree-test')
+      sidebar.toggleDirectoryCollapsed(
+        '/tree-test',
+        JSON.stringify(['remote', 'origin', 'feature']),
+      )
+      assert.equal(sidebar.groupDirectories('/other'), true)
+      freshStore()
+      const restored = useSidebarStore()
+      assert.equal(restored.groupDirectories('/tree-test'), false)
+      assert.equal(
+        restored.collapsedDirectories(
+          '/tree-test',
+          JSON.stringify(['remote', 'origin', 'feature']),
+        ),
+        true,
+      )
+      restored.toggleGroupDirectories('/tree-test')
+      assert.equal(
+        restored.collapsedDirectories(
+          '/tree-test',
+          JSON.stringify(['remote', 'origin', 'feature']),
+        ),
+        true,
+      )
+    } finally {
+      if (previous === undefined) storage.delete(key)
+      else storage.set(key, previous)
+    }
+  })
+
+  await test('Directory trees scope local, GitFlow and tag folders independently and keep current-first sorting', () => {
+    const branches = ['feature/task10', 'feature/task2', 'main'].map((name, index) => ({
+      name,
+      kind: 'local',
+      fullRef: `refs/heads/${name}`,
+      current: index === 1,
+    }))
+    const local = branchDirectoryTree(branches, ['local'], [], 'current-first')
+    const flow = branchDirectoryTree(branches, ['gitflow'], [], 'current-first')
+    assert.equal(local.children[0].label, 'feature')
+    assert.equal(local.children[0].children[0].branch, branches[1])
+    assert.notEqual(local.children[0].key, flow.children[0].key)
+    assert.equal(
+      branchDirectoryTree([{ name: 'versions/v2', kind: 'tag' }], ['tag'], []).children[0].label,
+      'versions',
+    )
+  })
+
+  await test('Legacy remote display preferences migrate to navigation-wide settings with isolated folder keys', () => {
+    const key = 'gitcode.branch-preferences',
+      previous = storage.get(key)
+    try {
+      storage.set(
+        key,
+        JSON.stringify({
+          '/legacy': {
+            remoteTree: false,
+            remoteCollapsed: [JSON.stringify(['origin', 'feature'])],
+          },
+        }),
+      )
+      freshStore()
+      const sidebar = useSidebarStore()
+      assert.equal(sidebar.groupDirectories('/legacy'), false)
+      assert.equal(
+        sidebar.collapsedDirectories('/legacy', JSON.stringify(['remote', 'origin', 'feature'])),
+        true,
+      )
+      assert.equal(
+        sidebar.collapsedDirectories('/legacy', JSON.stringify(['local', 'feature'])),
+        false,
+      )
+      assert.equal(sidebar.groupDirectories('/other'), true)
+    } finally {
+      if (previous === undefined) storage.delete(key)
+      else storage.set(key, previous)
+    }
+  })
+
   await test('Sidebar reorder menu remains a UI preference and disables the top boundary', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -635,13 +776,7 @@ try {
     assert.equal(flow.panel, 'start')
     assert.equal(flow.startEntryBlocked, '')
     flow.name = 'prepared-work'
-    assert.match(flow.startBlocked, /未提交更改/)
-    let writes = 0
-    nativeHandler = async () => {
-      writes++
-    }
-    assert.equal(await flow.execute('gitflow-start'), false)
-    assert.equal(writes, 0)
+    assert.equal(flow.startBlocked, '')
     store.repo.unstaged = []
     store.repo.gitflow.writeError = '规则来自全局配置，只能读取'
     assert.equal(flow.startEntryBlocked, '')
@@ -804,7 +939,8 @@ try {
     assert.ok(html.includes('开始新分支…'))
     flow.open('start')
     assert.equal(flow.panel, 'start')
-    assert.match(flow.startBlocked, /未提交更改/)
+    flow.name = 'after-repair'
+    assert.equal(flow.startBlocked, '')
   })
 
   await test('Reopening branch repair does not request focus for an old save result', async () => {
@@ -1336,6 +1472,33 @@ try {
     assert.equal(finish.canChooseBranch, !candidate)
     assert.equal(finish.deleteBranch, true)
     assert.equal(finish.createTag, false)
+  })
+
+  await test('GitFlow Finish allows automatic protection of local edits while retaining conflict gates', async () => {
+    const { store } = flowWorkspace('finish-dirty-protection')
+    store.repo.gitflow.finishSupported = true
+    store.repo.branches.push({
+      name: 'feature/dirty-finish',
+      kind: 'local',
+      fullRef: 'refs/heads/feature/dirty-finish',
+      hash: store.repo.head,
+      current: false,
+      upstream: '',
+      track: '',
+    })
+    store.repo.unstaged = [
+      { path: 'draft.txt', status: 'M' },
+      { path: 'new.txt', status: '?' },
+    ]
+    const { useGitFlowFinishStore } = await vite.ssrLoadModule('/src/stores/gitflowFinish.ts')
+    const finish = useGitFlowFinishStore()
+    finish.open('feature/dirty-finish')
+    assert.equal(finish.blocked, '')
+    store.repo.merge = { active: true }
+    assert.match(finish.blocked, /合并/)
+    store.repo.merge = null
+    store.repo.gitflow.operationError = '仓库有未完成的拣选'
+    assert.match(finish.blocked, /拣选/)
   })
 
   await test('GitFlow panel closes on tab change and never applies an old draft to a new tab', async () => {
@@ -2211,6 +2374,7 @@ try {
       branch: live.branch,
       sourceRef: `refs/heads/${live.branch}`,
       destinationRef: `refs/heads/${live.branch}`,
+      remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
       expiresAt: Date.now() + 10000,
       remotes: [],
     })
@@ -2255,6 +2419,7 @@ try {
           branch: live.branch,
           sourceRef: `refs/heads/${live.branch}`,
           destinationRef: `refs/heads/${live.branch}`,
+          remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
           expiresAt: Date.now() + 10000,
           remotes: [],
         }
@@ -2304,6 +2469,7 @@ try {
           branch: live.branch,
           sourceRef: `refs/heads/${live.branch}`,
           destinationRef: `refs/heads/${live.branch}`,
+          remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
           expiresAt: Date.now() + 10000,
           remotes: [],
         }
@@ -2378,6 +2544,7 @@ try {
         branch: live.branch,
         sourceRef: '',
         destinationRef: '',
+        remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
         expiresAt: Date.now() + 10000,
         remotes: [],
       })
@@ -2408,6 +2575,7 @@ try {
           branch: live.branch,
           sourceRef: `refs/heads/${live.branch}`,
           destinationRef: `refs/heads/${live.branch}`,
+          remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
           expiresAt: Date.now() + 10000,
           remotes: [],
         }
@@ -2445,10 +2613,12 @@ try {
         return {
           id: 'approved',
           kind: args.kind,
+          method: 'merge',
           head: live.head,
           branch: live.branch,
           sourceRef: 'refs/heads/main',
           destinationRef: 'refs/heads/main',
+          remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
           expiresAt: Date.now() + 60000,
           remotes: [{ name: 'origin', address: '/tmp/bare' }],
         }
@@ -2515,6 +2685,7 @@ try {
           branch: 'feature/topic',
           sourceRef: args.expected.sourceRef,
           destinationRef: 'refs/heads/feature/topic',
+          remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
           expiresAt: Date.now() + 60000,
           remotes: [{ name: 'origin', address: '/tmp/bare' }],
         }
@@ -2562,7 +2733,76 @@ try {
     assert.equal(store.commitMessage, 'preserve my main draft')
   })
 
-  await test('A push with no linked remote branch reports the problem at execution entry, without guessing a target', async () => {
+  await test('First publish previews a target, forwards explicit changes and never writes before confirmation', async () => {
+    const store = freshStore()
+    const live = {
+      ...structuredClone(fixture),
+      path: '/tmp/publish-target',
+      name: 'publish-target',
+      branch: 'feature/topic',
+    }
+    live.branches = [
+      {
+        ...fixture.branches[0],
+        name: 'feature/topic',
+        fullRef: 'refs/heads/feature/topic',
+        hash: live.head,
+        kind: 'local',
+        upstream: '',
+        track: '',
+        current: true,
+      },
+    ]
+    const plans = []
+    let writes = 0
+    nativeHandler = async (command, args) => {
+      if (command === 'runtime') return nativeRuntime
+      if (command === 'snapshot') return structuredClone(live)
+      if (command === 'sync-plan') {
+        plans.push(args.expected)
+        const target = args.expected.publish || { remote: 'origin', branch: 'feature/topic' }
+        return {
+          id: 'publish-' + plans.length,
+          kind: 'push',
+          head: live.head,
+          branch: live.branch,
+          sourceRef: 'refs/heads/feature/topic',
+          worktreeBranch: live.branch,
+          destinationRef: 'refs/heads/' + target.branch,
+          remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
+          expiresAt: Date.now() + 60000,
+          publish: { ...target, remotes: ['origin', 'backup'] },
+          remotes: [{ name: target.remote, address: '/test/remote' }],
+        }
+      }
+      if (command === 'action') {
+        writes++
+        return { outcome: 'succeeded', output: 'published', snapshot: structuredClone(live) }
+      }
+      throw new Error(command)
+    }
+    await store.open(live.path)
+    await store.prepareSync('push')
+    assert.equal(store.syncPreview.publish.remote, 'origin')
+    assert.equal(writes, 0)
+    await store.setPublishTarget('backup', 'review/topic')
+    assert.deepEqual(plans[1].publish, { remote: 'backup', branch: 'review/topic' })
+    assert.equal(store.syncPreview.destinationRef, 'refs/heads/review/topic')
+    assert.equal(writes, 0)
+    const checked = store.syncPreview.remoteCheck
+    for (const state of ['error', 'behind', 'diverged']) {
+      store.syncPreview.remoteCheck = { state, checkedAt: Date.now() }
+      assert.equal(await store.confirmSync(), false)
+      assert.equal(writes, 0, `A ${state} check cannot start a push`)
+    }
+    store.syncPreview.remoteCheck = undefined
+    assert.equal(await store.confirmSync(), false)
+    store.syncPreview.remoteCheck = checked
+    assert.equal(await store.confirmSync(), true)
+    assert.equal(writes, 1)
+  })
+
+  await test('A legacy core without first publish support explains that it must be restarted', async () => {
     const store = freshStore(),
       live = {
         ...structuredClone(fixture),
@@ -2608,6 +2848,7 @@ try {
           branch: live.branch,
           sourceRef: `refs/heads/${live.branch}`,
           destinationRef: `refs/heads/${live.branch}`,
+          remoteCheck: { state: 'forward', oid: live.head, checkedAt: Date.now() },
           expiresAt: Date.now() + 60000,
           remotes: [{ name: 'origin', address: '/tmp/bare' }],
         }
@@ -2681,24 +2922,74 @@ try {
     }
     const html = await render()
     const buttons = [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)]
-    const push = buttons.find((button) => button[2].includes('推送此分支'))
-    const pull = buttons.find((button) => button[2].includes('拉取此分支'))
+    const push = buttons.find((button) => button[2].includes('推送'))
+    const pull = buttons.find((button) => button[2].includes('拉取'))
     assert.doesNotMatch(push[1], /\bdisabled\b/)
-    assert.match(pull[1], /\bdisabled\b/)
-    assert.ok(pull[2].includes('请先切换到此分支'))
-    assert.ok(html.includes('当前检出 main'))
-    assert.ok(html.includes('完成功能分支'))
+    assert.doesNotMatch(pull[1], /\bdisabled\b/)
+    assert.match(html, /aria-label="feature\/topic 右键菜单"/)
+    assert.doesNotMatch(html, /context-menu-heading|context-menu-context|当前检出/)
+    assert.ok(html.includes('完成 feature/topic'))
     assert.doesNotMatch(html, /查看 GitFlow 完成计划|仅查看计划，暂不执行完成操作/)
-    assert.ok(html.indexOf('复制分支名') < html.indexOf('删除本地分支'))
+    assert.ok(html.indexOf('删除 feature/topic') < html.indexOf('复制分支名'))
     menu.target = { ...menu.target, branch: { ...b, upstream: '' } }
     const noUpstream = await render()
     assert.doesNotMatch(
       [...noUpstream.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)].find((button) =>
-        button[2].includes('推送此分支'),
+        button[2].includes('推送'),
       )[1],
       /\bdisabled\b/,
     )
     assert.doesNotMatch(noUpstream, /无上游|未设置上游/)
+  })
+
+  await test('Navigation menus hide impossible actions and replace checkout for occupied worktrees', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = seedRepository(useRepositoryStore()),
+      menu = useContextMenuStore()
+    const local = store.repo.branches.find(
+      (b) => b.kind === 'local' && b.name === store.repo.branch,
+    )
+    const target = (branch) => ({
+      kind: 'branch',
+      branch,
+      repo: store.repo.path,
+      tabId: store.activeTabId,
+      head: store.repo.head,
+      currentBranch: store.repo.branch,
+    })
+    const render = async () => {
+      const context = {}
+      await renderToString(createSSRApp(ContextMenu).use(pinia), context)
+      return context.teleports.body
+    }
+    menu.target = target(local)
+    let html = await render()
+    assert.doesNotMatch(html, /切换到 |删除 /)
+    assert.match(html, /重命名 /)
+    menu.target = target({ ...local, name: 'feature/other', current: false, upstream: '' })
+    html = await render()
+    assert.match(html, /切换到 |删除 /)
+    assert.match(html, /设置上游/)
+    assert.doesNotMatch(html, /无上游|未设置上游/)
+    store.repo.remotes = []
+    html = await render()
+    assert.doesNotMatch(html, /推送|拉取|设置上游/)
+    assert.match(html, /在此创建分支/)
+    menu.target = target({
+      ...local,
+      name: 'feature/worktree',
+      current: false,
+      worktreePath: '/tmp/linked',
+    })
+    html = await render()
+    assert.match(html, /打开 feature\/worktree 所在工作区/)
+    assert.doesNotMatch(html, /切换到 |删除 |重命名 /)
+    store.busy = true
+    html = await render()
+    const buttons = [...html.matchAll(/<button([^>]*)>([\s\S]*?)<\/button>/g)]
+    assert.match(buttons.find((b) => b[2].includes('所在工作区'))[1], /disabled/)
+    assert.doesNotMatch(buttons.find((b) => b[2].includes('复制分支名'))[1], /disabled/)
   })
 
   await test('Uncertain commit outcomes retain drafts and show refreshed repository state', async () => {

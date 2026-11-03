@@ -11,6 +11,7 @@ const observeWindow = (callback) => {
 // Only named, narrow operations cross the isolated renderer boundary.
 // Neither ipcRenderer nor Node's require / filesystem are exposed.
 contextBridge.exposeInMainWorld('gitk', {
+  navigationRead: (repo, request) => invoke('navigation-read', repo, request),
   mergeRead: (repo, file) => invoke('merge-read', repo, file),
   stashRead: (repo, oid, file) => invoke('stash-read', repo, oid, file),
   selectedCommitPlan: (repo, request) => invoke('selected-commit-plan', repo, request),
@@ -26,6 +27,10 @@ contextBridge.exposeInMainWorld('gitk', {
   listDirectory: (initial) => invoke('directory', initial),
   cancel: () => invoke('cancel'),
   openResource: (resource) => invoke('resource', resource),
+})
+contextBridge.exposeInMainWorld('gitkContextMenu', {
+  popup: (request) => invoke('context-menu:popup', request),
+  close: (requestId) => invoke('context-menu:close', requestId),
 })
 contextBridge.exposeInMainWorld('gitkWindow', {
   minimize: () => invoke('window:minimize'),

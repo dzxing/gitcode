@@ -9,19 +9,38 @@ import { BRANCH_SORTS } from '../sidebar'
 import { SIDEBAR_SECTIONS } from '../sidebar'
 import { useSidebarStore } from '../stores/sidebar'
 import { useStashStore } from '../stores/stash'
+import { useNavigationStore, type NavigationMode } from '../stores/navigation'
+import { useGraphViewStore } from '../stores/graphView'
+import { knownAncestor } from '../graphVisibility'
+import { nativeContextMenu, type NativeMenuItem } from '../services/contextMenu'
+import { desktop } from '../services/desktop'
+import { useRebaseStore } from '../stores/rebase'
+import { useMergeStore } from '../stores/merge'
 
 const store = useRepositoryStore()
 const menu = useContextMenuStore()
 const flow = useGitFlowStore()
 const sidebar = useSidebarStore()
 const stash = useStashStore()
+const navigation = useNavigationStore()
+const rebase = useRebaseStore()
+const rebaseAvailable = ref(false)
+const menuPreparing = ref(false)
+const graphView = useGraphViewStore()
 const element = ref<HTMLElement>()
+const nativeRequest = ref<number | null>(null)
+let requestSequence = 0
 const dialog = ref<HTMLDialogElement>()
 const nameInput = ref<HTMLInputElement>()
 const operation = ref<{
-  action: 'create-branch' | 'track-branch' | 'rename-branch' | 'delete-branch' | 'checkout'
+  action: 'create-branch' | 'track-branch' | 'rename-branch' | 'delete-branch' | 'set-upstream'
   target: MenuContext
 } | null>(null)
+const upstreamRef = ref('')
+const pullAfterUpstream = ref(false)
+const upstreamChoices = computed(() =>
+  store.repo.branches.filter((b) => b.kind === 'remote' && !b.symbolicTarget),
+)
 const name = ref(''),
   switchAfter = ref(false),
   error = ref('')
@@ -31,6 +50,12 @@ const operationBusy = ref(false)
 const branch = computed(() =>
   operation.value?.target.kind === 'branch' ? operation.value.target.branch : null,
 )
+const operationBlocked = computed(() => {
+  if (!branch.value || !operation.value) return ''
+  if (operation.value.action === 'delete-branch' && branch.value.name === store.repo.branch)
+    return '该分支正在当前工作区使用。请先切换到其他分支，再删除。'
+  return ''
+})
 const heading = computed(
   () =>
     ({
@@ -38,11 +63,13 @@ const heading = computed(
       'track-branch': '创建本地跟踪分支',
       'rename-branch': '重命名分支',
       'delete-branch': '删除本地分支',
-      checkout: '切换分支',
+      'set-upstream': '设置上游分支',
     })[operation.value?.action || 'create-branch'],
 )
 const objectTitle = computed(() => {
   const target = menu.target
+  if (target?.kind === 'files') return target.label
+  if (target?.kind === 'navigation') return '仓库导航显示设置'
   if (target?.kind === 'stash') return target.stash.message
   if (target?.kind === 'section') return `${SIDEBAR_SECTIONS[target.section].title}分组`
   return target?.kind === 'branch'
@@ -60,14 +87,14 @@ interface Item {
   label: string
   disabled?: boolean
   reason?: string
-  note?: string
   danger?: boolean
   separator?: boolean
+  checked?: boolean
 }
-const items = computed<Item[]>(() => {
+const rawItems = computed<Item[]>(() => {
   const target = menu.target
   if (!target) return []
-  const unavailable = store.busy || store.isNewTab
+  const unavailable = store.busy || store.isNewTab || store.rebasePlanning
   const reason = store.busy ? 'Git 操作正在执行' : store.isNewTab ? '请先打开本地仓库' : ''
   const mutation = (id: string, label: string, extra = {}): Item => ({
     id,
@@ -76,36 +103,81 @@ const items = computed<Item[]>(() => {
     reason,
     ...extra,
   })
-  const inspect: Item[] = [
-    { id: 'locate', label: '定位顶端提交' },
-    { id: 'history', label: '筛选已加载历史' },
-  ]
+  if (target.kind === 'files')
+    return [
+      mutation(
+        'files-stage',
+        target.staged
+          ? `取消暂存 ${target.files.length} 个文件`
+          : `暂存 ${target.files.length} 个文件`,
+        {
+          disabled:
+            unavailable ||
+            target.files.some(
+              (file) => file.status === 'U' || ('conflict' in file && !!file.conflict),
+            ),
+        },
+      ),
+      ...(target.files.length === 1 ? [{ id: 'files-diff', label: '查看文件差异' }] : []),
+      { id: 'files-copy-path', label: '复制路径', separator: true },
+    ]
   if (target.kind === 'stash')
     return [
-      { id: 'stash-view', label: '查看贮藏内容' },
       {
         id: 'stash-apply',
-        label: '恢复并保留记录',
-        separator: true,
-        disabled: !!stash.baseBlocked || !!store.changes,
-        reason: stash.baseBlocked || (store.changes ? '恢复前请先处理当前工作区修改' : ''),
+        label: '应用贮藏',
+        disabled: unavailable,
+        reason,
       },
       {
         id: 'stash-pop',
-        label: '恢复成功后移除记录',
-        disabled: !!stash.baseBlocked || !!store.changes,
-        reason: stash.baseBlocked || (store.changes ? '恢复前请先处理当前工作区修改' : ''),
+        label: '弹出贮藏',
+        disabled: unavailable,
+        reason,
       },
-      mutation('stash-drop', '删除这条贮藏…', { danger: true, separator: true }),
+      mutation('stash-drop', '删除贮藏', { danger: true }),
     ]
-  if (target.kind === 'section')
+  if (target.kind === 'navigation')
     return [
+      {
+        id: 'directory-grouping',
+        checked: sidebar.groupDirectories(target.repo),
+        label: '按目录分组',
+      },
+    ]
+  if (target.kind === 'section') {
+    const branches = store.repo.branches.filter(
+      (branch) => branch.kind === (target.section === 'gitflow' ? 'local' : target.section),
+    )
+    const solo = graphView.soloActive(target.repo, store.repo.branches)
+    const visibilityItems: Item[] =
+      target.section === 'gitflow'
+        ? []
+        : [
+            {
+              id: 'graph-show-all',
+              label: '显示全部',
+              disabled: solo || !branches.some((branch) => graphView.isHidden(target.repo, branch)),
+              reason: solo ? '请先取消 Solo' : '',
+            },
+            {
+              id: 'graph-hide-all',
+              label: '隐藏全部',
+              disabled:
+                solo || !branches.some((branch) => !graphView.isHidden(target.repo, branch)),
+              reason: solo ? '请先取消 Solo' : '',
+            },
+            ...(solo ? [{ id: 'graph-reset', label: '取消 Solo 并显示全部' }] : []),
+          ]
+    return [
+      ...visibilityItems,
       ...BRANCH_SORTS.filter(
         (mode) => mode.id !== 'current-first' || ['local', 'gitflow'].includes(target.section),
       ).map((mode) => ({
+        separator: mode === BRANCH_SORTS[0],
         id: `branch-sort:${mode.id}`,
-        label: `${sidebar.sortMode(target.repo, target.section) === mode.id ? '✓ ' : ''}${mode.label}`,
-        note: '收藏始终置顶',
+        label: mode.label,
+        checked: sidebar.sortMode(target.repo, target.section) === mode.id,
       })),
       {
         id: 'section-up',
@@ -122,44 +194,18 @@ const items = computed<Item[]>(() => {
       },
       { id: 'section-reset', label: '恢复默认分组顺序', separator: true },
     ]
+  }
   if (target.kind === 'branch') {
     const b = target.branch
-    if (b.kind === 'tag') inspect.splice(1, 1)
-    const result: Item[] =
-      b.kind === 'local'
-        ? [
-            mutation('checkout', '切换到此分支', {
-              disabled: unavailable || b.current,
-              reason: b.current ? '已经是当前分支' : reason,
-            }),
-            ...inspect,
-          ]
-        : inspect
-    if (b.kind === 'local') {
-      const pushReason = reason
-      const pullReason =
-        reason ||
-        (b.name !== target.currentBranch
-          ? '请先切换到此分支，再拉取其远程上游'
-          : !b.upstream
-            ? '此分支尚未关联远端分支，暂不能拉取'
-            : store.changes
-              ? '工作区有未提交更改，请先处理后拉取'
-              : '')
+    const current = b.kind === 'local' && b.name === store.repo.branch
+    const occupied = b.kind === 'local' && !!b.worktreePath && !current
+    const hasRemotes = (store.repo.remotes?.length || 0) > 0
+    const result: Item[] = []
+    if (b.kind === 'local' && hasRemotes) {
       result.push(
-        {
-          id: 'branch-push',
-          label: '推送此分支…',
-          separator: true,
-          disabled: !!pushReason,
-          reason: pushReason,
-        },
-        {
-          id: 'branch-pull',
-          label: '拉取此分支的远程上游…',
-          disabled: !!pullReason,
-          reason: pullReason,
-        },
+        mutation('branch-pull', '拉取'),
+        mutation('branch-push', '推送'),
+        mutation('set-upstream', '设置上游'),
       )
     }
     if (
@@ -169,52 +215,116 @@ const items = computed<Item[]>(() => {
     )
       result.push({
         id: 'gitflow-finish',
-        label:
-          (
-            { feature: '完成功能分支…', release: '完成发布…', hotfix: '完成热修复…' } as Record<
-              string,
-              string
-            >
-          )[flowKind(flow.state.config, b.name) || ''] || '完成 GitFlow 分支…',
+        label: `完成 ${b.name}`,
         separator: true,
-        disabled: !!flow.finishEntryBlocked,
-        reason: flow.finishEntryBlocked,
+        disabled: unavailable,
+        reason,
       })
+    const oid = b.commitHash || b.hash
+    if (
+      store.repo.head &&
+      store.repo.branch !== 'detached HEAD' &&
+      oid !== store.repo.head &&
+      !knownAncestor(store.repo.commits, oid, store.repo.head)
+    ) {
+      result.push(
+        mutation('merge-branch', `合并 ${b.name} 到 ${store.repo.branch}`, { separator: true }),
+      )
+      if (knownAncestor(store.repo.commits, store.repo.head, oid))
+        result.push(mutation('fast-forward', `快进 ${store.repo.branch} 到 ${b.name}`))
+    }
+    if (
+      store.repo.head &&
+      store.repo.branch !== 'detached HEAD' &&
+      oid !== store.repo.head &&
+      !store.repo.merge
+    ) {
+      result.push(
+        mutation('rebase', `将 ${store.repo.branch} 变基到 ${b.name}`, { separator: true }),
+      )
+      if (rebaseAvailable.value)
+        result.push(mutation('rebase-interactive', `交互式变基 ${store.repo.branch} 到 ${b.name}`))
+    }
+    if (b.kind !== 'tag' && !current && !b.symbolicTarget)
+      result.push(
+        mutation(
+          occupied ? 'open-worktree' : 'checkout',
+          occupied ? `打开 ${b.name} 所在工作区` : `切换到 ${b.name}`,
+          { separator: true },
+        ),
+      )
     result.push(
       mutation(
         b.kind === 'remote' ? 'track-branch' : 'create-branch',
-        b.kind === 'remote' ? '创建本地跟踪分支…' : '从此创建分支…',
+        b.kind === 'remote' ? '创建本地跟踪分支…' : '在此创建分支',
         { separator: true },
       ),
     )
-    if (b.kind === 'local') result.push(mutation('rename-branch', '重命名分支…'))
+    if (b.kind === 'local' && !occupied) {
+      result.push(mutation('rename-branch', `重命名 ${b.name}`, { separator: true }))
+      if (!current) result.push(mutation('delete-branch', `删除 ${b.name}`, { danger: true }))
+    }
+    if (b.kind === 'remote' && !b.symbolicTarget)
+      result.push(
+        mutation('delete-remote-branch', `删除 ${b.name}`, { separator: true, danger: true }),
+      )
+    result.push(
+      mutation('create-tag', '创建标签', { separator: true }),
+      mutation('create-annotated-tag', '创建附注标签'),
+    )
     result.push(
       { id: 'copy-name', label: b.kind === 'tag' ? '复制标签名' : '复制分支名', separator: true },
-      { id: 'copy-sha', label: '复制完整对象 ID' },
+      ...(b.kind === 'tag' ? [] : [{ id: 'copy-sha', label: '复制提交 SHA' }]),
     )
-    if (b.kind === 'local')
+    result.push(
+      {
+        id: 'graph-hide',
+        label: '隐藏',
+        checked: graphView.isHidden(target.repo, b),
+        disabled: graphView.soloActive(target.repo, store.repo.branches),
+        reason: graphView.soloActive(target.repo, store.repo.branches) ? '请先取消 Solo' : '',
+        separator: true,
+      },
+      { id: 'graph-solo', label: 'Solo', checked: graphView.isSolo(target.repo, b) },
+    )
+    if (
+      graphView.soloActive(target.repo, store.repo.branches) ||
+      graphView.state(target.repo).hidden.length
+    )
+      result.push({ id: 'graph-reset', label: '显示全部引用' })
+    if (store.repo.head && oid !== store.repo.head)
+      result.push(mutation('compare-head', '与当前分支比较', { separator: true }))
+    if (store.changes)
       result.push(
-        mutation('delete-branch', '删除本地分支…', {
-          danger: true,
-          disabled: unavailable || b.current,
-          reason: b.current ? '不能删除当前检出的分支' : reason,
-          separator: true,
-        }),
+        mutation('compare-working', '与工作区比较', { separator: oid === store.repo.head }),
       )
     return result
   }
   if (target.kind === 'commit')
     return [
       { id: 'details', label: '查看提交详情' },
-      { id: 'copy-sha', label: '复制完整 SHA', separator: true },
+      { id: 'copy-sha', label: '复制提交 SHA', separator: true },
       { id: 'copy-subject', label: '复制提交说明' },
-      mutation('create-branch', '从此创建分支…', { separator: true }),
+      ...(store.repo.head &&
+      store.repo.branch !== 'detached HEAD' &&
+      target.commit.hash !== store.repo.head &&
+      !store.repo.merge
+        ? [
+            mutation('rebase', `将 ${store.repo.branch} 变基到此提交`, { separator: true }),
+            ...(rebaseAvailable.value
+              ? [mutation('rebase-interactive', '交互式变基到此提交')]
+              : []),
+          ]
+        : []),
+      mutation('create-branch', '在此创建分支', { separator: true }),
+      mutation('create-tag', '创建标签', { separator: true }),
+      mutation('create-annotated-tag', '创建附注标签'),
     ]
   if (target.kind === 'columns')
     return [
-      { id: 'toggle-author', label: `${store.showAuthor ? '✓ ' : ''}作者` },
-      { id: 'toggle-time', label: `${store.showTime ? '✓ ' : ''}时间` },
-      { id: 'toggle-sha', label: `${store.showSha ? '✓ ' : ''}SHA` },
+      { id: 'toggle-author', label: '作者', checked: store.showAuthor },
+      { id: 'toggle-time', label: '时间', checked: store.showTime },
+      { id: 'toggle-sha', label: 'SHA', checked: store.showSha },
       { id: 'reset-columns', label: '恢复默认列', separator: true },
     ]
   return [
@@ -223,8 +333,8 @@ const items = computed<Item[]>(() => {
           {
             id: 'stash-create',
             label: '贮藏当前修改',
-            disabled: !!stash.createBlocked,
-            reason: stash.createBlocked,
+            disabled: unavailable,
+            reason,
           },
         ]
       : []),
@@ -244,6 +354,9 @@ const items = computed<Item[]>(() => {
     },
   ]
 })
+const items = computed(() =>
+  rawItems.value.map((item, index) => ({ ...item, separator: !!item.separator && index > 0 })),
+)
 function valid(target: MenuContext) {
   if (store.repo.path !== target.repo || store.activeTabId !== target.tabId) {
     store.notify('仓库上下文已变化，请重新打开菜单。', true)
@@ -284,6 +397,48 @@ async function perform(item: Item) {
   menu.close()
   if (!valid(target)) return
   const id = item.id
+  if (target.kind === 'files') {
+    const file = target.files[0]
+    if (id === 'files-copy-path') {
+      try {
+        await navigator.clipboard.writeText(target.label)
+        store.notify('路径已复制')
+      } catch {
+        store.notify('无法访问剪贴板，请从文件提示中选择路径。', true)
+      }
+    } else if (id === 'files-diff' && file) {
+      if (file.status === 'U') await useMergeStore().openFile(file.path)
+      else await store.selectFile(file, target.staged)
+    } else if (id === 'files-stage') {
+      const section = document.querySelector(
+        `[data-staging-zone="${target.staged ? 'staged' : 'unstaged'}"]`,
+      )
+      const before = [...(section?.querySelectorAll<HTMLElement>('.worktree-row-main') || [])]
+      const origin = menu.trigger
+        ?.closest('.worktree-node-row')
+        ?.querySelector<HTMLElement>('.worktree-row-main')
+      const index = origin ? before.indexOf(origin) : 0
+      const ok = await store.run(
+        target.staged ? 'unstage' : 'stage',
+        { paths: target.files.map((file) => file.path) },
+        {
+          repo: target.repo,
+          tabId: target.tabId,
+          expectedHead: target.head,
+          expectedBranch: target.currentBranch,
+        },
+      )
+      if (ok && store.repo.path === target.repo && store.activeTabId === target.tabId) {
+        await nextTick()
+        const after = [...(section?.querySelectorAll<HTMLElement>('.worktree-row-main') || [])]
+        ;(
+          after[Math.min(Math.max(index, 0), after.length - 1)] ||
+          section?.querySelector<HTMLElement>('.staging-zone-title')
+        )?.focus({ preventScroll: true })
+      }
+    }
+    return
+  }
   if (target.kind === 'stash') {
     stash.openList(
       target.stash,
@@ -293,6 +448,69 @@ async function perform(item: Item) {
   }
   if (id === 'stash-create') {
     void stash.create()
+    return
+  }
+  if (target.kind === 'navigation') {
+    if (id === 'directory-grouping') sidebar.toggleGroupDirectories(target.repo)
+    return
+  }
+  if (
+    target.kind === 'section' &&
+    ['graph-show-all', 'graph-hide-all', 'graph-reset'].includes(id)
+  ) {
+    const branches = store.repo.branches.filter(
+      (branch) => branch.kind === (target.section === 'gitflow' ? 'local' : target.section),
+    )
+    if (id === 'graph-reset') graphView.reset(target.repo)
+    else graphView.group(target.repo, branches, id === 'graph-hide-all')
+    return
+  }
+  if (target.kind === 'branch' && ['graph-hide', 'graph-solo', 'graph-reset'].includes(id)) {
+    if (id === 'graph-hide') graphView.toggleHide(target.repo, target.branch)
+    else if (id === 'graph-solo') graphView.toggleSolo(target.repo, target.branch)
+    else graphView.reset(target.repo)
+    return
+  }
+  if (
+    [
+      'merge-branch',
+      'fast-forward',
+      'create-tag',
+      'create-annotated-tag',
+      'delete-remote-branch',
+      'compare-head',
+      'compare-working',
+      'rebase',
+      'rebase-interactive',
+    ].includes(id)
+  ) {
+    const reference =
+      target.kind === 'branch'
+        ? target.branch
+        : target.kind === 'commit'
+          ? {
+              name: `提交 ${target.commit.hash.slice(0, 7)}`,
+              hash: target.commit.hash,
+              fullRef: target.commit.hash,
+              kind: 'local' as const,
+              current: false,
+              upstream: '',
+              track: '',
+            }
+          : undefined
+    if (!reference) {
+      store.notify('该提交没有可用的分支或标签引用，请先从此提交创建分支。', true)
+      return
+    }
+    const origin = {
+      repo: target.repo,
+      tabId: target.tabId,
+      expectedHead: target.head,
+      expectedBranch: target.currentBranch,
+    }
+    if (id === 'rebase' || id === 'rebase-interactive')
+      await rebase.open(reference, id === 'rebase-interactive', origin)
+    else await navigation.open(id as NavigationMode, reference, origin)
     return
   }
   if (target.kind === 'section') {
@@ -314,10 +532,31 @@ async function perform(item: Item) {
     return
   }
   if (id === 'gitflow-finish' && target.kind === 'branch') {
+    if (flow.finishEntryBlocked) {
+      store.notify(flow.finishEntryBlocked, true)
+      return
+    }
     flow.open('finish', target.branch.name)
     return
   }
-  if ((id === 'branch-push' || id === 'branch-pull') && target.kind === 'branch') {
+  if (id === 'checkout' && target.kind === 'branch' && target.branch.kind !== 'tag') {
+    await store.checkoutBranch(target.branch, {
+      repo: target.repo,
+      tabId: target.tabId,
+      expectedHead: target.head,
+      expectedBranch: target.currentBranch,
+    })
+    return
+  }
+  if (id === 'open-worktree' && target.kind === 'branch' && target.branch.worktreePath) {
+    await store.open(target.branch.worktreePath)
+    return
+  }
+  if (
+    (id === 'branch-push' || id === 'branch-pull') &&
+    target.kind === 'branch' &&
+    !(id === 'branch-pull' && !target.branch.upstream)
+  ) {
     await store.prepareSync(id === 'branch-push' ? 'push' : 'pull', target.branch, {
       repo: target.repo,
       tabId: target.tabId,
@@ -327,15 +566,25 @@ async function perform(item: Item) {
     return
   }
   if (
-    ['create-branch', 'track-branch', 'rename-branch', 'delete-branch', 'checkout'].includes(id)
+    ['create-branch', 'track-branch', 'rename-branch', 'delete-branch', 'set-upstream'].includes(
+      id,
+    ) ||
+    (id === 'branch-pull' && target.kind === 'branch' && !target.branch.upstream)
   ) {
-    operation.value = { action: id as NonNullable<typeof operation.value>['action'], target }
+    const action = id === 'branch-pull' ? 'set-upstream' : id
+    operation.value = { action: action as NonNullable<typeof operation.value>['action'], target }
+    pullAfterUpstream.value = id === 'branch-pull'
+    const existingUpstream = upstreamChoices.value.find(
+      (b) => b.name === (target.kind === 'branch' ? target.branch.upstream : ''),
+    )
+    upstreamRef.value = existingUpstream ? branchReference(existingUpstream) : ''
     name.value = id === 'rename-branch' && target.kind === 'branch' ? target.branch.name : ''
     switchAfter.value = false
     error.value = ''
     await nextTick()
     dialog.value?.showModal()
-    nameInput.value?.focus()
+    if (action === 'set-upstream') dialog.value?.querySelector<HTMLSelectElement>('select')?.focus()
+    else nameInput.value?.focus()
     return
   }
   if (id === 'details') {
@@ -391,6 +640,10 @@ async function submit() {
     error.value = '请先打开本地仓库。'
     return
   }
+  if (operationBlocked.value) {
+    error.value = operationBlocked.value
+    return
+  }
   const target = op.target
   const b = target.kind === 'branch' ? target.branch : null
   const guards = { expectedHead: target.head, expectedBranch: target.currentBranch }
@@ -411,13 +664,31 @@ async function submit() {
       ...(switchAfter.value ? guards : {}),
     }
   else if (b) extra = { name: b.name, newName: name.value.trim(), expectedOid: b.hash, ...guards }
+  if (op.action === 'set-upstream') {
+    const remote = upstreamChoices.value.find((b) => branchReference(b) === upstreamRef.value)
+    if (!remote) {
+      error.value = '请选择远程分支；若列表为空，请先获取远端更新。'
+      return
+    }
+    extra = { ...extra, fullRef: upstreamRef.value, upstreamOid: remote.hash }
+  }
+  // The dialog itself is the explicit deletion confirmation, as in GitKraken.
+  if (op.action === 'delete-branch') extra.force = true
   operationBusy.value = true
   try {
     if (await store.run(op.action, extra)) {
       dialog.value?.close()
       operation.value = null
       menu.trigger?.focus({ preventScroll: true })
-    } else error.value = '操作未完成，请查看错误提示；仓库状态可能已变化。'
+      if (op.action === 'set-upstream' && pullAfterUpstream.value && b) {
+        const updated = store.repo.branches.find(
+          (item) => item.kind === 'local' && item.name === b.name,
+        )
+        if (updated) await store.prepareSync('pull', updated)
+      }
+    } else
+      error.value =
+        store.lastActionResult?.error || '操作未完成，请查看错误提示；仓库状态可能已变化。'
   } finally {
     operationBusy.value = false
   }
@@ -446,7 +717,79 @@ async function position() {
     .querySelector<HTMLButtonElement>('button:not(:disabled)')
     ?.focus({ preventScroll: true })
 }
-watch(() => menu.target, position)
+function cancelNativeMenu() {
+  const request = nativeRequest.value
+  nativeRequest.value = null
+  if (request !== null)
+    void nativeContextMenu()
+      ?.close(request)
+      .catch(() => {})
+}
+async function showMenu() {
+  cancelNativeMenu()
+  const target = menu.target
+  if (!target) return
+  rebaseAvailable.value = false
+  menuPreparing.value = true
+  if (
+    (target.kind === 'branch' || target.kind === 'commit') &&
+    !store.busy &&
+    store.connected &&
+    !store.repo.merge &&
+    !store.rebasePlanning &&
+    target.currentBranch !== 'detached HEAD'
+  ) {
+    try {
+      const fullRef = target.kind === 'branch' ? branchReference(target.branch) : target.commit.hash
+      const expectedOid = target.kind === 'branch' ? target.branch.hash : target.commit.hash
+      if (expectedOid !== target.head) {
+        const info = await desktop.navigationRead(target.repo, {
+          kind: 'rebase',
+          fullRef,
+          expectedOid,
+          expectedHead: target.head,
+          expectedBranch: target.currentBranch,
+        })
+        if (menu.target !== target) return
+        rebaseAvailable.value = !!info.rebase?.canInteractive
+      }
+    } catch {
+      /* Ordinary rebase still checks the actual preconditions on invocation. */
+    }
+    if (menu.target !== target) return
+  }
+  menuPreparing.value = false
+  const bridge = nativeContextMenu()
+  if (!bridge) {
+    await position()
+    return
+  }
+  const requestId = ++requestSequence
+  nativeRequest.value = requestId
+  const template: NativeMenuItem[] = []
+  for (const item of items.value) {
+    if (item.separator && template.length) template.push({ type: 'separator' })
+    template.push({
+      id: item.id,
+      label: item.label,
+      enabled: !item.disabled,
+      ...(item.checked === undefined ? {} : { checked: item.checked }),
+    })
+  }
+  try {
+    const selected = await bridge.popup({ requestId, items: template })
+    if (nativeRequest.value !== requestId || menu.target !== target) return
+    nativeRequest.value = null
+    const item = items.value.find((item) => item.id === selected)
+    if (item && !item.disabled) await perform(item)
+    else menu.close()
+  } catch {
+    if (nativeRequest.value !== requestId || menu.target !== target) return
+    nativeRequest.value = null
+    await position()
+  }
+}
+watch(() => menu.target, showMenu)
 watch(
   () => [store.activeTabId, store.repo, store.repo.head],
   () => {
@@ -467,17 +810,21 @@ function scroll(event: Event) {
 function resized() {
   menu.close()
 }
+function blurred() {
+  if (nativeRequest.value === null) menu.close()
+}
 onMounted(() => {
   document.addEventListener('pointerdown', outside, true)
   document.addEventListener('scroll', scroll, true)
   window.addEventListener('resize', resized)
-  window.addEventListener('blur', resized)
+  window.addEventListener('blur', blurred)
 })
 onUnmounted(() => {
   document.removeEventListener('pointerdown', outside, true)
   document.removeEventListener('scroll', scroll, true)
   window.removeEventListener('resize', resized)
-  window.removeEventListener('blur', resized)
+  window.removeEventListener('blur', blurred)
+  cancelNativeMenu()
   menu.close(false)
 })
 </script>
@@ -485,7 +832,7 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <div
-      v-if="menu.target"
+      v-if="menu.target && nativeRequest === null && !menuPreparing"
       ref="element"
       class="context-menu"
       role="menu"
@@ -494,25 +841,6 @@ onUnmounted(() => {
       @keydown="keydown"
       @contextmenu.prevent.stop
     >
-      <div
-        class="context-menu-heading"
-        :title="objectTitle"
-      >
-        {{ objectTitle }}
-      </div>
-      <div
-        v-if="menu.target.kind === 'branch'"
-        class="context-menu-context"
-      >
-        {{
-          menu.target.branch.kind === 'local'
-            ? '本地分支'
-            : menu.target.branch.kind === 'remote'
-              ? '远程跟踪分支'
-              : '标签'
-        }}
-        · 当前检出 {{ menu.target.currentBranch }}
-      </div>
       <template
         v-for="item in items"
         :key="item.id"
@@ -522,16 +850,20 @@ onUnmounted(() => {
           role="separator"
         ></div>
         <button
-          role="menuitem"
+          :role="item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'"
+          :aria-checked="item.checked"
           tabindex="-1"
           :disabled="item.disabled"
-          :title="item.reason"
+          :title="item.reason || item.label"
           :class="{ danger: item.danger }"
           @click="perform(item)"
         >
-          <span>{{ item.label }}</span
-          ><small v-if="item.disabled && item.reason">{{ item.reason }}</small
-          ><small v-else-if="item.note">{{ item.note }}</small>
+          <span
+            v-if="item.checked !== undefined"
+            class="context-menu-check"
+            aria-hidden="true"
+            >{{ item.checked ? '✓' : '' }}</span
+          ><span class="context-menu-label">{{ item.label }}</span>
         </button></template
       >
     </div>
@@ -574,7 +906,32 @@ onUnmounted(() => {
             ).slice(0, 12)
           }}</code>
         </p>
-        <template v-if="operation.action !== 'delete-branch' && operation.action !== 'checkout'"
+        <template v-if="operation.action === 'set-upstream'">
+          <label for="context-upstream">远程上游分支</label>
+          <select
+            id="context-upstream"
+            v-model="upstreamRef"
+            class="form-input"
+            :disabled="operationBusy"
+            required
+          >
+            <option
+              value=""
+              disabled
+            >
+              选择远程分支
+            </option>
+            <option
+              v-for="remote in upstreamChoices"
+              :key="branchReference(remote)"
+              :value="branchReference(remote)"
+            >
+              {{ remote.name }}
+            </option>
+          </select>
+          <p>设置此本地分支的上游，不会创建远程分支。若列表为空，请先获取远端更新。</p>
+        </template>
+        <template v-else-if="operation.action !== 'delete-branch'"
           ><label for="context-branch-name">{{
             operation.action === 'rename-branch' ? '新分支名称' : '本地分支名称'
           }}</label
@@ -602,10 +959,14 @@ onUnmounted(() => {
           v-if="operation.action === 'delete-branch'"
           class="context-delete-note"
         >
-          仅删除这个本地分支，不删除远程分支。Git 会检查合并状态；未通过检查时不会强制删除。
+          仅删除这个本地分支，保留工作区文件与远程分支。未合并的独有提交将不再属于该分支，请核对分支名称后确认。
         </p>
-        <p v-if="operation.action === 'checkout'">
-          切换工作区到此分支；如果会覆盖本地更改，Git 将拒绝切换。
+        <p
+          v-if="operationBlocked"
+          class="directory-error"
+          role="status"
+        >
+          {{ operationBlocked }}
         </p>
         <p
           v-if="error"
@@ -627,7 +988,10 @@ onUnmounted(() => {
             :class="operation.action === 'delete-branch' ? 'danger-button' : 'primary-button'"
             :disabled="
               operationBusy ||
-              (!['delete-branch', 'checkout'].includes(operation.action) && !name.trim())
+              !!operationBlocked ||
+              (operation.action === 'set-upstream'
+                ? !upstreamRef
+                : operation.action !== 'delete-branch' && !name.trim())
             "
           >
             {{

@@ -9,6 +9,7 @@ import Icon from './components/Icon.vue'
 import NewTab from './components/NewTab.vue'
 import WindowControls from './components/WindowControls.vue'
 import ContextMenu from './components/ContextMenu.vue'
+import NavigationDialog from './components/NavigationDialog.vue'
 import ApplicationMenu from './components/ApplicationMenu.vue'
 import GitFlowPanel from './components/GitFlowPanel.vue'
 import ProtectedCheckoutDialog from './components/ProtectedCheckoutDialog.vue'
@@ -16,6 +17,8 @@ import GitFlowFinishDialog from './components/GitFlowFinishDialog.vue'
 import GitFlowFinishStatus from './components/GitFlowFinishStatus.vue'
 import MergeStatus from './components/MergeStatus.vue'
 import MergeDialog from './components/MergeDialog.vue'
+import RebasePanel from './components/RebasePanel.vue'
+import { useRebaseStore } from './stores/rebase'
 import StashToolbar from './components/StashToolbar.vue'
 import StashDeleteDialog from './components/StashDeleteDialog.vue'
 import { useContextMenuStore } from './stores/contextMenu'
@@ -25,13 +28,29 @@ import { isDesktop } from './services/desktop'
 import { branchTracking } from './branchTracking'
 
 const store = useRepositoryStore()
+const rebase = useRebaseStore()
 const chrome = useDesktopWindow()
 const contextMenu = useContextMenuStore()
 const flow = useGitFlowStore()
 const history = ref<{ focusSearch(): void }>()
 const inspector = ref<{ submit(): Promise<void> }>()
-const sidebarWidth = ref(210)
-const inspectorWidth = ref(330)
+const panelWidthsKey = 'gitcode.panel-widths'
+const savedPanelWidths: { sidebar?: number; inspector?: number } = {}
+try {
+  const saved: unknown = JSON.parse(localStorage.getItem(panelWidthsKey) || 'null')
+  if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+    const values = saved as Record<string, unknown>
+    if (typeof values.sidebar === 'number' && Number.isFinite(values.sidebar))
+      savedPanelWidths.sidebar = Math.max(190, Math.min(330, values.sidebar))
+    if (typeof values.inspector === 'number' && Number.isFinite(values.inspector))
+      savedPanelWidths.inspector = Math.max(290, Math.min(540, values.inspector))
+  }
+} catch {
+  /* Width preferences are optional. */
+}
+const sidebarWidth = ref(savedPanelWidths.sidebar ?? 250)
+const inspectorWidth = ref(savedPanelWidths.inspector ?? 330)
+const narrowPanels = ref(false)
 const dragging = ref(false)
 const branchMenu = ref<HTMLDetailsElement>()
 const branchTrigger = ref<HTMLElement>()
@@ -85,16 +104,48 @@ watch(
     if (value) closeBranchMenu()
   },
 )
-let manualSidebar = false
-let manualInspector = false
+let manualSidebar = savedPanelWidths.sidebar !== undefined
+let manualInspector = savedPanelWidths.inspector !== undefined
+let widthStorageWarning = false
+function persistPanelWidths() {
+  if (narrowPanels.value) return
+  try {
+    localStorage.setItem(
+      panelWidthsKey,
+      JSON.stringify({
+        ...(manualSidebar ? { sidebar: sidebarWidth.value } : {}),
+        ...(manualInspector ? { inspector: inspectorWidth.value } : {}),
+      }),
+    )
+    widthStorageWarning = false
+  } catch {
+    if (!widthStorageWarning) store.notify('面板宽度仅在本次会话保留，无法写入本机存储。', true)
+    widthStorageWarning = true
+  }
+}
 function fitPanels() {
   store.updateViewport(window.innerWidth)
-  if (!manualSidebar) sidebarWidth.value = window.innerWidth >= 1600 ? 220 : 210
+  narrowPanels.value = window.innerWidth <= 1000
+  if (!manualSidebar) sidebarWidth.value = window.innerWidth >= 1600 ? 260 : 250
   if (!manualInspector) inspectorWidth.value = window.innerWidth >= 1600 ? 400 : 330
 }
 let endDrag: (() => void) | undefined
+function resetView() {
+  endDrag?.()
+  manualSidebar = false
+  manualInspector = false
+  fitPanels()
+  try {
+    localStorage.removeItem(panelWidthsKey)
+    widthStorageWarning = false
+    store.notify('已恢复默认面板宽度')
+  } catch {
+    store.notify('已恢复默认宽度，但无法清除本机保存的宽度设置。', true)
+  }
+}
 
 function resizeByKeyboard(side: 'left' | 'right', delta: number) {
+  if (narrowPanels.value) return
   if (side === 'left') {
     manualSidebar = true
     sidebarWidth.value = Math.max(190, Math.min(330, sidebarWidth.value + delta))
@@ -102,22 +153,35 @@ function resizeByKeyboard(side: 'left' | 'right', delta: number) {
     manualInspector = true
     inspectorWidth.value = Math.max(290, Math.min(540, inspectorWidth.value + delta))
   }
+  persistPanelWidths()
 }
 
 function resize(event: PointerEvent, side: 'left' | 'right') {
-  if (event.button !== 0) return
+  if (event.button !== 0 || narrowPanels.value) return
   event.preventDefault()
-  if (side === 'left') manualSidebar = true
-  else manualInspector = true
+  let changed = false
   const start = event.clientX
   const width = side === 'left' ? sidebarWidth.value : inspectorWidth.value
   dragging.value = true
   const move = (e: PointerEvent) => {
+    if (narrowPanels.value) return
     const delta = e.clientX - start
-    if (side === 'left') sidebarWidth.value = Math.max(190, Math.min(330, width + delta))
-    else inspectorWidth.value = Math.max(290, Math.min(540, width - delta))
+    const next =
+      side === 'left'
+        ? Math.max(190, Math.min(330, width + delta))
+        : Math.max(290, Math.min(540, width - delta))
+    if (next === (side === 'left' ? sidebarWidth.value : inspectorWidth.value)) return
+    changed = true
+    if (side === 'left') {
+      manualSidebar = true
+      sidebarWidth.value = next
+    } else {
+      manualInspector = true
+      inspectorWidth.value = next
+    }
   }
   const end = () => {
+    if (changed) persistPanelWidths()
     dragging.value = false
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', end)
@@ -170,8 +234,10 @@ function chooseBranch(name: string) {
   if (store.busy) return
   closeBranchMenu(true)
   if (name === store.repo.branch) return
-  store.pendingBranch = name
-  store.modal = 'checkout'
+  const target = store.repo.branches.find(
+    (branch) => branch.kind === 'local' && branch.name === name,
+  )
+  if (target) void store.checkoutBranch(target)
 }
 onMounted(() => {
   fitPanels()
@@ -219,6 +285,7 @@ onUnmounted(() => {
       <ApplicationMenu
         :platform="chrome.platform.value"
         @search="focusHistorySearch"
+        @reset-view="resetView"
       />
       <span class="titlebar-divider"></span>
       <nav
@@ -233,7 +300,7 @@ onUnmounted(() => {
         >
           <button
             class="tab-select"
-            :disabled="store.busy"
+            :disabled="store.busy || rebase.active"
             :aria-current="tab.id === store.activeTabId ? 'page' : undefined"
             :title="tab.path || '新标签页'"
             @click="store.activateTab(tab.id)"
@@ -244,7 +311,7 @@ onUnmounted(() => {
             /><span>{{ tab.name }}</span></button
           ><button
             class="icon-button tab-close"
-            :disabled="store.busy"
+            :disabled="store.busy || rebase.active"
             :aria-label="`关闭标签 ${tab.name}`"
             title="关闭标签"
             @click="store.closeTab(tab.id)"
@@ -258,7 +325,7 @@ onUnmounted(() => {
       </nav>
       <button
         class="icon-button new-repo"
-        :disabled="store.busy"
+        :disabled="store.busy || rebase.active"
         title="新标签页 (Alt+T)"
         aria-label="新建标签页"
         @click="store.newTab()"
@@ -304,10 +371,13 @@ onUnmounted(() => {
       :key="store.activeTabId"
     />
     <template v-else>
-      <div class="toolbar">
+      <div
+        class="toolbar"
+        :inert="rebase.active"
+      >
         <button
           class="repo-selector"
-          :disabled="store.busy"
+          :disabled="store.busy || rebase.active"
           aria-haspopup="dialog"
           :aria-label="`打开本地仓库，当前仓库 ${store.repo.name}`"
           :title="`打开本地仓库：${store.repo.path}`"
@@ -357,7 +427,7 @@ onUnmounted(() => {
             ><button
               v-for="branch in store.repo.branches.filter((b) => b.kind === 'local')"
               :key="branch.name"
-              :disabled="store.busy"
+              :disabled="store.busy || rebase.active"
               @contextmenu="contextMenu.open($event, { kind: 'branch', branch })"
               @keydown="contextMenu.keyboard($event, { kind: 'branch', branch })"
               @click="chooseBranch(branch.name)"
@@ -379,7 +449,7 @@ onUnmounted(() => {
         </details>
         <div class="toolbar-actions">
           <button
-            :disabled="store.busy"
+            :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
             :title="
               store.busy
@@ -394,7 +464,7 @@ onUnmounted(() => {
             /><span>获取</span>
           </button>
           <button
-            :disabled="store.busy"
+            :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
             :title="store.busy ? '请等待当前操作完成' : '拉取远程更新（仅快进）'"
             @click="store.prepareSync('pull')"
@@ -405,7 +475,7 @@ onUnmounted(() => {
             /><span>拉取</span>
           </button>
           <button
-            :disabled="store.busy"
+            :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
             :title="store.busy ? '请等待当前操作完成' : '推送本地提交'"
             @click="store.prepareSync('push')"
@@ -417,7 +487,7 @@ onUnmounted(() => {
           </button>
           <span class="toolbar-divider"></span>
           <button
-            :disabled="store.busy"
+            :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
             :title="store.busy ? '请等待当前操作完成' : '创建新分支'"
             @click="store.modal = 'branch'"
@@ -429,7 +499,7 @@ onUnmounted(() => {
           </button>
           <StashToolbar />
           <button
-            :disabled="store.busy"
+            :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
             :title="store.busy ? '请等待当前操作完成' : '刷新仓库 (Ctrl+R)'"
             @click="store.refresh()"
@@ -443,7 +513,7 @@ onUnmounted(() => {
         </div>
         <button
           class="open-button secondary-button"
-          :disabled="store.busy"
+          :disabled="store.busy || rebase.active"
           @click="store.modal = 'open'"
         >
           <Icon
@@ -455,14 +525,17 @@ onUnmounted(() => {
       <GitFlowFinishStatus />
       <MergeStatus />
       <div class="workbench">
-        <Sidebar />
+        <RebasePanel v-if="rebase.active" />
+        <Sidebar v-else />
         <div
+          v-if="!rebase.active"
           class="resize-handle left"
           role="separator"
-          tabindex="0"
+          :tabindex="narrowPanels ? -1 : 0"
+          :aria-disabled="narrowPanels"
           aria-label="调整侧栏宽度"
           aria-orientation="vertical"
-          :aria-valuenow="sidebarWidth"
+          :aria-valuenow="narrowPanels ? 190 : sidebarWidth"
           :aria-valuemin="190"
           :aria-valuemax="330"
           @pointerdown="resize($event, 'left')"
@@ -470,6 +543,7 @@ onUnmounted(() => {
           @keydown.right.prevent="resizeByKeyboard('left', 10)"
         ></div>
         <CommitHistory
+          v-if="!rebase.active"
           ref="history"
           :inert="!!flow.panel"
           :aria-hidden="flow.panel ? 'true' : undefined"
@@ -477,10 +551,11 @@ onUnmounted(() => {
         <div
           class="resize-handle right"
           role="separator"
-          tabindex="0"
+          :tabindex="narrowPanels ? -1 : 0"
+          :aria-disabled="narrowPanels"
           aria-label="调整详情面板宽度"
           aria-orientation="vertical"
-          :aria-valuenow="inspectorWidth"
+          :aria-valuenow="narrowPanels ? 290 : inspectorWidth"
           :aria-valuemin="290"
           :aria-valuemax="540"
           @pointerdown="resize($event, 'right')"
@@ -554,8 +629,7 @@ onUnmounted(() => {
     <Dialogs />
     <StashDeleteDialog />
     <MergeDialog />
-    <ProtectedCheckoutDialog /><GitFlowFinishDialog />
-    <ContextMenu />
+    <ProtectedCheckoutDialog /><GitFlowFinishDialog /> <ContextMenu /><NavigationDialog />
     <div
       class="toast-stack"
       aria-live="polite"

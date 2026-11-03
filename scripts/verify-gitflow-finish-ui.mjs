@@ -16,6 +16,7 @@ export async function verifyGitFlowFinish(
     collision = false,
     stale = false,
     recover = false,
+    dirty = false,
     width = 1440,
     height = 900,
     screenshotDirectory,
@@ -115,6 +116,7 @@ export async function verifyGitFlowFinish(
       await git.git(repo, ['switch', branch])
     }
     if (collision) await git.git(repo, ['tag', 'v1.2.3'])
+    if (dirty) await writeFile(repo + '/finish-draft.txt', 'local draft survives Finish\n')
     await page
       .locator('.toolbar-actions')
       .getByRole('button', { name: '刷新', exact: true })
@@ -125,7 +127,7 @@ export async function verifyGitFlowFinish(
     await expect(page.locator('.branch-row-action')).toHaveCount(0)
     const row = page.locator(`[data-sidebar-section="gitflow"] [data-branch-name="${branch}"]`)
     await row.click({ button: 'right' })
-    await page.getByRole('menuitem', { name: label + '…', exact: true }).click()
+    await page.getByRole('menuitem', { name: `完成 ${branch}`, exact: true }).click()
     const confirm = page.getByRole('dialog', { name: label, exact: true })
     await expect(confirm).toBeVisible()
     await expect(confirm.getByRole('combobox')).toHaveCount(0)
@@ -245,6 +247,13 @@ export async function verifyGitFlowFinish(
       conflict ? 'combined ' + type + '\n' : 'source ' + type + '\n',
     )
     await capture('finished')
+    if (dirty) {
+      assert.equal(
+        await readFile(repo + '/finish-draft.txt', 'utf8'),
+        'local draft survives Finish\n',
+      )
+      assert.equal((await git.stash.list(repo)).entries.length, 0)
+    }
     return {
       type,
       conflict,
@@ -252,6 +261,7 @@ export async function verifyGitFlowFinish(
       source,
       recover,
       realStartAndFinish: true,
+      automaticLocalProtection: dirty,
       noRemoteWrites: true,
       tagAtProduction: type !== 'feature',
       restartResumes: conflict,

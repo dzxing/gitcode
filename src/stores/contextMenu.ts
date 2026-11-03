@@ -1,15 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, shallowRef } from 'vue'
-import type { Branch, Commit, StashEntry } from '../types'
+import type { Branch, Commit, FileChange, StashEntry } from '../types'
 import { useRepositoryStore } from './repository'
 import type { SidebarSection } from '../sidebar'
 
 export type MenuObject =
+  | { kind: 'files'; files: FileChange[]; staged: boolean; label: string }
   | { kind: 'stash'; stash: StashEntry }
   | { kind: 'branch'; branch: Branch }
   | { kind: 'commit'; commit: Commit }
   | { kind: 'section'; section: SidebarSection }
-  | { kind: 'worktree' | 'background' | 'columns' }
+  | { kind: 'worktree' | 'background' | 'columns' | 'navigation' }
 export type MenuContext = MenuObject & {
   repo: string
   tabId: number

@@ -198,7 +198,7 @@ class GitFlowFinishOperations {
   async begin(repo, request, file, signal) {
     if (await this.read(repo, signal))
       throw new Error('已有未完成的 GitFlow 操作，请先继续或停止后续步骤。')
-    await this.clean(repo, signal)
+    await this.git.noInProgress(repo, signal)
     const data = await this.git.flow.guarded(repo, request, signal)
     if (!data.complete) throw new Error('请先初始化 GitFlow。')
     const config = await this.git.flow.validate(repo, data.config, signal)
@@ -232,7 +232,10 @@ class GitFlowFinishOperations {
       let location = ''
       for (const field of worktrees.split('\0')) {
         if (field.startsWith('worktree ')) location = field.slice(9)
-        if (field === `branch refs/heads/${branch}` && path.resolve(location) !== repo)
+        if (
+          field === `branch refs/heads/${branch}` &&
+          !(await this.git.sameDirectory(location, repo))
+        )
           throw new Error('源分支正在其他工作区使用，无法删除。')
       }
     }
@@ -362,7 +365,18 @@ class GitFlowFinishOperations {
         const incoming = step.from === 'source' ? v.sourceOid : v.expected[v.config.production]
         if (!(await this.ancestor(repo, incoming, v.expected[step.target], signal))) {
           await this.git.checkWorktree(repo, `refs/heads/${step.target}`, false, signal)
-          await this.git.git(repo, ['switch', step.target], { signal })
+          await this.git.git(
+            repo,
+            [
+              '-c',
+              'submodule.recurse=false',
+              'switch',
+              '--no-overwrite-ignore',
+              '--no-guess',
+              step.target,
+            ],
+            { signal },
+          )
           await this.verifyRefs(repo, v, signal)
           v.pending = { target: step.target, before: v.expected[step.target], incoming }
           await this.save(file, v)
@@ -420,7 +434,18 @@ class GitFlowFinishOperations {
         }
       } else if (step.kind === 'cleanup') {
         await this.git.checkWorktree(repo, `refs/heads/${v.config.develop}`, false, signal)
-        await this.git.git(repo, ['switch', v.config.develop], { signal })
+        await this.git.git(
+          repo,
+          [
+            '-c',
+            'submodule.recurse=false',
+            'switch',
+            '--no-overwrite-ignore',
+            '--no-guess',
+            v.config.develop,
+          ],
+          { signal },
+        )
         if (v.deleteBranch) {
           for (const target of v.targets)
             if (!(await this.ancestor(repo, v.sourceOid, v.expected[target], signal)))
@@ -480,7 +505,15 @@ class GitFlowFinishOperations {
             output: '已停止后续步骤。已完成的合并、标签及当前工作区修改均保留，未回滚任何提交。',
           }
         }
-        return await this.advance(repo, v, file, signal)
+        return request.action === 'gitflow-finish'
+          ? await this.git.autoStash.run(
+              repo,
+              'GitFlow Finish',
+              signal,
+              () => this.advance(repo, v, file, signal),
+              v.config.develop,
+            )
+          : await this.advance(repo, v, file, signal)
       } catch (error) {
         if (v) {
           v.error = this.git.safeError(error)

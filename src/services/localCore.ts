@@ -93,6 +93,7 @@ export function createLocalCoreClient(
     }
   }
   const bridge: DesktopBridge = {
+    navigationRead: (repo, request) => cancellableRead('navigation-read', [repo, request]),
     mergeRead: (repo, file) => cancellableRead('merge-read', [repo, file]),
     stashRead: (repo, oid, file) => cancellableRead('stash-read', [repo, oid, file]),
     selectedCommitPlan: (repo, request) => cancellableRead('selected-commit-plan', [repo, request]),

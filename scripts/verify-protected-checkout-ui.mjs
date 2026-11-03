@@ -66,11 +66,13 @@ export async function verifyProtectedCheckout(
     const row = page.locator(
       '[data-sidebar-section="local"] [data-branch-name="topic"] .branch-main',
     )
-    await row.dblclick()
-    const confirmation = page.getByRole('dialog', { name: '切换分支', exact: true })
-    const first = await action(() =>
-      confirmation.getByRole('button', { name: '确认切换', exact: true }).click(),
-    )
+    const first = await action(async () => {
+      if (scenario === 'safe' || scenario === 'conflict') {
+        await row.click({ button: 'right' })
+        await page.getByRole('menuitem', { name: '切换到 topic', exact: true }).click()
+      } else await row.dblclick()
+    })
+    await expect(page.getByRole('dialog', { name: '切换分支', exact: true })).toHaveCount(0)
     if (scenario === 'safe') {
       assert.equal(first.outcome, 'succeeded', first.error)
       assert.equal(first.snapshot.stashes.length, 0)

@@ -1,3 +1,5 @@
+import { useGraphViewStore } from './graphView'
+import { visibleHistory } from '../graphVisibility'
 import { computed, onScopeDispose, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { branchReference } from '../references'
@@ -11,6 +13,7 @@ import {
 import type {
   ActionResult,
   CheckoutProtection,
+  PublishTarget,
   Branch,
   Commit,
   FileChange,
@@ -27,6 +30,7 @@ import type {
 
 export const useRepositoryStore = defineStore('repository', () => {
   const repo = ref<Snapshot>(emptyRepository())
+  const graphView = useGraphViewStore()
   const connected = ref(false)
   const connecting = ref(false),
     connectionError = ref('')
@@ -47,6 +51,17 @@ export const useRepositoryStore = defineStore('repository', () => {
     | null
   >(null)
   const lastActionResult = ref<ActionResult | null>(null)
+  const remoteCheckout = ref<
+    | (NonNullable<ActionResult['remoteCheckoutProtection']> & {
+        intent: { repo: string; tabId: number; expectedHead: string; expectedBranch: string }
+      })
+    | null
+  >(null)
+  const upstreamRequest = ref<{
+    branch: Branch
+    intent: { repo: string; tabId: number; expectedHead: string; expectedBranch: string }
+    method: 'ff-only' | 'merge'
+  } | null>(null)
   const runtime = ref<RuntimeInfo | null>(null)
   const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth || 1440 : 1440)
   const authorPreference = ref<boolean | null>(null),
@@ -124,22 +139,24 @@ export const useRepositoryStore = defineStore('repository', () => {
     | 'create'
     | 'close'
     | 'branch'
-    | 'checkout'
     | 'push'
     | 'pull'
     | 'help'
+    | 'navigation'
     | 'stash-delete'
     | 'merge-conflicts'
     | 'gitflow-finish'
     | 'checkout-protected'
+    | 'checkout-remote'
+    | 'upstream'
     | null
   >(null)
-  const pendingBranch = ref('')
   const syncPreview = ref<SyncPlan | null>(null),
     syncError = ref('')
-  const pullMethod = ref<'ff-only' | 'merge'>('ff-only')
+  const pullMethod = ref<'ff-only' | 'merge'>('merge')
   const syncTarget = ref<Branch | null>(null)
   const activeOperation = ref('')
+  const rebasePlanning = ref(false)
   const operationLabel = computed(
     () =>
       ({
@@ -150,6 +167,10 @@ export const useRepositoryStore = defineStore('repository', () => {
         'merge-resolve': '保存冲突解决结果',
         'merge-finish': '完成合并',
         'merge-abort': '中止合并',
+        'rebase-start': '变基',
+        'rebase-continue': '继续变基',
+        'rebase-skip': '跳过当前提交',
+        'rebase-abort': '中止变基',
         'stash-create': '贮藏修改',
         'stash-apply': '恢复贮藏',
         'stash-pop': '恢复并移除贮藏',
@@ -193,17 +214,19 @@ export const useRepositoryStore = defineStore('repository', () => {
   const commitContextBlocked = computed(() =>
     isNewTab.value
       ? '请先打开仓库工作区'
-      : repo.value.gitflow?.finish
-        ? '请先完成或停止当前 GitFlow 流程'
-        : repo.value.merge
-          ? '请通过冲突处理界面解决并完成当前操作'
-          : selectedCommit.value || selectedStash.value
-            ? '请返回工作区后提交'
-            : gitflowPanel.value
-              ? '请先收起 GitFlow 面板后提交'
-              : modal.value
-                ? '请先关闭当前弹窗后提交'
-                : '',
+      : rebasePlanning.value
+        ? '请先完成或取消提交编排'
+        : repo.value.gitflow?.finish
+          ? '请先完成或停止当前 GitFlow 流程'
+          : repo.value.merge
+            ? '请通过冲突处理界面解决并完成当前操作'
+            : selectedCommit.value || selectedStash.value
+              ? '请返回工作区后提交'
+              : gitflowPanel.value
+                ? '请先收起 GitFlow 面板后提交'
+                : modal.value
+                  ? '请先关闭当前弹窗后提交'
+                  : '',
   )
   const inspectorCovered = computed(
     () =>
@@ -232,7 +255,8 @@ export const useRepositoryStore = defineStore('repository', () => {
       .filter(
         (tab) =>
           tab.kind === 'repository' &&
-          (mergeDraftTabs.value.has(tab.id) ||
+          ((rebasePlanning.value && tab.id === activeTabId.value) ||
+            mergeDraftTabs.value.has(tab.id) ||
             (tab.id === activeTabId.value
               ? !!(commitMessage.value.trim() || commitDescription.value.trim())
               : !!(tab.state?.commitMessage.trim() || tab.state?.commitDescription.trim()))),
@@ -269,6 +293,7 @@ export const useRepositoryStore = defineStore('repository', () => {
   }
 
   function activateTab(id: number) {
+    if (rebasePlanning.value) return
     if (
       busy.value ||
       modal.value ||
@@ -325,6 +350,7 @@ export const useRepositoryStore = defineStore('repository', () => {
   }
 
   function newTab() {
+    if (rebasePlanning.value) return
     if (busy.value || modal.value) return
     saveTab()
     const id = ++nextTabId
@@ -333,6 +359,7 @@ export const useRepositoryStore = defineStore('repository', () => {
   }
 
   function closeTab(id: number, confirmed = false) {
+    if (rebasePlanning.value) return
     if (busy.value || (modal.value && modal.value !== 'close')) return
     const index = tabs.value.findIndex((tab) => tab.id === id)
     if (index < 0) return
@@ -424,7 +451,11 @@ export const useRepositoryStore = defineStore('repository', () => {
     () => new Set([...repo.value.unstaged, ...repo.value.staged].map((f) => f.path)).size,
   )
   const visibleCommits = computed(() => {
-    let list = repo.value.commits
+    let list = visibleHistory(
+      repo.value.commits,
+      repo.value.branches,
+      graphView.state(repo.value.path),
+    )
     if (branchFilter.value) {
       const branch = repo.value.branches.find((b) => branchReference(b) === branchFilter.value)
       const byHash = new Map(list.map((c) => [c.hash, c]))
@@ -635,11 +666,30 @@ export const useRepositoryStore = defineStore('repository', () => {
     }
   }
 
+  async function checkoutBranch(branch: Branch, intent = captureOperation()) {
+    if (busy.value || modal.value || isNewTab.value || branch.kind === 'tag') return false
+    if (!sameContext(intent)) {
+      notify('仓库上下文已变化，请重新选择分支。', true)
+      return false
+    }
+    if (branch.kind === 'remote')
+      return run(
+        'checkout-remote',
+        { fullRef: branchReference(branch), expectedOid: branch.hash },
+        intent,
+      )
+    if (branch.name === repo.value.branch) return false
+    if (branch.worktreePath && branch.worktreePath !== repo.value.path)
+      return open(branch.worktreePath)
+    return run('checkout', { name: branch.name, expectedOid: branch.hash }, intent)
+  }
+
   async function prepareSync(
     kind: 'pull' | 'push',
     source?: Branch,
     origin = captureOperation(),
-    method: 'ff-only' | 'merge' = 'ff-only',
+    method: 'ff-only' | 'merge' = 'merge',
+    publish?: PublishTarget,
   ) {
     if (busy.value) return
     if (isNewTab.value) {
@@ -658,6 +708,11 @@ export const useRepositoryStore = defineStore('repository', () => {
     syncTarget.value = selected ? { ...selected } : null
     syncPreview.value = null
     syncError.value = ''
+    if (kind === 'pull' && selected?.kind === 'local' && !selected.upstream) {
+      upstreamRequest.value = { branch: { ...selected }, intent: { ...origin }, method }
+      modal.value = 'upstream'
+      return
+    }
     modal.value = kind
     busy.value = true
     activeOperation.value = 'prepare-sync'
@@ -666,6 +721,7 @@ export const useRepositoryStore = defineStore('repository', () => {
       const plan = await desktop.syncPlan(syncIntent.repo, kind, {
         ...syncIntent,
         method,
+        ...(publish ? { publish } : {}),
         ...(selected
           ? {
               sourceRef: selected.fullRef || `refs/heads/${selected.name}`,
@@ -675,7 +731,7 @@ export const useRepositoryStore = defineStore('repository', () => {
       })
       if (attempt !== syncAttempt || !sameContext(origin)) return
       // A renderer hot update can temporarily talk to an older Electron core.
-      if (method === 'merge' && plan.method !== 'merge')
+      if (kind === 'pull' && method === 'merge' && plan.method !== 'merge')
         throw new Error('本机核心尚不支持合并拉取，请重启开发服务或桌面应用。')
       if (
         plan.kind !== kind ||
@@ -691,11 +747,50 @@ export const useRepositoryStore = defineStore('repository', () => {
         const message = (error as Error).message
         syncError.value =
           kind === 'push' && /尚无明确上游/.test(message)
-            ? `分支 ${selected?.name || repo.value.branch} 尚未关联远端分支，无法确定推送目标。请先设置推送目标。`
-            : message
+            ? `分支 ${selected?.name || repo.value.branch} 尚未关联远端分支，无法确定推送目标。请重启开发服务或桌面应用，加载首次推送功能。`
+            : kind === 'pull' && /尚无明确上游/.test(message)
+              ? `分支 ${selected?.name || repo.value.branch} 尚未关联远端分支。请先推送并建立关联，或设置上游后再拉取。`
+              : message
       }
     } finally {
       await finishOperation()
+    }
+  }
+
+  async function setPublishTarget(remote: string, branch: string) {
+    if (busy.value || !syncIntent || !syncTarget.value) return
+    await prepareSync('push', syncTarget.value, syncIntent, 'ff-only', { remote, branch })
+  }
+
+  async function confirmUpstream(fullRef: string) {
+    const request = upstreamRequest.value
+    if (!request || busy.value || !sameContext(request.intent)) {
+      notify('仓库上下文已变化，请重新设置上游。', true)
+      return
+    }
+    const remote = repo.value.branches.find(
+      (b) => b.kind === 'remote' && branchReference(b) === fullRef && !b.symbolicTarget,
+    )
+    if (!remote) {
+      notify('请选择远程实际分支，请先获取更新。', true)
+      return
+    }
+    const ok = await run(
+      'set-upstream',
+      {
+        name: request.branch.name,
+        expectedOid: request.branch.hash,
+        fullRef,
+        upstreamOid: remote.hash,
+      },
+      request.intent,
+    )
+    if (ok) {
+      upstreamRequest.value = null
+      const updated = repo.value.branches.find(
+        (b) => b.kind === 'local' && b.name === request.branch.name,
+      )
+      if (updated) await prepareSync('pull', updated, request.intent, request.method)
     }
   }
 
@@ -768,6 +863,12 @@ export const useRepositoryStore = defineStore('repository', () => {
 
   async function confirmSync() {
     if (!syncPreview.value || !syncIntent) return false
+    if (
+      syncPreview.value.kind === 'push' &&
+      (!syncPreview.value.remoteCheck ||
+        ['error', 'behind', 'diverged'].includes(syncPreview.value.remoteCheck.state))
+    )
+      return false
     return run(syncPreview.value.kind, { planId: syncPreview.value.id }, syncIntent)
   }
 
@@ -852,6 +953,10 @@ export const useRepositoryStore = defineStore('repository', () => {
       return false
     }
     if (busy.value) return false
+    if (rebasePlanning.value && action !== 'rebase-start') {
+      notify('请先完成或取消提交编排。', true)
+      return false
+    }
     if (['commit', 'commit-selected'].includes(action) && commitContextBlocked.value) {
       notify(commitContextBlocked.value, true)
       return false
@@ -890,9 +995,20 @@ export const useRepositoryStore = defineStore('repository', () => {
       lastActionResult.value = result
       if (!sameContext(intent)) return false
       if (result.snapshot) await applySnapshot(result.snapshot)
+      if (
+        action.startsWith('rebase-') &&
+        ['succeeded', 'partial'].includes(result.outcome || 'succeeded')
+      ) {
+        clearSelection()
+        clearBranchFilter()
+      }
       if (action === 'checkout' && result.checkoutProtection) {
         checkoutProtection.value = { ...result.checkoutProtection, intent }
         modal.value = 'checkout-protected'
+      }
+      if (result.remoteCheckoutProtection) {
+        remoteCheckout.value = { ...result.remoteCheckoutProtection, intent }
+        modal.value = 'checkout-remote'
       }
       const outcome = result.outcome || 'succeeded'
       if (['commit', 'commit-selected'].includes(action) && outcome === 'succeeded') {
@@ -900,14 +1016,27 @@ export const useRepositoryStore = defineStore('repository', () => {
         commitDescription.value = ''
       }
       if (
-        (['checkout', 'stash-checkout', 'branch'].includes(action) || extra.switchAfter) &&
+        ([
+          'checkout',
+          'checkout-remote',
+          'checkout-remote-confirm',
+          'stash-checkout',
+          'branch',
+        ].includes(action) ||
+          extra.switchAfter) &&
         outcome === 'succeeded'
       )
         clearSelection()
       if (
-        (['checkout', 'stash-checkout', 'branch', 'rename-branch', 'delete-branch'].includes(
-          action,
-        ) ||
+        ([
+          'checkout',
+          'checkout-remote',
+          'checkout-remote-confirm',
+          'stash-checkout',
+          'branch',
+          'rename-branch',
+          'delete-branch',
+        ].includes(action) ||
           extra.switchAfter) &&
         outcome === 'succeeded'
       )
@@ -932,10 +1061,19 @@ export const useRepositoryStore = defineStore('repository', () => {
         'merge-resolve': '文件已保存并标记解决',
         'merge-finish': '合并提交已创建，可以推送',
         'merge-abort': '合并已中止',
+        'rebase-start': '变基已完成，请核对历史与暂存状态后再推送',
+        'rebase-continue': '变基已继续执行，请核对当前状态',
+        'rebase-skip': '已跳过当前提交并继续变基',
+        'rebase-abort': '变基已中止',
         'stash-create': '修改已贮藏，提交说明草稿保留',
         'stash-apply': '贮藏已恢复，记录保留',
         'stash-pop': '贮藏已恢复并移除',
         'stash-drop': '贮藏已删除',
+        'set-upstream': '已设置上游分支',
+        'merge-branch': '合并操作已执行，请核对结果',
+        'fast-forward': '当前分支已快进',
+        'create-tag': '标签已创建',
+        'delete-remote-branch': '远程分支已删除',
         stage: '文件已暂存',
         unstage: '已取消暂存',
         commit: '提交成功',
@@ -962,7 +1100,15 @@ export const useRepositoryStore = defineStore('repository', () => {
         notify(`${outcome === 'partial' ? '操作已部分完成。' : ''}${result.error}`, true)
         if (wasSyncModal) syncError.value = result.error
       }
-      if (result.warning && !(action === 'pull' && result.snapshot?.merge?.active))
+      if (
+        result.warning &&
+        !(action === 'pull' && result.snapshot?.merge?.active) &&
+        !(
+          ['rebase-start', 'rebase-continue'].includes(action) &&
+          result.snapshot?.merge?.rebase &&
+          /还有 \d+ 个冲突文件/.test(result.warning)
+        )
+      )
         notify(result.warning, true)
       if (result.cleanupError)
         notify(`操作临时引用清理失败：${result.cleanupError}，请检查仓库。`, true)
@@ -1113,7 +1259,12 @@ export const useRepositoryStore = defineStore('repository', () => {
   }
 
   return {
+    rebasePlanning,
     checkoutProtection,
+    remoteCheckout,
+    upstreamRequest,
+    confirmUpstream,
+    checkoutBranch,
     mergeDraftTabs,
     pullMethod,
     setPullMethod,
@@ -1128,6 +1279,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     commitSelected,
     syncTarget,
     syncPreview,
+    setPublishTarget,
     syncError,
     activeOperation,
     showAuthor,
@@ -1166,7 +1318,6 @@ export const useRepositoryStore = defineStore('repository', () => {
     commitBody,
     commitMessage,
     modal,
-    pendingBranch,
     notices,
     recent,
     changes,

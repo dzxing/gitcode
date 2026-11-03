@@ -15,15 +15,23 @@ const merge = useMergeStore(),
       name="GitMerge"
       :size="15"
     /><strong>{{
-      merge.state ? (merge.state.active ? '合并进行中' : '恢复修改有冲突') : '冲突处理草稿'
+      merge.state
+        ? merge.state.rebase
+          ? '变基进行中'
+          : merge.state.active
+            ? '合并进行中'
+            : '恢复修改有冲突'
+        : '冲突处理草稿'
     }}</strong
     ><template v-if="merge.state"
       ><span>{{
         merge.state.files.length
           ? `还有 ${merge.state.files.length} 个冲突文件`
-          : merge.state.active
-            ? '冲突已解决，请检查并完成合并'
-            : '请检查工作区修改'
+          : merge.state.rebase
+            ? '请检查右侧变基进度'
+            : merge.state.active
+              ? '冲突已解决，请检查并完成合并'
+              : '请检查工作区修改'
       }}</span
       ><span
         v-if="merge.state.unsupported"
@@ -35,7 +43,13 @@ const merge = useMergeStore(),
         :disabled="repo.busy"
         @click="merge.open"
       >
-        {{ merge.state.files.length ? '继续处理冲突' : '检查合并结果' }}
+        {{
+          merge.state.rebase
+            ? '查看变基进度'
+            : merge.state.files.length
+              ? '继续处理冲突'
+              : '检查合并结果'
+        }}
       </button></template
     ><template v-else
       ><span>仓库冲突状态已结束，未保存的编辑结果仍保留。</span

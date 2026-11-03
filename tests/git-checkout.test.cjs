@@ -48,6 +48,121 @@ async function fixture(t) {
   }
   return { repo, git, write, commit, base, target, action, block }
 }
+
+async function remoteFixture(t, name = 'topic', oid) {
+  const f = await fixture(t)
+  await f.git.git(f.repo, ['config', 'remote.origin.url', '.'])
+  await f.git.git(f.repo, ['config', 'remote.origin.fetch', '+refs/heads/*:refs/remotes/origin/*'])
+  const ref = `refs/remotes/origin/${name}`
+  await f.git.git(f.repo, ['update-ref', ref, oid || f.target])
+  const remote = () => f.action('checkout-remote', { fullRef: ref, expectedOid: oid || f.target })
+  return { ...f, ref, remote }
+}
+test('remote checkout creates a local tracking branch and restores local changes', async (t) => {
+  const f = await remoteFixture(t, 'fresh')
+  await f.write('new.txt', 'draft\n')
+  const result = await f.remote()
+  assert.equal(result.outcome, 'succeeded', JSON.stringify(result))
+  assert.equal(result.snapshot.branch, 'fresh')
+  assert.equal(result.snapshot.head, f.target)
+  assert.equal(result.snapshot.branches.find((b) => b.name === 'fresh').upstream, 'origin/fresh')
+  assert.equal(await fs.readFile(path.join(f.repo, 'new.txt'), 'utf8'), 'draft\n')
+  assert.equal(result.snapshot.stashes.length, 0)
+})
+test('remote checkout reuses a same-tip branch and fast-forwards only its own tracked branch', async (t) => {
+  const f = await remoteFixture(t)
+  assert.equal((await f.remote()).snapshot.branch, 'topic')
+  await f.git.git(f.repo, ['switch', 'main'])
+  await f.git.git(f.repo, ['update-ref', 'refs/heads/topic', f.base, f.target])
+  await f.git.git(f.repo, ['branch', '--set-upstream-to=origin/topic', 'topic'])
+  await f.write('new.txt', 'draft\n')
+  const result = await f.remote()
+  assert.equal(result.outcome, 'succeeded', JSON.stringify(result))
+  assert.equal(result.snapshot.branch, 'topic')
+  assert.equal(result.snapshot.head, f.target)
+  assert.equal(await fs.readFile(path.join(f.repo, 'new.txt'), 'utf8'), 'draft\n')
+})
+for (const choice of ['create', 'reset'])
+  test(`different local history requires an explicit ${choice} choice before remote checkout`, async (t) => {
+    const f = await remoteFixture(t)
+    await f.git.git(f.repo, ['update-ref', f.ref, f.base, f.target])
+    const result = await f.action('checkout-remote', { fullRef: f.ref, expectedOid: f.base })
+    assert.equal(result.outcome, 'failed')
+    const p = result.remoteCheckoutProtection
+    assert.ok(p)
+    assert.equal((await f.git.git(f.repo, ['rev-parse', 'refs/heads/topic'])).trim(), f.target)
+    assert.equal(result.snapshot.branch, 'main')
+    const applied = await f.action('checkout-remote-confirm', {
+      planId: p.id,
+      choice,
+      ...(choice === 'create' ? { name: 'topic-copy' } : {}),
+    })
+    assert.equal(applied.outcome, 'succeeded', JSON.stringify(applied))
+    assert.equal(applied.snapshot.branch, choice === 'create' ? 'topic-copy' : 'topic')
+    assert.equal(applied.snapshot.head, f.base)
+    assert.equal(
+      (await f.git.git(f.repo, ['rev-parse', 'refs/heads/topic'])).trim(),
+      choice === 'create' ? f.target : f.base,
+    )
+    if (choice === 'reset')
+      assert.match(
+        await f.git.git(f.repo, ['reflog', 'show', '--format=%H', 'topic']),
+        new RegExp(f.target),
+      )
+  })
+test('remote checkout confirmation rejects changed content and changed remote refs before stashing', async (t) => {
+  const f = await remoteFixture(t)
+  await f.git.git(f.repo, ['update-ref', f.ref, f.base, f.target])
+  const plan = await f.action('checkout-remote', { fullRef: f.ref, expectedOid: f.base })
+  await f.write('new.txt', 'draft\n')
+  let result = await f.action('checkout-remote-confirm', {
+    planId: plan.remoteCheckoutProtection.id,
+    choice: 'reset',
+  })
+  assert.equal(result.outcome, 'failed')
+  assert.match(result.error, /文件.*变化/)
+  assert.equal(result.snapshot.stashes.length, 0)
+  await fs.rm(path.join(f.repo, 'new.txt'))
+  await f.git.git(f.repo, ['update-ref', f.ref, f.target, f.base])
+  result = await f.action('checkout-remote-confirm', {
+    planId: plan.remoteCheckoutProtection.id,
+    choice: 'reset',
+  })
+  assert.equal(result.outcome, 'failed')
+  assert.match(result.error, /引用.*变化|分支.*变化/)
+  assert.equal(result.snapshot.branch, 'main')
+})
+for (const operation of ['create-branch', 'track-branch'])
+  test(`${operation} preserves ignored files when switching to the new branch`, async (t) => {
+    const f = await fixture(t)
+    await f.git.git(f.repo, ['switch', 'topic'])
+    await f.write('private.ignored', 'tracked target\n')
+    await f.git.git(f.repo, ['add', '-f', 'private.ignored'])
+    const target = await f.commit('target includes ignored path')
+    await f.git.git(f.repo, ['switch', 'main'])
+    await f.write('private.ignored', 'local data to preserve\n')
+    await f.git.git(f.repo, ['config', 'remote.origin.url', '.'])
+    await f.git.git(f.repo, [
+      'config',
+      'remote.origin.fetch',
+      '+refs/heads/*:refs/remotes/origin/*',
+    ])
+    await f.git.git(f.repo, ['update-ref', 'refs/remotes/origin/topic', target])
+    const result = await f.action(operation, {
+      name: 'new-topic',
+      switchAfter: true,
+      startOid: target,
+      fullRef: 'refs/remotes/origin/topic',
+      expectedOid: target,
+    })
+    assert.equal(result.outcome, 'partial', JSON.stringify(result))
+    assert.equal(result.snapshot.branch, 'main')
+    assert.equal(
+      await fs.readFile(path.join(f.repo, 'private.ignored'), 'utf8'),
+      'local data to preserve\n',
+    )
+    assert.equal((await f.git.git(f.repo, ['rev-parse', 'refs/heads/new-topic'])).trim(), target)
+  })
 test('safe checkout carries unrelated edits without creating a stash', async (t) => {
   const f = await fixture(t)
   await f.write('new.txt', 'draft\n')
