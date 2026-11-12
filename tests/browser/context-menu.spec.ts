@@ -26,11 +26,14 @@ test('branch and commit menus target the right-clicked object without changing s
   const row = page.locator('.commit-row').nth(2)
   await row.locator('.commit-select').click({ button: 'right' })
   menu = page.getByRole('menu')
-  await expect(menu.getByRole('menuitem', { name: '查看提交详情', exact: true })).toBeVisible()
+  await expect(
+    menu.getByRole('menuitem', { name: '在修订版中显示仓库', exact: true }),
+  ).toBeVisible()
   await expect(menu.getByRole('menuitem', { name: /^切换到 / })).toHaveCount(0)
   await expect(selected).toHaveClass(/selected/)
-  await menu.getByRole('menuitem', { name: '查看提交详情', exact: true }).click()
-  await expect(row).toHaveClass(/selected/)
+  await menu.getByRole('menuitem', { name: '在修订版中显示仓库', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '在修订版中显示仓库', exact: true })).toBeVisible()
+  await expect(selected).toHaveClass(/selected/)
 })
 
 test('reference labels, keyboard invocation, columns and menu edges work', async ({ page }) => {
@@ -210,4 +213,158 @@ test('long branch menu labels stay on one line, grow naturally and fit the viewp
     }
     await page.keyboard.press('Escape')
   }
+})
+
+test('commit menu keeps its complete order while HEAD and root restrictions are greyed', async ({
+  page,
+}) => {
+  await openFixtureRepository(page)
+  const head = page.locator(`[data-commit-hash="${repositoryFixture.head}"]`)
+  await head.click({ button: 'right' })
+  const menu = page.getByRole('menu')
+  const labels = await menu.getByRole('menuitem').allTextContents()
+  expect(labels).toHaveLength(21)
+  await expect(menu.getByRole('menuitem', { name: '与本地比较', exact: true })).toBeEnabled()
+  await expect(menu.getByRole('menuitem', { name: '撤销提交…', exact: true })).toBeEnabled()
+  await expect(
+    menu.getByRole('menuitem', { name: '从这里进行交互式变基…', exact: true }),
+  ).toBeEnabled()
+  await expect(menu.getByRole('menuitem', { name: '转到子提交', exact: true })).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await page
+    .locator(`[data-commit-hash="${repositoryFixture.commits.at(-1)!.hash}"]`)
+    .click({ button: 'right' })
+  expect(await menu.getByRole('menuitem').allTextContents()).toEqual(labels)
+  await expect(menu.getByRole('menuitem', { name: '转到父提交', exact: true })).toBeDisabled()
+  await expect(menu.getByRole('menuitem', { name: '转到子提交', exact: true })).toBeEnabled()
+  await page.screenshot({ path: 'design/commit-context-menu/root-menu.png' })
+})
+
+test('parent and child navigation preserve the right-click target and let users choose merge ancestry', async ({
+  page,
+}) => {
+  await openFixtureRepository(page)
+  const merge = repositoryFixture.commits[1]!
+  await page.locator(`[data-commit-hash="${merge.hash}"]`).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '转到父提交', exact: true }).click()
+  const chooser = page.getByRole('dialog', { name: '选择父提交', exact: true })
+  await expect(chooser).toBeVisible()
+  await expect(chooser.locator('.commit-jump-choice')).toHaveCount(2)
+  const target = merge.parents[1]!
+  await chooser
+    .locator('.commit-jump-choice')
+    .filter({ hasText: target.slice(0, 8) })
+    .click()
+  await expect(page.locator('.commit-row.selected')).toHaveAttribute('data-commit-hash', target)
+  await expect(chooser).not.toBeVisible()
+  await page.locator(`[data-commit-hash="${target}"]`).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '转到子提交', exact: true }).click()
+  await expect(page.locator('.commit-row.selected')).toHaveAttribute('data-commit-hash', merge.hash)
+})
+
+test('comparison and undo entries invoke existing preflight with the frozen commit, never another selected row', async ({
+  page,
+}) => {
+  const snapshot = structuredClone(repositoryFixture)
+  snapshot.branches = snapshot.branches.filter((b) => b.kind !== 'remote')
+  await openFixtureRepository(page, false, snapshot)
+  await page.evaluate(() => {
+    window.gitk!.navigationRead = async (_repo, request) => {
+      document.documentElement.dataset.commitCompare = JSON.stringify(request)
+      return {
+        fullRef: request.fullRef,
+        referenceOid: request.expectedOid,
+        oid: request.expectedOid,
+        head: request.expectedHead,
+        branch: request.expectedBranch,
+        related: true,
+        alreadyMerged: false,
+        canFastForward: false,
+        files: [],
+        diff: null,
+      }
+    }
+    window.gitk!.commitOperationRead = async () => {
+      throw new Error('Read-only fixture confirms preflight was requested')
+    }
+  })
+  const target = repositoryFixture.commits[2]!
+  await page.locator(`[data-commit-hash="${target.hash}"]`).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '与本地比较', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '与工作区比较', exact: true })).toBeVisible()
+  const request = await page.evaluate(() =>
+    JSON.parse(document.documentElement.dataset.commitCompare!),
+  )
+  expect(request.fullRef).toBe(target.hash)
+  expect(request.expectedHead).toBe(repositoryFixture.head)
+  await page.getByRole('button', { name: '关闭导航操作', exact: true }).click()
+  await page.locator(`[data-commit-hash="${repositoryFixture.head}"]`).click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: '撤销提交…', exact: true })).toBeEnabled()
+  await page.getByRole('menuitem', { name: '撤销提交…', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: '撤销提交', exact: true })).toBeVisible()
+  await expect(
+    page.getByText('Read-only fixture confirms preflight was requested', { exact: true }),
+  ).toBeVisible()
+})
+
+test('undo preview rejects a HEAD that moved after the commit menu was clicked', async ({
+  page,
+}) => {
+  const snapshot = structuredClone(repositoryFixture)
+  snapshot.branches = snapshot.branches.filter((branch) => branch.kind !== 'remote')
+  await openFixtureRepository(page, false, snapshot)
+  await page.evaluate(() => {
+    window.gitk!.commitOperationRead = async () => ({
+      id: 'stale-plan',
+      head: 'f'.repeat(40),
+      branch: 'main',
+      commits: [],
+    })
+  })
+  await page.locator(`[data-commit-hash="${snapshot.head}"]`).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '撤销提交…', exact: true }).click()
+  await expect(
+    page.getByText('提交操作计划与当前上下文不一致，请关闭后重新打开。', { exact: true }),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: '撤回最近提交', exact: true })).toHaveCount(0)
+})
+
+test('parent navigation loads an unloaded SHA and leaves the target clear of the sticky header', async ({
+  page,
+}) => {
+  const snapshot = structuredClone(repositoryFixture)
+  const parent = { ...snapshot.commits[1]!, parents: [] }
+  snapshot.commits = [{ ...snapshot.commits[0]!, parents: [parent.hash] }]
+  snapshot.total = 2
+  const history = {
+    token: 'menu-page',
+    signature: 'menu-page',
+    basis: '',
+    focus: null,
+    nextOffset: 1,
+    total: 2,
+  }
+  snapshot.history = history
+  await openFixtureRepository(page, false, snapshot)
+  await page.evaluate(
+    ({ parent, history }) => {
+      window.gitk!.historyRead = async (_repo, request) => {
+        document.documentElement.dataset.menuLocatedSha = request.sha
+        return { commits: [parent], history: { ...history, focus: parent.hash, nextOffset: null } }
+      }
+    },
+    { parent, history },
+  )
+  await page.locator('.commit-row').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '转到父提交', exact: true }).click()
+  await expect(page.locator('.commit-row.selected')).toHaveAttribute(
+    'data-commit-hash',
+    parent.hash,
+  )
+  expect(await page.evaluate(() => document.documentElement.dataset.menuLocatedSha)).toBe(
+    parent.hash,
+  )
+  const target = await page.locator('.commit-row.selected').boundingBox()
+  const header = await page.locator('.table-head').boundingBox()
+  expect(target!.y).toBeGreaterThanOrEqual(header!.y + header!.height - 0.5)
 })

@@ -348,3 +348,51 @@ test('linked worktree uses its own operation state and supports abort', async (t
   assert.equal(result.snapshot.head, f.original)
   assert.equal(await f.git.head(f.repo), f.original)
 })
+
+test('reword and squash retain hash-prefixed user messages without committing editor templates', async (t) => {
+  const f = await fixture(t),
+    p = await f.plan()
+  p.rebase.steps[0].type = 'reword'
+  p.rebase.steps[0].message = '#literal title\n\n#literal body\nDescription'
+  p.rebase.steps[1].type = 'squash'
+  const result = await f.start(p.rebase.steps)
+  assert.equal(result.outcome, 'succeeded', result.error || result.warning)
+  assert.equal(
+    (await f.cmd('log', '-1', '--format=%B')).trim(),
+    '#literal title\n\n#literal body\nDescription\n\nsecond feature',
+  )
+})
+
+test('conflict continuation preserves a hash-only title and the actual resolved patch', async (t) => {
+  const f = await fixture(t, { conflict: true })
+  await f.cmd('reset', '--hard', 'HEAD~1')
+  await f.cmd('commit', '--amend', '-m', '#literal title')
+  await f.start()
+  await f.write('shared.txt', 'resolved content\n')
+  await f.cmd('add', 'shared.txt')
+  const result = await f.action('rebase-continue')
+  assert.equal(result.outcome, 'succeeded', result.error || result.warning)
+  assert.equal((await f.cmd('log', '-1', '--format=%B')).trim(), '#literal title')
+  assert.equal(await fs.readFile(path.join(f.repo, 'shared.txt'), 'utf8'), 'resolved content\n')
+  assert.equal(result.snapshot.merge, null)
+})
+
+test('nonempty resolved patches are never called empty because a rejecting hook says no changes', async (t) => {
+  const f = await fixture(t, { conflict: true })
+  await f.start()
+  await f.write('shared.txt', 'resolved content\n')
+  await f.cmd('add', 'shared.txt')
+  const hooks = path.join(f.repo, '.git', 'message-hooks')
+  await fs.mkdir(hooks)
+  await fs.writeFile(
+    path.join(hooks, 'prepare-commit-msg'),
+    '#!/bin/sh\necho "no changes were accepted by policy" >&2\nexit 1\n',
+    { mode: 0o755 },
+  )
+  await f.cmd('config', 'core.hooksPath', hooks)
+  const result = await f.action('rebase-continue')
+  assert.equal(result.outcome, 'partial')
+  assert.doesNotMatch(result.warning, /请检查后跳过/)
+  assert.match(result.warning, /no changes were accepted by policy/)
+  assert.ok((await f.cmd('diff', '--cached', '--name-only')).includes('shared.txt'))
+})

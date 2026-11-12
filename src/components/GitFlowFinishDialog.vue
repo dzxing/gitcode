@@ -102,11 +102,13 @@ watch(
           ><template v-if="finish.createTag"
             ><label class="flow-finish-field"
               >标签名称<input
+                autocomplete="off"
                 v-model="finish.tagName"
                 aria-label="版本标签名称"
                 maxlength="200" /></label
             ><label class="flow-finish-field"
               >标签说明<textarea
+                autocomplete="off"
                 v-model="finish.tagMessage"
                 aria-label="版本标签说明"
                 rows="2"
@@ -133,7 +135,7 @@ watch(
             :disabled="repo.busy"
             @click="finish.reread"
           >
-            重新读取
+            重新检查
           </button>
         </p>
       </div>
@@ -184,7 +186,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--dialog-font-body);
   margin: 12px 0;
   overflow-wrap: anywhere;
 }
@@ -195,7 +197,7 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--dialog-font-body);
   margin: 12px 0;
 }
 .flow-finish-field input,
@@ -208,7 +210,9 @@ watch(
   color: var(--text);
   min-width: 0;
   max-width: 100%;
-  font: 12px var(--mono);
+  font-family: var(--font-ui);
+  font-size: var(--dialog-font-body);
+  line-height: 1.5;
 }
 .flow-finish-targets {
   display: flex;
@@ -218,12 +222,12 @@ watch(
   margin: 12px 0;
   border: 1px solid var(--line);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--dialog-font-body);
   overflow-wrap: anywhere;
 }
 .flow-finish-targets small,
 fieldset > small {
-  font-size: 11px;
+  font-size: var(--dialog-font-help);
   color: var(--text-secondary);
   line-height: 1.6;
 }
@@ -232,7 +236,7 @@ fieldset > small {
   align-items: center;
   gap: 8px;
   margin: 12px 0;
-  font-size: 12px;
+  font-size: var(--dialog-font-body);
 }
 fieldset {
   border: 0;
@@ -245,5 +249,9 @@ fieldset {
 }
 .flow-finish-error {
   color: var(--git-deleted);
+}
+.flow-finish-field textarea {
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
 }
 </style>

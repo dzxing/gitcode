@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -46,6 +47,7 @@ export async function verifyDeleteBranch(page, { url, screenshotDirectory } = {}
     const open = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await open.getByLabel('仓库路径', { exact: true }).fill(repo)
     await open.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(open).not.toBeVisible()
     const row = page.locator(
       '[data-sidebar-section="local"] [data-branch-name="feature/unmerged-test"]',

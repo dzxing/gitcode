@@ -1,0 +1,24 @@
+GitCode software-inspired theme palettes
+
+The VS Code, IDEA and GitHub presets adapt interface color roles for GitCode.
+They do not reproduce the complete interface or syntax themes of those products.
+Theme names identify the source of design inspiration; no affiliation is implied.
+
+References:
+- Microsoft Visual Studio Code / Dark Modern (MIT):
+  https://github.com/microsoft/vscode/blob/main/extensions/theme-defaults/themes/dark_modern.json
+- JetBrains IntelliJ Platform / Dark (Apache-2.0):
+  https://github.com/JetBrains/intellij-community/blob/master/platform/platform-resources/src/themes/expUI/expUI_dark.theme.json
+- GitHub Primer / GitHub VS Code themes (MIT):
+  https://github.com/primer/github-vscode-theme
+  https://github.com/primer/primitives
+
+Palette values and role choices are recorded in electron/theme-presets.json.
+Selected text and control colors are adjusted for readability in GitCode.
+
+Additional JetBrains presets: Light, Darcula, Islands Dark/Light/Darcula.
+Color roles were checked against a copied local IntelliJ IDEA resource JAR.
+Source build and resource hashes: design/theme-presets/research/idea-local-theme-sources.json
+Islands implementation guidance: https://plugins.jetbrains.com/docs/intellij/supporting-islands-theme.html
+Darcula reference: https://github.com/JetBrains/intellij-community/blob/master/platform/platform-resources/src/themes/darcula.theme.json
+Light reference: https://github.com/JetBrains/intellij-community/blob/master/platform/platform-resources/src/themes/expUI/expUI_light.theme.json

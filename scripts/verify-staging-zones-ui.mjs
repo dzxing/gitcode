@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -101,6 +102,7 @@ export async function verifyStagingZones(
       .getByRole('dialog', { name: '打开本地仓库', exact: true })
       .getByRole('button', { name: '打开仓库', exact: true })
       .click()
+    await confirmFixtureTrust(page)
     await expect(page.locator('.status-path')).toHaveAttribute('title', repo)
     await expect(zone('unstaged')).toBeVisible()
     await expect(zone('staged')).toBeVisible()
@@ -118,7 +120,11 @@ export async function verifyStagingZones(
     await expect(diff()).toContainText('-A index version')
     await expect(diff()).toContainText('+A working version')
     await expect(diff().locator('.diff-kind')).toHaveText('工作区')
-    await expect(diff().getByRole('group', { name: '差异内容来源' })).toHaveCount(0)
+    await expect(
+      diff()
+        .getByRole('group', { name: '差异内容来源' })
+        .getByRole('button', { name: '未暂存内容', exact: true }),
+    ).toHaveAttribute('aria-pressed', 'true')
     await file('staged', 'A.txt').click()
     await expect(diff()).toContainText('-base A.txt')
     await expect(diff()).toContainText('+A index version')

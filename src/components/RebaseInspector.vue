@@ -104,7 +104,7 @@ const canContinue = computed(() => !state.value.files.length && !!state.value.st
   padding: 12px;
   margin: 0;
   border-bottom: 1px solid var(--line);
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   line-height: 1.8;
   overflow-wrap: anywhere;
 }
@@ -112,7 +112,7 @@ const canContinue = computed(() => !state.value.files.length && !!state.value.st
   color: var(--accent);
 }
 .rebase-progress code {
-  font: 11px var(--mono);
+  font: var(--ui-font-help)/1.5 var(--mono);
 }
 .rebase-file-list {
   overflow: auto;
@@ -121,7 +121,7 @@ const canContinue = computed(() => !state.value.files.length && !!state.value.st
   min-height: 0;
 }
 .rebase-file-list h3 {
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   font-weight: 500;
   color: var(--text-secondary);
   margin: 8px 0;
@@ -133,7 +133,7 @@ const canContinue = computed(() => !state.value.files.length && !!state.value.st
   width: 100%;
   padding: 7px 5px;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--ui-font-size);
 }
 .rebase-file span {
   overflow: hidden;
@@ -148,14 +148,15 @@ const canContinue = computed(() => !state.value.files.length && !!state.value.st
   flex-shrink: 0;
 }
 .rebase-resolved {
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   overflow-wrap: anywhere;
 }
 .rebase-file-list pre {
   margin-top: 20px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font: 12px/1.6 var(--mono);
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
 }
 .rebase-actions {
   display: flex;
@@ -163,11 +164,11 @@ const canContinue = computed(() => !state.value.files.length && !!state.value.st
   flex-direction: column;
   padding: 12px;
   border-top: 1px solid var(--line);
-  font-size: 12px;
+  font-size: var(--ui-font-size);
 }
 .rebase-hint {
   padding: 0 12px;
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   color: var(--git-modified);
 }
 </style>

@@ -4,18 +4,45 @@
     "label": "文件",
     "accessKey": "f",
     "items": [
-      { "id": "file.newTab", "label": "新标签页", "accelerator": "Alt+T" },
-      { "id": "file.open", "label": "打开仓库…", "accelerator": "CmdOrCtrl+O" },
-      { "id": "file.recent", "label": "最近仓库" },
-      { "id": "file.clone", "label": "克隆仓库…" },
-      { "id": "file.create", "label": "新建本地仓库…" },
+      {
+        "id": "file.newTab",
+        "label": "新标签页",
+        "accelerator": "Alt+T"
+      },
+      {
+        "id": "file.open",
+        "label": "打开仓库…",
+        "accelerator": "CmdOrCtrl+O"
+      },
+      {
+        "id": "file.recent",
+        "label": "最近仓库"
+      },
+      {
+        "id": "file.clone",
+        "label": "克隆仓库…"
+      },
+      {
+        "id": "file.create",
+        "label": "新建本地仓库…"
+      },
       {
         "id": "file.closeTab",
         "label": "关闭当前标签",
         "accelerator": "CmdOrCtrl+W",
         "separator": true
       },
-      { "id": "file.quit", "label": "退出 GitCode", "separator": true }
+      {
+        "id": "file.settings",
+        "label": "设置…",
+        "accelerator": "CmdOrCtrl+,",
+        "separator": true
+      },
+      {
+        "id": "file.quit",
+        "label": "退出 GitCode",
+        "separator": true
+      }
     ]
   },
   {
@@ -23,11 +50,32 @@
     "label": "编辑",
     "accessKey": "e",
     "items": [
-      { "id": "edit.undo", "label": "撤销文本编辑", "accelerator": "CmdOrCtrl+Z" },
-      { "id": "edit.redo", "label": "重做文本编辑", "accelerator": "CmdOrCtrl+Shift+Z" },
-      { "id": "edit.cut", "label": "剪切", "accelerator": "CmdOrCtrl+X", "separator": true },
-      { "id": "edit.copy", "label": "复制", "accelerator": "CmdOrCtrl+C" },
-      { "id": "edit.paste", "label": "粘贴", "accelerator": "CmdOrCtrl+V" },
+      {
+        "id": "edit.undo",
+        "label": "撤销文本编辑",
+        "accelerator": "CmdOrCtrl+Z"
+      },
+      {
+        "id": "edit.redo",
+        "label": "重做文本编辑",
+        "accelerator": "CmdOrCtrl+Shift+Z"
+      },
+      {
+        "id": "edit.cut",
+        "label": "剪切",
+        "accelerator": "CmdOrCtrl+X",
+        "separator": true
+      },
+      {
+        "id": "edit.copy",
+        "label": "复制",
+        "accelerator": "CmdOrCtrl+C"
+      },
+      {
+        "id": "edit.paste",
+        "label": "粘贴",
+        "accelerator": "CmdOrCtrl+V"
+      },
       {
         "id": "edit.selectAll",
         "label": "全选文本",
@@ -41,13 +89,189 @@
     "label": "视图",
     "accessKey": "v",
     "items": [
-      { "id": "view.refresh", "label": "刷新仓库", "accelerator": "CmdOrCtrl+R" },
-      { "id": "view.search", "label": "搜索提交", "accelerator": "CmdOrCtrl+K" },
-      { "id": "view.author", "label": "显示作者", "checkbox": true, "separator": true },
-      { "id": "view.time", "label": "显示时间", "checkbox": true },
-      { "id": "view.sha", "label": "显示 SHA", "checkbox": true },
-      { "id": "view.resetColumns", "label": "恢复默认列" },
-      { "id": "view.resetLayout", "label": "重置视图", "separator": true }
+      {
+        "id": "view.search",
+        "label": "搜索提交",
+        "accelerator": "CmdOrCtrl+K"
+      },
+      {
+        "id": "view.refresh",
+        "label": "刷新本地状态",
+        "accelerator": "CmdOrCtrl+R"
+      },
+      {
+        "id": "view.author",
+        "label": "显示作者",
+        "checkbox": true,
+        "separator": true
+      },
+      {
+        "id": "view.time",
+        "label": "显示时间",
+        "checkbox": true
+      },
+      {
+        "id": "view.sha",
+        "label": "显示提交 SHA",
+        "checkbox": true
+      },
+      {
+        "id": "view.resetColumns",
+        "label": "恢复默认列显示"
+      },
+      {
+        "id": "view.longEdges",
+        "label": "展开长连线",
+        "checkbox": true,
+        "separator": true
+      },
+      {
+        "id": "view.mergeCommits",
+        "label": "淡化合并提交",
+        "checkbox": true
+      },
+      {
+        "id": "view.labelPosition",
+        "label": "分支标签位置",
+        "children": [
+          {
+            "id": "view.labelPosition.before",
+            "label": "关系图左侧",
+            "radio": true
+          },
+          {
+            "id": "view.labelPosition.after",
+            "label": "提交说明后",
+            "radio": true
+          }
+        ]
+      },
+      {
+        "id": "view.labelStyle",
+        "label": "分支标签样式",
+        "children": [
+          {
+            "id": "view.labelStyle.current",
+            "label": "GitCode 风格",
+            "radio": true
+          },
+          {
+            "id": "view.labelStyle.gitkraken",
+            "label": "GitKraken 风格",
+            "radio": true
+          },
+          {
+            "id": "view.labelStyle.idea",
+            "label": "IDEA 风格",
+            "radio": true
+          }
+        ]
+      },
+      {
+        "id": "view.theme",
+        "label": "主题",
+        "separator": true,
+        "children": [
+          {
+            "id": "view.theme.dark",
+            "label": "GitCode 深色",
+            "radio": true
+          },
+          {
+            "id": "view.theme.light",
+            "label": "GitCode 浅色",
+            "radio": true
+          },
+          {
+            "id": "view.theme.vscode-dark",
+            "label": "VS Code 深色",
+            "radio": true
+          },
+          {
+            "id": "view.theme.idea-dark",
+            "label": "IDEA 深色",
+            "radio": true
+          },
+          {
+            "id": "view.theme.idea-light",
+            "label": "IDEA 浅色",
+            "radio": true
+          },
+          {
+            "id": "view.theme.darcula",
+            "label": "Darcula",
+            "radio": true
+          },
+          {
+            "id": "view.theme.islands-dark",
+            "label": "Islands Dark",
+            "radio": true
+          },
+          {
+            "id": "view.theme.islands-light",
+            "label": "Islands Light",
+            "radio": true
+          },
+          {
+            "id": "view.theme.islands-darcula",
+            "label": "Islands Darcula",
+            "radio": true
+          },
+          {
+            "id": "view.theme.github-dark",
+            "label": "GitHub 深色",
+            "radio": true
+          },
+          {
+            "id": "view.theme.github-light",
+            "label": "GitHub 浅色",
+            "radio": true
+          },
+          {
+            "id": "view.theme.system",
+            "label": "跟随系统",
+            "radio": true
+          }
+        ]
+      },
+      {
+        "id": "view.activityLog",
+        "label": "活动日志",
+        "separator": true
+      },
+      {
+        "id": "view.resetLayout",
+        "label": "恢复默认面板宽度"
+      }
+    ]
+  },
+  {
+    "id": "repository",
+    "label": "仓库",
+    "accessKey": "r",
+    "items": [
+      {
+        "id": "repository.fetch",
+        "label": "获取"
+      },
+      {
+        "id": "repository.pull",
+        "label": "拉取"
+      },
+      {
+        "id": "repository.push",
+        "label": "推送"
+      },
+      {
+        "id": "repository.recovery",
+        "label": "Git 操作恢复…",
+        "separator": true
+      },
+      {
+        "id": "repository.settings",
+        "label": "当前仓库设置…",
+        "separator": true
+      }
     ]
   },
   {
@@ -55,10 +279,25 @@
     "label": "帮助",
     "accessKey": "h",
     "items": [
-      { "id": "help.shortcuts", "label": "快捷键", "accelerator": "CmdOrCtrl+/" },
-      { "id": "help.gitDocs", "label": "Git 文档" },
-      { "id": "help.gitBook", "label": "Pro Git 教程" },
-      { "id": "help.about", "label": "关于 GitCode", "separator": true }
+      {
+        "id": "help.shortcuts",
+        "label": "快捷键参考",
+        "accelerator": "CmdOrCtrl+/"
+      },
+      {
+        "id": "help.gitDocs",
+        "label": "Git 文档",
+        "separator": true
+      },
+      {
+        "id": "help.gitBook",
+        "label": "Pro Git 教程"
+      },
+      {
+        "id": "help.about",
+        "label": "关于 GitCode",
+        "separator": true
+      }
     ]
   }
 ]

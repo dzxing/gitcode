@@ -2,6 +2,8 @@
 
 const { randomBytes } = require('node:crypto')
 const os = require('node:os')
+const path = require('node:path')
+const { OperationLog } = require('./operation-log.cjs')
 const { GitService } = require('./git.cjs')
 
 const PREFIX = '/__gitcode/'
@@ -36,6 +38,102 @@ async function body(req) {
 // Same business operations as Electron IPC, with no arbitrary shell or filesystem API.
 function dispatch(git, method, args) {
   const jobs = new Map([
+    [
+      'history-metadata',
+      [
+        2,
+        ([repo, sha]) =>
+          git.job(
+            async (signal) => git.history.metadata(await git.repository(repo, signal), sha, signal),
+            { background: true },
+          ),
+      ],
+    ],
+    [
+      'history-read',
+      [
+        2,
+        ([repo, request]) =>
+          git.job(
+            async (signal) => git.history.read(await git.repository(repo, signal), request, signal),
+            { background: true },
+          ),
+      ],
+    ],
+    ['repository-trust', [1, ([repo]) => git.job((signal) => git.trust.inspect(repo, signal))]],
+    [
+      'repository-trust-approve',
+      [2, ([repo, token]) => git.job((signal) => git.trust.approve(repo, token, signal))],
+    ],
+    [
+      'partial-stage-read',
+      [
+        2,
+        ([repo, request]) =>
+          git.job(async (signal) =>
+            git.partialStage.read(await git.repository(repo, signal), request, signal),
+          ),
+      ],
+    ],
+    [
+      'recovery-read',
+      [
+        1,
+        ([repo]) =>
+          git.job(async (signal) => git.recovery.read(await git.repository(repo, signal), signal)),
+      ],
+    ],
+    [
+      'fetch-settings-read',
+      [
+        1,
+        ([repo]) =>
+          git.job(async (signal) =>
+            git.fetchSettings.read(await git.repository(repo, signal), signal),
+          ),
+      ],
+    ],
+    ['repository-changes', [1, ([repo]) => git.repositoryWatch.status(repo)]],
+    ['background-snapshot', [2, ([repo, request]) => git.repositoryWatch.read(repo, request)]],
+    ['activity', [0, () => git.activity]],
+    ['operation-log', [1, ([request]) => git.journal.read(request)]],
+    ['operation-log-clear', [1, ([request]) => git.journal.clear(request)]],
+    [
+      'activity-settings',
+      [1, ([value]) => git.journal.preferences(value === null ? undefined : value)],
+    ],
+    ['auto-fetch', [1, ([repo]) => git.automaticFetch(repo)]],
+    [
+      'commit-operation-read',
+      [
+        2,
+        ([repo, request]) =>
+          git.job(async (signal) =>
+            git.commitOperations.read(await git.repository(repo, signal), request, signal),
+          ),
+      ],
+    ],
+    [
+      'fetch-status',
+      [
+        1,
+        ([repo]) => {
+          if (typeof repo !== 'string' || repo.length > 32768) throw Error('无效的仓库路径。')
+          return git.journal.status(repo)
+        },
+      ],
+    ],
+    [
+      'rebase-menu-read',
+      [
+        2,
+        ([repo, request]) =>
+          git.job(
+            async (signal) => git.rebase.menu(await git.repository(repo, signal), request, signal),
+            { background: true },
+          ),
+      ],
+    ],
     [
       'navigation-read',
       [
@@ -162,9 +260,13 @@ function dispatch(git, method, args) {
 
 function createLocalCore({
   port = 43187,
-  serviceFactory = () => new GitService(),
+  serviceFactory,
+  dataDirectory = process.env.GITCODE_DATA_DIR ||
+    path.join(os.homedir(), '.local', 'state', 'gitcode'),
   now = Date.now,
 } = {}) {
+  const journal = new OperationLog({ directory: dataDirectory })
+  serviceFactory ||= () => new GitService({ journal, dataDirectory, enforceRepositoryTrust: true })
   const sessions = new Map()
   const activeRequests = new Set()
   let closing = false
@@ -187,7 +289,8 @@ function createLocalCore({
   }, 60000)
   timer.unref()
   function authorized(req) {
-    if (!loopback.has(req.socket?.remoteAddress)) throw failure(403, '本机核心仅接受本机连接。')
+    if (!loopback.has(req.socket?.remoteAddress))
+      throw failure(403, '本地 Git 服务仅接受本机连接。')
     let url
     try {
       url = new URL(`http://${req.headers.host}`)
@@ -201,7 +304,7 @@ function createLocalCore({
       req.headers['x-gitcode-client'] !== CLIENT ||
       (req.headers['sec-fetch-site'] && req.headers['sec-fetch-site'] !== 'same-origin')
     )
-      throw failure(403, '此页面无权连接本机 Git 核心。')
+      throw failure(403, '此页面无权连接本地 Git 服务。')
     if (req.method !== 'POST') throw failure(405, '仅支持 POST 请求。')
   }
   async function handle(req, res, next) {
@@ -216,16 +319,16 @@ function createLocalCore({
     }
     try {
       authorized(req)
-      if (closing) throw failure(503, '本机 Git 核心正在关闭。')
+      if (closing) throw failure(503, '本地 Git 服务正在关闭。')
       if (![`${PREFIX}session`, `${PREFIX}rpc`, `${PREFIX}close`].includes(req.url))
         throw failure(404, '未知的本机接口。')
       if (req.url === `${PREFIX}session`) {
-        if (draining) throw failure(503, '本机 Git 核心正在重新加载。')
+        if (draining) throw failure(503, '本地 Git 服务正在重新加载。')
         const value = await body(req)
         if (!value || Array.isArray(value) || Object.keys(value).length)
           throw failure(400, '无效的会话请求。')
         await sweep()
-        if (closing || draining) throw failure(503, '本机 Git 核心正在重新加载。')
+        if (closing || draining) throw failure(503, '本地 Git 服务正在重新加载。')
         if (sessions.size >= 32)
           throw failure(429, '本机连接数量已满，请关闭不再使用的 GitCode 页面后重试。')
         const token = randomBytes(32).toString('hex')
@@ -255,7 +358,7 @@ function createLocalCore({
       if (!value || typeof value.method !== 'string') throw failure(400, '缺少本机操作。')
       if (closing || sessions.get(token) !== session)
         throw failure(401, '本机连接已关闭，请重新连接。')
-      if (draining && value.method !== 'cancel') throw failure(503, '本机 Git 核心正在重新加载。')
+      if (draining && value.method !== 'cancel') throw failure(503, '本地 Git 服务正在重新加载。')
       session.busy++
       try {
         return send(200, {

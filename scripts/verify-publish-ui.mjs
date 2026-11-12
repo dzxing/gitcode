@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -62,6 +63,7 @@ export async function verifyPublish(page, { url, custom = false, screenshotDirec
     const open = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await open.getByLabel('仓库路径', { exact: true }).fill(repo)
     await open.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(open).not.toBeVisible()
     await page.getByRole('button', { name: '打开 GitFlow 操作面板', exact: true }).click()
     const flow = page.locator('.gitflow-panel')
@@ -146,10 +148,16 @@ export async function verifyPublish(page, { url, custom = false, screenshotDirec
     assert.equal((await git.git(remote, ['rev-parse', 'refs/heads/' + destination])).trim(), base)
     await expect(dialog).not.toBeVisible()
     await capture('published-and-linked')
-    await show()
-    await expect(dialog.getByRole('button', { name: '推送', exact: true })).toBeEnabled()
-    await expect(dialog.getByRole('region', { name: '首次推送目标', exact: true })).toHaveCount(0)
-    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    if (custom) {
+      await show()
+      await expect(dialog.getByRole('button', { name: '推送', exact: true })).toBeEnabled()
+      await expect(dialog.getByRole('region', { name: '首次推送目标', exact: true })).toHaveCount(0)
+      await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    } else {
+      const repeated = await action(show)
+      assert.equal(repeated.outcome, 'succeeded', repeated.error)
+      await expect(dialog).not.toBeVisible()
+    }
     return {
       custom,
       gitflowStartThenPush: true,

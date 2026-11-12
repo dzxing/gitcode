@@ -1,0 +1,166 @@
+/* Light colors share the same surface and interaction roles as the default dark theme. */
+:root[data-theme='light'] {
+  color-scheme: light;
+  --dialog-scrim: #24374f10;
+  --dialog-confirmation-scrim: #24374f29;
+  --brand-ink: #253044;
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --surface-tabs: #e9edf2;
+  --surface-toolbar: #f0f2f5;
+  --surface-input: #f7f8fa;
+  --surface-raised: #eef1f5;
+  --line: #d5dbe3;
+  --line-soft: #e4e8ee;
+  --text: #303a49;
+  --history-text: #303a49;
+  --text-secondary: #4e5c6d;
+  --muted: #5f6d81;
+  --text-on-selection: #24374f;
+  --bright: #182434;
+  --accent: #007d94;
+  --accent-soft: #007d9412;
+  --accent-hover: #00677c;
+  --accent-ink: #ffffff;
+  --icon-color: #586779;
+  --icon-hover-color: #182434;
+  --control-disabled-color: #8a93a0;
+  --control-hover-bg: #24374f0b;
+  --control-pressed-bg: #24374f16;
+  --control-open-bg: #24374f0e;
+  --current-branch-bg: #dcecdf;
+  --current-branch-hover-bg: #cfe5d3;
+  --current-branch-color: #215c33;
+  --view-selection-bg: #dce9fa;
+  --view-selection-hover-bg: #d1e1f6;
+  --view-selection-color: #203b61;
+  --view-selection-border: #6c94c5;
+  --focus-ring: #3e73ae;
+  --git-added: #287440;
+  --git-modified: #886018;
+  --git-deleted: #b13b50;
+  --git-renamed: #3268a3;
+  --favorite-color: #946419;
+  --danger: #b13b50;
+  --warning: #886018;
+  --green: #287440;
+
+  /* Compatibility roles for controls and Git operation panels that had fixed colors. */
+  --theme-accent-hover: #00677c;
+  --theme-prompt-scrim: #24374f20;
+  --theme-scrollbar: #b8c2cf;
+  --theme-scrollbar-hover: #8e9bad;
+  --theme-hover-fill: #e0e5ed;
+  --theme-dialog: #ffffff;
+  --theme-fill: #eef1f5;
+  --theme-overlay: #24374f08;
+  --theme-border: #d5dbe3;
+  --theme-text: #303a49;
+  --theme-caption: #627084;
+  --theme-success-text: #287440;
+  --theme-success-fill: #e9f4ed;
+  --theme-success-border: #a6cbb0;
+  --theme-danger-text: #b13b50;
+  --theme-danger-fill: #fbecef;
+  --theme-danger-border: #dfabb5;
+  --theme-warning-text: #886018;
+  --theme-warning-fill: #fcf4e4;
+  --theme-warning-border: #ddc28a;
+  --theme-info-text: #3268a3;
+  --theme-info-fill: #eaf1fb;
+  --theme-info-border: #aac5e5;
+  --theme-purple-text: #7851a0;
+  --theme-purple-fill: #f2ecf8;
+  --theme-purple-border: #ccb6e0;
+}
+
+/* Presets share semantic colors; the source palette supplies surfaces and accents. */
+:root[data-palette]:not([data-palette='dark']):not([data-palette='light']) {
+  --brand-ink: var(--bright);
+  --history-text: var(--text);
+  --text-on-selection: var(--view-selection-color);
+  --icon-color: var(--text-secondary);
+  --icon-hover-color: var(--bright);
+  --accent-soft: color-mix(in srgb, var(--accent) 9%, transparent);
+  --control-hover-bg: color-mix(in srgb, var(--text) 7%, transparent);
+  --control-pressed-bg: color-mix(in srgb, var(--text) 12%, transparent);
+  --control-open-bg: color-mix(in srgb, var(--text) 9%, transparent);
+  --danger: var(--git-deleted);
+  --warning: var(--git-modified);
+  --green: var(--git-added);
+  --theme-accent-hover: var(--accent-hover);
+  --theme-prompt-scrim: color-mix(in srgb, var(--bg) 18%, transparent);
+  --theme-scrollbar: color-mix(in srgb, var(--text) 25%, var(--panel));
+  --theme-scrollbar-hover: color-mix(in srgb, var(--text) 40%, var(--panel));
+  --theme-hover-fill: color-mix(in srgb, var(--text) 10%, var(--surface-raised));
+  --theme-dialog: var(--surface-raised);
+  --theme-fill: var(--surface-raised);
+  --theme-overlay: color-mix(in srgb, var(--text) 4%, transparent);
+  --theme-border: var(--line);
+  --theme-text: var(--text);
+  --theme-caption: var(--muted);
+  --theme-success-text: var(--git-added);
+  --theme-success-fill: color-mix(in srgb, var(--git-added) 12%, var(--panel));
+  --theme-success-border: color-mix(in srgb, var(--git-added) 50%, var(--line));
+  --theme-danger-text: var(--git-deleted);
+  --theme-danger-fill: color-mix(in srgb, var(--git-deleted) 12%, var(--panel));
+  --theme-danger-border: color-mix(in srgb, var(--git-deleted) 50%, var(--line));
+  --theme-warning-text: var(--git-modified);
+  --theme-warning-fill: color-mix(in srgb, var(--git-modified) 12%, var(--panel));
+  --theme-warning-border: color-mix(in srgb, var(--git-modified) 50%, var(--line));
+  --theme-info-text: var(--git-renamed);
+  --theme-info-fill: color-mix(in srgb, var(--git-renamed) 12%, var(--panel));
+  --theme-info-border: color-mix(in srgb, var(--git-renamed) 50%, var(--line));
+  --theme-purple-text: var(--palette-purple, #a78bda);
+  --theme-purple-fill: color-mix(in srgb, var(--theme-purple-text) 12%, var(--panel));
+  --theme-purple-border: color-mix(in srgb, var(--theme-purple-text) 50%, var(--line));
+}
+:root[data-palette='github-light'] {
+  --palette-purple: #8250df;
+}
+:root[data-palette='idea-light'],
+:root[data-palette='islands-light'] {
+  --palette-purple: #643cb8;
+}
+
+/* Compact Islands framing preserves grid tracks and resize-handle positions. */
+:root[data-palette^='islands-'] .app-shell,
+:root[data-palette^='islands-'] .workbench {
+  background: var(--window-bg);
+}
+:root[data-palette^='islands-'] .workbench > :is(.sidebar, .history-panel, .inspector) {
+  margin-block: 6px;
+  border-radius: 8px;
+}
+:root[data-palette^='islands-'] .workbench > .sidebar {
+  margin-inline: 6px 3px;
+  border-right: 0;
+}
+:root[data-palette^='islands-'] .workbench > .history-panel {
+  margin-inline: 3px;
+}
+:root[data-palette^='islands-'] .workbench > .inspector {
+  margin-inline: 3px 6px;
+  border-left: 0;
+}
+:root[data-palette^='islands-'] .inspector > .panel-header {
+  background: var(--panel);
+  border-radius: 8px 8px 0 0;
+}
+:root[data-palette^='islands-']
+  .inspector
+  > :is(.worktree-compose-tabs, .commit-form, #worktree-stash-form) {
+  background: var(--panel);
+}
+:root[data-palette^='islands-'] .inspector > :last-child {
+  border-radius: 0 0 8px 8px;
+}
+:root[data-palette^='islands-'] :is(.toolbar, .statusbar) {
+  background: var(--window-bg);
+  border-color: transparent;
+}
+:root[data-palette^='islands-'] .workbench > .resize-handle {
+  top: 6px;
+  bottom: 6px;
+  border-radius: 4px;
+}

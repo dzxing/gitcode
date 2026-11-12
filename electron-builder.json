@@ -6,7 +6,7 @@
   "asarUnpack": ["electron/rebase-editor.cjs"],
   "npmRebuild": false,
   "directories": {
-    "output": "release",
+    "output": "release/${version}",
     "buildResources": "assets"
   },
   "files": [
@@ -14,12 +14,20 @@
     "electron/*.cjs",
     "electron/*.json",
     "assets/**/*",
+    "third-party/**/*",
     "package.json",
     "!node_modules/**/*"
   ],
   "win": {
     "target": ["nsis"],
-    "icon": "assets/icon.ico"
+    "icon": "assets/icon.ico",
+    "extraResources": [
+      {
+        "from": ".gitcode-local/bundled-git/${arch}",
+        "to": "git",
+        "filter": ["**/*"]
+      }
+    ]
   },
   "nsis": {
     "oneClick": false,
@@ -36,5 +44,6 @@
     "icon": "assets/icon.png",
     "category": "Development",
     "maintainer": "GitCode contributors"
-  }
+  },
+  "beforePack": "scripts/prepare-windows-git.cjs"
 }

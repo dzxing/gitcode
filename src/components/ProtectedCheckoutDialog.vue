@@ -46,7 +46,7 @@ async function execute() {
 <template>
   <dialog
     ref="dialog"
-    class="dialog protected-checkout-dialog"
+    class="dialog dialog-confirmation protected-checkout-dialog"
     aria-labelledby="protected-checkout-title"
     @cancel.prevent="close"
     @click="$event.target === dialog && close()"
@@ -122,7 +122,7 @@ async function execute() {
   overflow: auto;
 }
 .protected-checkout-dialog details {
-  font-size: 12px;
+  font-size: var(--dialog-font-body);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 10px;
@@ -134,7 +134,7 @@ async function execute() {
   overflow: auto;
   margin: 10px 0 0;
   padding: 0;
-  font: 11px/1.8 var(--mono);
+  font: var(--ui-font-help)/1.8 var(--mono);
 }
 .protected-checkout-dialog li {
   overflow-wrap: anywhere;

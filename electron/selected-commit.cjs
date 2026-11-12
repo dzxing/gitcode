@@ -369,6 +369,7 @@ exit 0
         failure
       try {
         output = await this.git.git(repo, ['commit', '-m', message], {
+          diagnose: true,
           indexFile: prepared.indexFile,
           hooksPath,
           signal,

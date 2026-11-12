@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createServer } from 'vite'
-import { createSSRApp, nextTick } from 'vue'
+import { createSSRApp, nextTick, reactive, watch } from 'vue'
 import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { renderToString } from '@vue/server-renderer'
 import { createRequire } from 'node:module'
@@ -27,6 +27,8 @@ const nativeRuntime = {
 let nativeHandler = async () => nativeRuntime
 globalThis.window = {
   gitk: {
+    repositoryTrust: async (path) => ({ path, gitDir: path + '/.git', trusted: true, token: '' }),
+    historyRead: (repo, request) => nativeHandler('history-read', { repo, request }),
     runtime: () => nativeHandler('runtime'),
     syncPlan: (repo, kind, expected) => nativeHandler('sync-plan', { repo, kind, expected }),
     selectedCommitPlan: (repo, request) => nativeHandler('selected-commit-plan', { repo, request }),
@@ -46,6 +48,7 @@ const storage = new Map()
 globalThis.localStorage = {
   getItem: (key) => storage.get(key) || null,
   setItem: (key, value) => storage.set(key, value),
+  removeItem: (key) => storage.delete(key),
 }
 
 try {
@@ -66,9 +69,10 @@ try {
     await vite.ssrLoadModule('/src/referenceLabels.ts')
   const { buildMenus } = await vite.ssrLoadModule('/src/menu.ts')
   const { repositoryFixture: fixture } = await vite.ssrLoadModule('/tests/fixtures/repository.ts')
-  const { useContextMenuStore, referenceBranch } = await vite.ssrLoadModule(
+  const { useContextMenuStore, referenceBranch, branchContextCurrent } = await vite.ssrLoadModule(
     '/src/stores/contextMenu.ts',
   )
+  const { interactiveRebaseFromHistory } = await vite.ssrLoadModule('/src/rebaseMenu.ts')
   const { desktop, pathName, joinPath } = await vite.ssrLoadModule('/src/services/desktop.ts')
   const { createLocalCoreClient, LocalConnectionError } = await vite.ssrLoadModule(
     '/src/services/localCore.ts',
@@ -80,6 +84,9 @@ try {
     return store
   }
   const freshStore = () => {
+    storage.delete('gitcode.workspaceSession.v1')
+    for (const key of storage.keys())
+      if (key.startsWith('gitcode.historyFilter.v1:')) storage.delete(key)
     nativeHandler = async (command) =>
       command === 'commit'
         ? { files: [{ path: 'README.md', status: 'M' }], body: 'Fixture commit' }
@@ -98,6 +105,31 @@ try {
     return { promise, resolve, reject }
   }
 
+  await test('Git action DTOs cross a native structured-clone boundary without leaking Vue proxies or mutable selections', async () => {
+    const request = reactive({
+      action: 'partial-stage',
+      planId: 'reviewed',
+      lines: [7, 8],
+      expectedHead: 'a'.repeat(40),
+      expectedBranch: 'main',
+    })
+    assert.throws(() => structuredClone(request))
+    const previous = nativeHandler
+    let captured
+    nativeHandler = async (method, payload) => {
+      assert.equal(method, 'action')
+      captured = structuredClone(payload.request)
+      return { outcome: 'succeeded', snapshot: null, output: '' }
+    }
+    try {
+      await desktop.action('/repo', request)
+      request.lines.push(9)
+      assert.deepEqual(captured.lines, [7, 8])
+      assert.equal(captured.planId, 'reviewed')
+    } finally {
+      nativeHandler = previous
+    }
+  })
   await test('Branch tracking keeps ahead and behind independent from current selection and explains local freshness', () => {
     const branch = {
       kind: 'local',
@@ -314,6 +346,77 @@ try {
     assert.equal(sessions, 2)
   })
 
+  await test('Index action patches update file lists without waiting for history or selected diff refresh', async () => {
+    const store = freshStore()
+    store.connected = true
+    store.repo.staged = []
+    store.repo.unstaged = [{ path: 'README.md', status: 'M' }]
+    const commits = store.repo.commits,
+      head = store.repo.head
+    let request
+    nativeHandler = async (command, payload) => {
+      if (command === 'action') {
+        request = payload.request
+        return {
+          outcome: 'succeeded',
+          output: '',
+          snapshot: null,
+          worktree: {
+            path: store.repo.path,
+            head,
+            branch: store.repo.branch,
+            staged: [{ path: 'README.md', status: 'M' }],
+            unstaged: [],
+          },
+        }
+      }
+      if (command === 'diff') return new Promise(() => {})
+      if (command === 'snapshot') throw Error('Foreground staging must not request a full snapshot')
+      return nativeRuntime
+    }
+    store.selectedFile = { path: 'README.md', status: 'M' }
+    const outcome = await Promise.race([
+      store.run('stage', { paths: ['README.md'] }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(Error('Stage waited for selected diff')), 500),
+      ),
+    ])
+    assert.equal(outcome, true)
+    assert.equal(request.refresh, 'worktree')
+    assert.equal(store.busy, false)
+    assert.equal(store.repo.commits, commits)
+    assert.equal(store.repo.staged[0].path, 'README.md')
+    assert.equal(store.repo.unstaged.length, 0)
+    assert.equal(store.diffLoading, true)
+    store.clearSelection()
+  })
+
+  await test('Index patches from a different HEAD never replace the current workspace lists', async () => {
+    const store = freshStore()
+    store.connected = true
+    store.repo.staged = []
+    store.repo.unstaged = [{ path: 'keep.txt', status: 'M' }]
+    nativeHandler = async (command) =>
+      command === 'action'
+        ? {
+            outcome: 'succeeded',
+            output: '',
+            snapshot: null,
+            worktree: {
+              path: store.repo.path,
+              head: 'f'.repeat(40),
+              branch: store.repo.branch,
+              staged: [{ path: 'wrong.txt', status: 'A' }],
+              unstaged: [],
+            },
+          }
+        : nativeRuntime
+    assert.equal(await store.run('stage', { paths: ['keep.txt'] }), false)
+    assert.equal(store.busy, false)
+    assert.equal(store.repo.unstaged[0].path, 'keep.txt')
+    assert.equal(store.repo.staged.length, 0)
+  })
+
   await test('Commit availability explains empty workspace, staged files, missing message and operation lock', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -393,6 +496,293 @@ try {
     assert.equal(await store.run('commit', { message: store.commitMessage }), true)
     assert.equal(writes.length, 1)
     assert.equal(writes[0].action, 'commit')
+  })
+
+  await test('Operation notices collapse IPC stacks without losing the original error or operation outcome', async () => {
+    const { noticePresentation } = await vite.ssrLoadModule('/src/noticePresentation.ts')
+    const raw =
+      "Error invoking remote method 'gitk:snapshot': Error: 读取仓库失败。\n    at GitService.snapshot (C:\\GitCode\\app.asar\\electron\\git.cjs:42:7)\n    at async invoke (node:internal/process/task_queues:95:5)"
+    const store = freshStore()
+    store.notify(raw, true)
+    assert.equal(store.notices[0].text, '读取仓库失败。')
+    assert.equal(store.notices[0].details, raw)
+    assert.equal(store.notices[0].error, true)
+    store.notify(raw, true, 'operation-log-1')
+    assert.equal(store.notices[1].logId, 'operation-log-1')
+    assert.ok(!store.notices[1].text.includes('at GitService'))
+    assert.deepEqual(noticePresentation('已完成提交'), { text: '已完成提交' })
+    const success = noticePresentation('操作已完成。' + '结果说明。'.repeat(70))
+    assert.ok(success.text.startsWith('操作已完成。'))
+    assert.ok(success.details)
+    const auth = noticePresentation(
+      "Error invoking remote method 'gitk:action': Error: fatal: Authentication failed for https://qa:private-password@git.example/repo?token=private-token\n    at push (file:///app.js:42:1)",
+      true,
+    )
+    assert.match(auth.text, /认证或权限检查失败/)
+    assert.ok(!auth.details.includes('private-password'))
+    assert.ok(!auth.details.includes('private-token'))
+  })
+
+  await test('Startup restores only the active repository and lazily loads other saved tabs', async () => {
+    storage.delete('gitcode.workspaceSession.v1')
+    const first = { ...structuredClone(fixture), path: '/tmp/startup-first', name: 'first' }
+    const second = { ...structuredClone(fixture), path: '/tmp/startup-second', name: 'second' }
+    const calls = []
+    nativeHandler = async (method, args) => {
+      if (method === 'runtime') return nativeRuntime
+      if (method === 'snapshot') {
+        calls.push(args.repo)
+        return structuredClone(args.repo === second.path ? second : first)
+      }
+      throw new Error('Unexpected operation during restore: ' + method)
+    }
+    setActivePinia(createPinia())
+    let store = useRepositoryStore()
+    await store.open(first.path)
+    const firstId = store.activeTabId
+    store.newTab()
+    await store.open(second.path)
+    store.activateTab(firstId)
+    await nextTick()
+    calls.length = 0
+    setActivePinia(createPinia())
+    store = useRepositoryStore()
+    await store.init()
+    assert.equal(store.startupPhase, 'ready')
+    assert.equal(store.repo.path, first.path)
+    assert.equal(store.tabs.length, 2)
+    assert.deepEqual(calls, [first.path])
+    const secondTab = store.tabs.find((tab) => tab.path === second.path)
+    assert.equal(secondTab.state, undefined)
+    store.activateTab(secondTab.id)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(store.repo.path, second.path)
+    assert.deepEqual(calls, [first.path, second.path])
+    store.activateTab(store.tabs.find((tab) => tab.path === first.path).id)
+    assert.equal(store.repo.path, first.path)
+    assert.equal(calls.length, 2)
+  })
+
+  await test('Startup failure retains the saved repository and supports retry or a new tab', async () => {
+    const live = {
+      ...structuredClone(fixture),
+      path: '/tmp/startup-unavailable',
+      name: 'unavailable',
+    }
+    storage.set(
+      'gitcode.workspaceSession.v1',
+      JSON.stringify({
+        version: 1,
+        active: 0,
+        tabs: [{ kind: 'repository', path: live.path, name: live.name }],
+      }),
+    )
+    nativeHandler = async (method) => {
+      if (method === 'runtime') return nativeRuntime
+      throw new Error('仓库暂时无法访问')
+    }
+    setActivePinia(createPinia())
+    const store = useRepositoryStore()
+    await store.init()
+    assert.equal(store.startupPhase, 'error')
+    assert.equal(store.repo.path, '')
+    assert.equal(store.tabs[0].path, live.path)
+    assert.equal(store.blocksTabs, true)
+    nativeHandler = async (method) => (method === 'runtime' ? nativeRuntime : structuredClone(live))
+    await store.retryStartup()
+    assert.equal(store.startupPhase, 'ready')
+    assert.equal(store.repo.path, live.path)
+    store.startupPhase = 'error'
+    store.skipStartup()
+    assert.equal(store.isNewTab, true)
+    assert.ok(store.tabs.some((tab) => tab.path === live.path))
+  })
+
+  await test('Startup retry rechecks a previously unavailable Git and recovers after developer tools installation', async () => {
+    storage.delete('gitcode.workspaceSession.v1')
+    const previous = window.gitk.refreshGitRuntime
+    let checks = 0
+    nativeHandler = async () => ({
+      ...nativeRuntime,
+      gitAvailable: false,
+      gitError: '开发工具不可用。',
+    })
+    window.gitk.refreshGitRuntime = async () => {
+      if (++checks === 1) throw new Error('开发工具仍不可用。')
+      return { selection: { mode: 'auto' }, runtime: nativeRuntime }
+    }
+    try {
+      setActivePinia(createPinia())
+      const store = useRepositoryStore()
+      await store.init()
+      assert.equal(store.startupPhase, 'error')
+      await store.retryStartup()
+      assert.equal(store.startupPhase, 'error')
+      assert.equal(store.startupError, '开发工具仍不可用。')
+      await store.retryStartup()
+      assert.equal(checks, 2)
+      assert.equal(store.startupPhase, 'ready')
+      assert.equal(store.runtime.gitAvailable, true)
+    } finally {
+      window.gitk.refreshGitRuntime = previous
+    }
+  })
+
+  await test('Malformed startup metadata falls back to a new tab without Git writes', async () => {
+    storage.set(
+      'gitcode.workspaceSession.v1',
+      JSON.stringify({
+        version: 1,
+        active: 99,
+        tabs: [{ kind: 'repository', path: '/tmp/missing' }],
+      }),
+    )
+    nativeHandler = async (method) => {
+      assert.equal(method, 'runtime')
+      return nativeRuntime
+    }
+    setActivePinia(createPinia())
+    const store = useRepositoryStore()
+    await store.init()
+    assert.equal(store.startupPhase, 'ready')
+    assert.equal(store.isNewTab, true)
+  })
+
+  await test('External observation coalesces bursts and waits for foreground operations', async () => {
+    const { createRepositoryObservation } = await vite.ssrLoadModule(
+      '/src/services/repositoryObservation.ts',
+    )
+    let time = 0,
+      allowed = false,
+      reads = 0,
+      applied = 0
+    const observer = createRepositoryObservation({
+      context: () => 'one',
+      allowed: () => allowed,
+      now: () => time,
+      status: async () => ({ revision: 'one:1', fallback: false, watched: 2 }),
+      read: async () => {
+        reads++
+        return { snapshot: structuredClone(fixture) }
+      },
+      apply: async () => {
+        applied++
+        return true
+      },
+      reading: () => {},
+      error: () => {},
+      deferred: () => {},
+    })
+    for (let i = 0; i < 50; i++) {
+      observer.request()
+      await observer.tick()
+    }
+    assert.equal(reads, 0)
+    allowed = true
+    await observer.tick()
+    assert.equal(reads, 1)
+    for (let i = 0; i < 50; i++) observer.request()
+    await observer.tick()
+    assert.equal(reads, 1)
+    time = 2000
+    await observer.tick()
+    assert.equal(reads, 2)
+    assert.equal(applied, 2)
+    observer.dispose()
+  })
+
+  await test('External reads cannot overwrite a newer context after a tab round trip or disposal', async () => {
+    const { createRepositoryObservation } = await vite.ssrLoadModule(
+      '/src/services/repositoryObservation.ts',
+    )
+    const pending = deferred()
+    let key = 'one',
+      time = 0,
+      reads = 0,
+      applied = 0
+    const observer = createRepositoryObservation({
+      context: () => key,
+      allowed: () => true,
+      now: () => time,
+      status: async () => ({ revision: 'same', fallback: false, watched: 1 }),
+      read: async () => (++reads === 1 ? pending.promise : { snapshot: structuredClone(fixture) }),
+      apply: async () => {
+        applied++
+        return true
+      },
+      reading: () => {},
+      error: () => {},
+      deferred: () => {},
+    })
+    const first = observer.tick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    key = 'two'
+    observer.request()
+    key = 'one'
+    observer.request()
+    pending.resolve({ snapshot: structuredClone(fixture) })
+    await first
+    assert.equal(applied, 0)
+    time = 2000
+    await observer.tick()
+    assert.equal(applied, 1)
+    observer.dispose()
+    time = 4000
+    observer.request()
+    await observer.tick()
+    assert.equal(reads, 2)
+  })
+
+  await test('Observation falls back to periodic validation and recovers from locks and read errors', async () => {
+    const { createRepositoryObservation } = await vite.ssrLoadModule(
+      '/src/services/repositoryObservation.ts',
+    )
+    let time = 0,
+      reads = 0,
+      locked = false,
+      failure = null,
+      applied = 0
+    const observer = createRepositoryObservation({
+      context: () => 'one',
+      allowed: () => true,
+      now: () => time,
+      status: async () => ({ revision: 'unchanged', fallback: true, watched: 0 }),
+      read: async () => {
+        reads++
+        if (reads === 1) return { snapshot: null, deferred: 'locked' }
+        if (reads === 2) throw new Error('暂时无法读取')
+        return { snapshot: structuredClone(fixture) }
+      },
+      apply: async () => {
+        applied++
+        return true
+      },
+      reading: () => {},
+      error: (value) => {
+        failure = value
+      },
+      deferred: (value) => {
+        locked = value
+      },
+    })
+    await observer.tick()
+    assert.equal(locked, true)
+    assert.equal(applied, 0)
+    time = 2000
+    await observer.tick()
+    assert.match(failure.message, /暂时/)
+    time = 4000
+    await observer.tick()
+    assert.equal(failure, null)
+    assert.equal(locked, false)
+    assert.equal(applied, 1)
+    time = 13000
+    await observer.tick()
+    assert.equal(reads, 3)
+    time = 14001
+    await observer.tick()
+    assert.equal(reads, 4)
+    observer.dispose()
   })
 
   await test('Notification bursts remain bounded and successful feedback cannot replace all errors', () => {
@@ -734,6 +1124,81 @@ try {
     return { store, flow }
   }
 
+  await test('GitFlow repair suggests a unique remote source and accepts its frozen plan until the ref changes', async () => {
+    const { store, flow } = flowWorkspace('remote-repair')
+    store.repo.branches = store.repo.branches.filter((branch) => branch.name !== 'develop')
+    const source = {
+      fullRef: 'refs/remotes/origin/develop',
+      remote: 'origin',
+      remoteRef: 'refs/heads/develop',
+      oid: 'f'.repeat(40),
+      name: 'origin/develop',
+    }
+    store.repo.branches.push({
+      name: source.name,
+      fullRef: source.fullRef,
+      hash: source.oid,
+      kind: 'remote',
+      current: false,
+      track: '',
+    })
+    store.repo.gitflow.ready = false
+    store.repo.gitflow.missing = ['develop']
+    store.repo.gitflow.remoteBases = [source]
+    flow.open('settings')
+    assert.equal(flow.sourceChoices.develop, source.fullRef)
+    assert.equal(flow.previewBlocked, '')
+    flow.plan = {
+      id: 'remote-plan',
+      config: { ...flow.config },
+      creates: [{ name: 'develop', sourceRef: source.fullRef, oid: source.oid, tracking: source }],
+      retained: ['main'],
+      references: [{ fullRef: source.fullRef, oid: source.oid }],
+      expiresAt: Date.now() + 300000,
+    }
+    assert.equal(flow.stale, false)
+    assert.equal(flow.confirmBlocked, '')
+    const html = await renderToString(createSSRApp(GitFlowPanel).use(getActivePinia()))
+    assert.ok(html.includes('从远端同名分支恢复并跟踪'))
+    assert.ok(html.includes('关联上游 origin / develop'))
+    store.repo.branches.find((branch) => branch.fullRef === source.fullRef).hash = 'e'.repeat(40)
+    assert.equal(flow.stale, true)
+    assert.ok(flow.confirmBlocked)
+  })
+
+  await test('GitFlow multiple remote bases require selection and never replace an explicit source silently', async () => {
+    const { store, flow } = flowWorkspace('remote-choice')
+    store.repo.branches = store.repo.branches.filter((branch) => branch.name !== 'develop')
+    store.repo.gitflow.ready = false
+    store.repo.gitflow.missing = ['develop']
+    store.repo.gitflow.remoteBases = ['origin', 'backup'].map((remote) => ({
+      fullRef: `refs/remotes/${remote}/develop`,
+      remote,
+      remoteRef: 'refs/heads/develop',
+      oid: 'f'.repeat(40),
+      name: `${remote}/develop`,
+    }))
+    for (const source of store.repo.gitflow.remoteBases)
+      store.repo.branches.push({
+        name: source.name,
+        fullRef: source.fullRef,
+        hash: source.oid,
+        kind: 'remote',
+        current: false,
+        track: '',
+      })
+    flow.open('settings')
+    assert.equal(flow.sourceChoices.develop, undefined)
+    assert.match(flow.previewBlocked, /多个远端/)
+    flow.sourceChoices.develop = 'refs/remotes/backup/develop'
+    assert.equal(flow.previewBlocked, '')
+    store.repo.gitflow.remoteBases = store.repo.gitflow.remoteBases.filter(
+      (source) => source.remote === 'origin',
+    )
+    assert.equal(flow.sourceChoices.develop, 'refs/remotes/backup/develop')
+    assert.ok(flow.previewBlocked)
+  })
+
   await test('Unconfigured GitFlow gates task entry but leaves saving and missing-branch recovery reachable', async () => {
     const { store, flow } = flowWorkspace('entry-unconfigured')
     store.repo.gitflow.configured = false
@@ -808,7 +1273,7 @@ try {
     assert.match(flow.finishEntryBlocked, /未连接/)
     assert.match(flow.saveBlocked, /未连接/)
     const html = await renderToString(createSSRApp(GitFlowPanel).use(getActivePinia()))
-    assert.ok(html.includes('本机核心未连接 · 规则状态待核对'))
+    assert.ok(html.includes('本地 Git 服务未连接 · 规则状态待核对'))
     assert.doesNotMatch(
       html,
       /class="[^"]*\bonline\b[^"]*\bconnection-dot\b|class="[^"]*\bconnection-dot\b[^"]*\bonline\b/,
@@ -1256,6 +1721,29 @@ try {
     flow.close()
   })
 
+  await test('GitFlow acknowledges its own completed Finish only for an empty Start draft', () => {
+    const { store, flow } = flowWorkspace('finish-next-start')
+    flow.open('start')
+    const next = JSON.parse(JSON.stringify(store.repo))
+    next.head = 'b'.repeat(40)
+    next.branch = 'develop'
+    next.branches.find((branch) => branch.name === 'develop').hash = next.head
+    store.repo = next
+    assert.equal(flow.stale, true)
+    flow.acknowledgeFinish({ outcome: 'succeeded', output: '', snapshot: next })
+    assert.equal(flow.stale, false)
+    assert.equal(flow.capturedHead, next.head)
+    assert.equal(flow.sourceOid, next.head)
+    flow.name = 'reviewed-input'
+    const later = JSON.parse(JSON.stringify(next))
+    later.head = 'c'.repeat(40)
+    store.repo = later
+    flow.acknowledgeFinish({ outcome: 'succeeded', output: '', snapshot: later })
+    assert.equal(flow.stale, true)
+    assert.equal(flow.capturedHead, next.head)
+    assert.equal(flow.name, 'reviewed-input')
+  })
+
   await test('GitFlow navigation, type toggles and reset cannot silently renew stale targets', async () => {
     const { store, flow } = flowWorkspace('stale-buttons')
     flow.open('start')
@@ -1548,7 +2036,53 @@ try {
     assert.equal(store.draftTabs.length, 0)
   })
 
-  await test('Four application menus share named commands and checked column state', () => {
+  await test('Batch tab close keeps all drafts until one explicit confirmation and preserves the retained tab', async () => {
+    const store = freshStore()
+    nativeHandler = async (command, payload) =>
+      command === 'runtime'
+        ? nativeRuntime
+        : { ...structuredClone(fixture), path: payload.repo, name: payload.repo.split('/').at(-1) }
+    const first = store.activeTabId
+    store.commitMessage = 'first draft'
+    store.newTab()
+    await store.open('/tmp/batch-b')
+    const retained = store.activeTabId
+    store.commitMessage = 'retained draft'
+    store.newTab()
+    await store.open('/tmp/batch-c')
+    const last = store.activeTabId
+    store.commitDescription = 'last draft'
+    const originalIds = store.tabs.map((tab) => tab.id)
+    store.closeTabs([first, last])
+    assert.equal(store.modal, 'close')
+    assert.deepEqual(store.pendingCloseIds, [first, last])
+    assert.deepEqual(
+      store.tabs.map((tab) => tab.id),
+      originalIds,
+    )
+    assert.equal(store.activeTabId, last)
+    store.modal = null
+    await nextTick()
+    assert.deepEqual(store.pendingCloseIds, [])
+    assert.equal(store.commitDescription, 'last draft')
+    store.closeTabs([first, last])
+    store.closeTabs([...store.pendingCloseIds], true)
+    assert.deepEqual(
+      store.tabs.map((tab) => tab.id),
+      [retained],
+    )
+    assert.equal(store.activeTabId, retained)
+    assert.equal(store.commitMessage, 'retained draft')
+    store.busy = true
+    store.closeTabs([retained], true)
+    assert.equal(store.tabs.length, 1)
+    store.busy = false
+    store.closeTabs([retained], true)
+    assert.equal(store.tabs.length, 1)
+    assert.equal(store.isNewTab, true)
+  })
+
+  await test('Five application menus share named commands and checked column state', () => {
     const menus = buildMenus({
       enabled: ['file.open', 'file.recent.0', 'view.sha'],
       recent: ['repo'],
@@ -1558,7 +2092,7 @@ try {
     })
     assert.deepEqual(
       menus.map((menu) => menu.id),
-      ['file', 'edit', 'view', 'help'],
+      ['file', 'edit', 'view', 'repository', 'help'],
     )
     assert.equal(menus[0].items.find((item) => item.id === 'file.open').enabled, true)
     assert.equal(menus[0].items.find((item) => item.id === 'file.closeTab').enabled, false)
@@ -1571,6 +2105,87 @@ try {
       menus[1].items.some((item) => item.id.startsWith('git.')),
       false,
     )
+  })
+
+  await test('Loaded history proves interactive eligibility without guessing across omitted ancestors', () => {
+    const c = (hash, parents) => ({ hash, parents })
+    const graph = [
+      c('root', []),
+      c('base', ['root']),
+      c('left', ['base']),
+      c('right', ['base']),
+      c('merge', ['left', 'right']),
+      c('after', ['merge']),
+    ]
+    assert.equal(interactiveRebaseFromHistory(graph, 'left', 'base'), true)
+    assert.equal(interactiveRebaseFromHistory(graph, 'left', 'right'), true)
+    assert.equal(interactiveRebaseFromHistory(graph, 'base', 'left'), false)
+    assert.equal(interactiveRebaseFromHistory(graph, 'left', 'left'), false)
+    assert.equal(interactiveRebaseFromHistory(graph, 'after', 'merge'), true)
+    assert.equal(interactiveRebaseFromHistory(graph, 'after', 'base'), false)
+    assert.equal(interactiveRebaseFromHistory(graph.slice(1), 'left', 'right'), null)
+    assert.equal(interactiveRebaseFromHistory(graph.slice(1), 'after', 'merge'), true)
+    assert.equal(
+      interactiveRebaseFromHistory(
+        graph.filter((c) => c.hash !== 'left'),
+        'left',
+        'right',
+      ),
+      null,
+    )
+    const unrelated = [...graph, c('other', [])]
+    assert.equal(interactiveRebaseFromHistory(unrelated, 'left', 'other'), false)
+    const chain = [
+      c('0', []),
+      ...Array.from({ length: 201 }, (_, i) => c(String(i + 1), [String(i)])),
+    ]
+    assert.equal(interactiveRebaseFromHistory(chain, '200', '0'), true)
+    assert.equal(interactiveRebaseFromHistory(chain, '201', '0'), false)
+    // A hidden target path might pass through source: known partial ancestry is insufficient.
+    assert.equal(
+      interactiveRebaseFromHistory(
+        [c('target', ['missing']), c('head', ['base']), c('base', [])],
+        'head',
+        'target',
+      ),
+      null,
+    )
+  })
+
+  await test('Branch menu snapshot identity keeps unchanged refs and rejects changed operation context', () => {
+    const snapshot = structuredClone(fixture)
+    const branch = snapshot.branches.find((b) => b.name === 'origin/develop')
+    const target = {
+      kind: 'branch',
+      branch: structuredClone(branch),
+      repo: snapshot.path,
+      tabId: 1,
+      head: snapshot.head,
+      currentBranch: snapshot.branch,
+    }
+    assert.equal(branchContextCurrent(target, structuredClone(snapshot), 1), true)
+    for (const change of [
+      (s) => {
+        s.path += '-other'
+      },
+      (s) => {
+        s.head = 'f'.repeat(40)
+      },
+      (s) => {
+        s.branch = 'other'
+      },
+      (s) => {
+        s.branches = s.branches.filter((b) => b.name !== branch.name)
+      },
+      ...['hash', 'commitHash', 'symbolicTarget', 'worktreePath', 'upstream'].map((key) => (s) => {
+        s.branches.find((b) => b.name === branch.name)[key] = 'changed'
+      }),
+    ]) {
+      const next = structuredClone(snapshot)
+      change(next)
+      assert.equal(branchContextCurrent(target, next, 1), false)
+    }
+    assert.equal(branchContextCurrent(target, snapshot, 2), false)
   })
 
   await test('Context menus freeze the right-click target without selecting or switching it', () => {
@@ -1819,11 +2434,11 @@ try {
         assert.ok(node)
         assert.equal(edge.childHash, commit.hash)
         assert.equal(edge.parentHash, parent)
-        // Read SVG endpoints independently of whether a route is straight or rounded.
+        // Read actual endpoints for vertical and diagonal SVG line segments.
         let end = { x: 0, y: 0 }
-        for (const [, command, raw] of edge.d.matchAll(/([MHVQ])([^MHVQ]*)/g)) {
+        for (const [, command, raw] of edge.d.matchAll(/([MLHVQ])([^MLHVQ]*)/g)) {
           const numbers = raw.trim().split(/[ ,]+/).map(Number)
-          if (command === 'M') end = { x: numbers[0], y: numbers[1] }
+          if (command === 'M' || command === 'L') end = { x: numbers[0], y: numbers[1] }
           else if (command === 'H') end.x = numbers[0]
           else if (command === 'V') end.y = numbers[0]
           else if (command === 'Q') end = { x: numbers.at(-2), y: numbers.at(-1) }
@@ -1834,7 +2449,7 @@ try {
     }
   })
 
-  await test('Cross-lane ancestry uses rounded turns between rows for both directions', () => {
+  await test('IDEA ancestry uses vertical and diagonal row segments without horizontal elbows', () => {
     const commits = [
       { ...fixture.commits[0], hash: 'worktree', parents: ['head'] },
       { ...fixture.commits[0], hash: 'feature-a', parents: ['base'] },
@@ -1842,18 +2457,23 @@ try {
       { ...fixture.commits[0], hash: 'head', parents: ['base'] },
       { ...fixture.commits[0], hash: 'base', parents: [] },
     ]
-    const graph = buildGraph(commits, 0),
-      nodes = new Map(graph.nodes.map((node) => [node.hash, node]))
-    const turns = graph.edges.filter((edge) => edge.d.includes(' Q'))
-    assert.ok(turns.some((edge) => nodes.get(edge.childHash).x > nodes.get(edge.parentHash).x))
-    assert.ok(turns.some((edge) => nodes.get(edge.childHash).x < nodes.get(edge.parentHash).x))
-    for (const edge of turns) {
-      const child = nodes.get(edge.childHash)
-      assert.ok(edge.d.includes(' H'))
-      assert.ok(!edge.d.includes(' C'))
-      for (const [, values] of edge.d.matchAll(/Q([^MHVQ]*)/g)) {
-        const coords = values.trim().split(/[ ,]+/).map(Number)
-        for (const y of [coords[1], coords[3]]) assert.ok(y > child.y && y < child.y + 30)
+    const graph = buildGraph(commits, 0)
+    assert.ok(graph.edges.some((edge) => edge.d.includes(' L')))
+    for (const edge of graph.edges) {
+      assert.ok(!/[HQC]/.test(edge.d))
+      let previous = { x: 0, y: 0 }
+      for (const [, command, raw] of edge.d.matchAll(/([MLV])([^MLV]*)/g)) {
+        const values = raw.trim().split(/[ ,]+/).map(Number)
+        if (command === 'M') previous = { x: values[0], y: values[1] }
+        if (command === 'V') {
+          assert.ok(values[0] > previous.y)
+          previous.y = values[0]
+        }
+        if (command === 'L') {
+          assert.notEqual(values[0], previous.x)
+          assert.equal(values[1] - previous.y, 30)
+          previous = { x: values[0], y: values[1] }
+        }
       }
     }
   })
@@ -1865,7 +2485,7 @@ try {
       parents: [`missing-${i}`],
     }))
     const graph = buildGraph(commits)
-    assert.equal(graph.width, 116)
+    assert.equal(graph.width, 68)
     assert.ok(graph.edges.every((edge) => edge.boundary))
   })
 
@@ -2175,6 +2795,81 @@ try {
     assert.equal(store.sidebarBranchSelection, '')
     assert.equal(store.commitMessage, 'keep draft')
     assert.ok(store.notices.some((n) => n.text.includes('原筛选引用已不存在')))
+  })
+
+  await test('Checkout success is announced only after its state and blocking overlay have settled', async () => {
+    const store = freshStore()
+    const live = structuredClone({
+      ...fixture,
+      path: '/tmp/checkout-notice',
+      name: 'checkout-notice',
+    })
+    nativeHandler = async (command) =>
+      command === 'runtime' ? nativeRuntime : structuredClone(live)
+    await store.open(live.path)
+    const next = structuredClone(live)
+    next.branch = 'develop'
+    next.head = next.branches.find((branch) => branch.name === 'develop').hash
+    next.branches.forEach((branch) => {
+      branch.current = branch.kind === 'local' && branch.name === 'develop'
+    })
+    const pending = deferred()
+    nativeHandler = async (command) =>
+      command === 'action' ? pending.promise : structuredClone(next)
+    const observations = []
+    const stop = watch(
+      () => store.notices.map((notice) => notice.text),
+      (notices) => {
+        if (notices.includes('已切换分支'))
+          observations.push({
+            busy: store.busy,
+            checkingOut: store.checkingOut,
+            branch: store.repo.branch,
+          })
+      },
+      { flush: 'sync' },
+    )
+    try {
+      const operation = store.run('checkout', { name: 'develop' })
+      assert.equal(store.checkingOut, true)
+      assert.deepEqual(observations, [])
+      pending.resolve({ outcome: 'succeeded', output: '', snapshot: next })
+      assert.equal(await operation, true)
+      assert.deepEqual(observations, [{ busy: false, checkingOut: false, branch: 'develop' }])
+    } finally {
+      stop()
+    }
+  })
+
+  await test('Cancelled, failed and unverified checkout results never announce successful switching', async () => {
+    for (const result of [
+      { outcome: 'cancelled', output: '' },
+      { outcome: 'failed', output: '' },
+      { outcome: 'partial', output: '' },
+      { outcome: 'succeeded', output: '', refreshError: 'refresh unavailable' },
+      { outcome: 'succeeded', output: '' },
+    ]) {
+      const store = freshStore()
+      const live = structuredClone({
+        ...fixture,
+        path: '/tmp/checkout-unverified',
+        name: 'checkout-unverified',
+      })
+      nativeHandler = async (command) =>
+        command === 'runtime' ? nativeRuntime : structuredClone(live)
+      await store.open(live.path)
+      nativeHandler = async () => ({ ...result, snapshot: null })
+      await store.run('checkout', { name: 'develop' })
+      assert.equal(
+        store.notices.some((notice) => notice.text === '已切换分支'),
+        false,
+        JSON.stringify(result),
+      )
+      if (result.refreshError)
+        assert.ok(store.notices.some((notice) => notice.text.includes('状态刷新失败')))
+      else if (result.outcome === 'succeeded')
+        assert.ok(store.notices.some((notice) => notice.text.includes('未取得最新仓库状态')))
+    }
   })
 
   await test('Failed checkout preserves selected history, reference filter and commit draft', async () => {
@@ -2530,9 +3225,9 @@ try {
       }
       await store.open(live.path)
       const pending = store.run('fetch')
-      assert.equal(store.busy, true)
+      assert.equal(store.fetching, true)
       await store.cancelOperation()
-      assert.equal(store.busy, true, 'The original plan has not settled yet')
+      assert.equal(store.fetching, true, 'The original plan has not settled yet')
       if (!acknowledge)
         assert.ok(
           store.notices.some((notice) => notice.error && /取消请求未确认/.test(notice.text)),
@@ -2550,10 +3245,143 @@ try {
       })
       assert.equal(await pending, false)
       assert.equal(actions, 0)
-      assert.equal(store.busy, false)
+      assert.equal(store.fetching, false)
       assert.equal(store.repo.head, live.head)
       assert.ok(store.notices.some((notice) => /未开始执行/.test(notice.text)))
     }
+  })
+
+  await test('Direct sync keeps verified ordinary push nonmodal and never executes a cancelled preflight', async () => {
+    for (const cancel of [false, true]) {
+      const store = freshStore()
+      const live = {
+        ...structuredClone(fixture),
+        path: `/tmp/direct-sync-${cancel}`,
+        name: 'direct-sync',
+      }
+      const pendingPlan = deferred()
+      let actions = 0
+      nativeHandler = async (method) => {
+        if (method === 'runtime') return nativeRuntime
+        if (method === 'snapshot') return structuredClone(live)
+        if (method === 'sync-plan') return pendingPlan.promise
+        if (method === 'cancel') return
+        if (method === 'action') {
+          actions++
+          return { outcome: 'succeeded', output: '', snapshot: structuredClone(live) }
+        }
+        throw new Error(`Unexpected ${method}`)
+      }
+      await store.open(live.path)
+      const pending = store.sync('push')
+      assert.equal(store.busy, true)
+      assert.equal(store.modal, null)
+      if (cancel) await store.cancelOperation()
+      pendingPlan.resolve({
+        id: 'direct-plan',
+        kind: 'push',
+        branch: live.branch,
+        head: live.head,
+        sourceRef: `refs/heads/${live.branch}`,
+        destinationRef: 'refs/heads/main',
+        remoteCheck: { state: 'forward', oid: live.head },
+        remotes: [],
+        expiresAt: Date.now() + 10000,
+      })
+      assert.equal(await pending, !cancel)
+      assert.equal(actions, cancel ? 0 : 1)
+      assert.equal(store.modal, null)
+      assert.equal(store.busy, false)
+    }
+  })
+
+  await test('Background fetch coalesces duplicate requests and cannot overwrite a newer foreground snapshot', async () => {
+    const store = freshStore()
+    const live = {
+      ...structuredClone(fixture),
+      path: '/tmp/background-fetch-order',
+      name: 'fetch-order',
+    }
+    const fetchReply = deferred(),
+      started = deferred()
+    let plans = 0,
+      fetches = 0
+    nativeHandler = async (method, data) => {
+      if (method === 'runtime') return nativeRuntime
+      if (method === 'snapshot') return structuredClone(live)
+      if (method === 'sync-plan') {
+        plans++
+        return { id: 'fetch-order-plan' }
+      }
+      if (method === 'action') {
+        if (data.request.action === 'fetch') {
+          fetches++
+          started.resolve()
+          return fetchReply.promise
+        }
+        if (data.request.action === 'stage')
+          return {
+            outcome: 'succeeded',
+            output: '',
+            snapshot: { ...structuredClone(live), total: 888 },
+          }
+      }
+      throw new Error(`Unexpected ${method}`)
+    }
+    await store.open(live.path)
+    const fetch = store.run('fetch')
+    await started.promise
+    assert.equal(store.busy, false)
+    assert.equal(store.fetching, true)
+    const duplicate = store.run('fetch')
+    assert.equal(await store.run('stage', { paths: ['README.md'] }), true)
+    assert.equal(store.repo.total, 888)
+    fetchReply.resolve({
+      outcome: 'succeeded',
+      output: '',
+      snapshot: { ...structuredClone(live), total: 99 },
+    })
+    assert.equal(await fetch, true)
+    assert.equal(await duplicate, true)
+    assert.equal(plans, 1)
+    assert.equal(fetches, 1)
+    assert.equal(store.repo.total, 888)
+    assert.equal(store.fetching, false)
+  })
+
+  await test('Background fetch reports every remote when only part of Fetch All succeeds', async () => {
+    const store = freshStore()
+    const live = {
+      ...structuredClone(fixture),
+      path: '/tmp/partial-fetch-results',
+      name: 'partial-fetch',
+    }
+    nativeHandler = async (method) => {
+      if (method === 'runtime') return nativeRuntime
+      if (method === 'snapshot') return structuredClone(live)
+      if (method === 'sync-plan') return { id: 'partial-fetch-plan' }
+      if (method === 'action')
+        return {
+          outcome: 'partial',
+          output: '',
+          error: 'backup 连接失败',
+          snapshot: { ...structuredClone(live), total: 321 },
+          steps: [
+            { remote: 'origin', ok: true },
+            { remote: 'backup', ok: false, message: '连接失败，引用未更新' },
+          ],
+        }
+      throw new Error(`Unexpected ${method}`)
+    }
+    await store.open(live.path)
+    assert.equal(await store.run('fetch'), false)
+    assert.equal(store.repo.total, 321, 'Successful remotes must still refresh the repository')
+    const notice = store.notices.at(-1)
+    assert.equal(notice.error, true)
+    assert.match(notice.text, /origin：已获取/)
+    assert.match(notice.text, /backup：连接失败，引用未更新/)
+    assert.equal(store.fetching, false)
+    assert.equal(store.busy, false)
   })
 
   await test('A failed cancellation acknowledgement does not close the push result modal when the actual operation later succeeds', async () => {
@@ -3069,7 +3897,9 @@ try {
     assert.equal(await store.open('/tmp/not-a-repo'), false)
     assert.equal(store.isNewTab, false)
     assert.equal(store.repo.name, 'GitCode')
-    assert.ok(store.notices.some((n) => n.error && n.text === '目录不是 Git 仓库'))
+    assert.equal(store.repositoryOpenError, '目录不是 Git 仓库')
+    assert.equal(store.modal, 'open')
+    assert.equal(store.repositoryOpenPath, '/tmp/not-a-repo')
     assert.equal(store.busy, false)
   })
 
@@ -3098,6 +3928,66 @@ try {
       assert.ok(html.includes(text), text)
     assert.ok(!html.includes('class="workbench"'))
     assert.ok(!html.includes('class="fixture-banner"'))
+  })
+
+  await test('Commit drafts recover per repository after restart and explicit discard clears saved copies', async () => {
+    const one = { ...structuredClone(fixture), path: '/tmp/draft-recovery-one', name: 'one' }
+    const two = { ...structuredClone(fixture), path: '/tmp/draft-recovery-two', name: 'two' }
+    nativeHandler = async (method, args) =>
+      method === 'runtime' ? nativeRuntime : structuredClone(args.repo === two.path ? two : one)
+    setActivePinia(createPinia())
+    let store = useRepositoryStore()
+    await store.open(one.path)
+    store.commitMessage = 'first saved draft'
+    store.commitDescription = 'first body'
+    store.newTab()
+    await store.open(two.path)
+    assert.equal(store.commitMessage, '')
+    store.commitMessage = 'second saved draft'
+    setActivePinia(createPinia())
+    store = useRepositoryStore()
+    await store.open(one.path)
+    assert.equal(store.commitMessage, 'first saved draft')
+    assert.equal(store.commitDescription, 'first body')
+    store.newTab()
+    await store.open(two.path)
+    assert.equal(store.commitMessage, 'second saved draft')
+    await store.discardCommitDrafts()
+    setActivePinia(createPinia())
+    store = useRepositoryStore()
+    await store.open(one.path)
+    assert.equal(store.commitMessage, '')
+    store.newTab()
+    await store.open(two.path)
+    assert.equal(store.commitMessage, '')
+    store.commitMessage = 'explicitly discarded tab'
+    store.closeTab(store.activeTabId, true)
+    store.newTab()
+    await store.open(two.path)
+    assert.equal(store.commitMessage, '')
+  })
+
+  await test('A failed local draft write preserves entered text and reports the recovery limitation', async () => {
+    const live = { ...structuredClone(fixture), path: '/tmp/draft-storage-failure' }
+    nativeHandler = async (method) => (method === 'runtime' ? nativeRuntime : structuredClone(live))
+    setActivePinia(createPinia())
+    const store = useRepositoryStore()
+    await store.open(live.path)
+    const write = localStorage.setItem
+    try {
+      localStorage.setItem = () => {
+        throw new Error('Quota exceeded')
+      }
+      store.commitMessage = 'do not lose my draft'
+      store.commitDescription = 'do not lose my body'
+      assert.equal(store.commitMessage, 'do not lose my draft')
+      assert.equal(store.notices.filter((item) => item.text?.includes('草稿未能保存')).length, 1)
+      await assert.rejects(store.discardCommitDrafts(), /无法清除/)
+      assert.equal(store.commitDescription, 'do not lose my body')
+    } finally {
+      localStorage.setItem = write
+      await store.discardCommitDrafts()
+    }
   })
 
   await test('Switching repository tabs preserves separate drafts, searches and file selections', async () => {
@@ -3240,7 +4130,8 @@ try {
       await store.init()
       assert.equal(store.connected, false)
       assert.equal(await store.open('C:\\Projects\\example'), false)
-      assert.ok(store.notices.some((n) => n.error && n.text.includes('需要连接 GitCode 本机核心')))
+      assert.match(store.repositoryOpenError, /需要连接 GitCode 本地 Git 服务/)
+      assert.equal(store.modal, 'open')
       assert.ok(store.notices.every((n) => !n.text.includes('bun run desktop')))
     } finally {
       window.gitk = bridge
@@ -3263,6 +4154,17 @@ try {
       }
       const value = JSON.parse(options.body)
       if (value.method === 'snapshot' && failRead) throw new TypeError('core stopped')
+      if (value.method === 'repository-trust')
+        return new Response(
+          JSON.stringify({
+            result: {
+              path: value.args[0],
+              gitDir: value.args[0] + '/.git',
+              trusted: true,
+              token: '',
+            },
+          }),
+        )
       return new Response(
         JSON.stringify({
           result: { ...nativeRuntime, platform: 'linux', transport: 'local', environment: 'wsl' },
@@ -3278,9 +4180,10 @@ try {
       assert.equal(store.runtime.transport, 'local')
       store.modal = 'open'
       const html = await renderToString(createSSRApp(App).use(pinia))
-      assert.ok(html.includes('本机 Git 核心已连接'))
-      assert.ok(html.includes('正在访问 WSL 目录'))
-      assert.ok(html.includes('WSL 本机核心已连接'))
+      assert.ok(html.includes('aria-label="仓库路径"'))
+      assert.ok(html.includes('浏览…'))
+      assert.ok(!html.includes('class="repository-connection"'))
+      assert.ok(html.includes('WSL Git 服务已连接'))
       assert.doesNotMatch(html, /class="window-controls"/)
       assert.ok(!html.includes('使用内置目录浏览器'))
       failRead = true
@@ -3288,8 +4191,9 @@ try {
       assert.equal(store.connected, false)
       assert.match(store.connectionError, /本机连接已中断/)
       const disconnected = await renderToString(createSSRApp(App).use(pinia))
-      assert.ok(disconnected.includes('尚未连接本机 Git 核心'))
-      assert.ok(disconnected.includes('连接本机核心'))
+      assert.ok(disconnected.includes('本地 Git 服务未连接'))
+      assert.ok(disconnected.includes('class="repository-connection"'))
+      assert.ok(disconnected.includes('连接本地 Git 服务'))
       failRead = false
       await store.init()
       assert.equal(store.connected, true)
@@ -3398,12 +4302,23 @@ try {
     }
   })
 
+  await test('Windows native controls reserve caption space before runtime connects and omit duplicate DOM buttons', async () => {
+    window.gitkWindow = { nativeControls: true }
+    try {
+      const html = await renderToString(createSSRApp(App).use(createPinia()))
+      assert.ok(html.includes('native-window-controls'))
+      assert.ok(!html.includes('aria-label="窗口控制"'))
+    } finally {
+      delete window.gitkWindow
+    }
+  })
+
   await test('macOS reserves its native window controls; browser previews omit desktop chrome', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = seedRepository(useRepositoryStore())
     store.runtime = { ...nativeRuntime, platform: 'macos' }
-    window.gitkWindow = {}
+    window.gitkWindow = { platform: 'darwin' }
     try {
       const html = await renderToString(createSSRApp(App).use(pinia))
       assert.ok(html.includes('platform-macos'))
@@ -3413,6 +4328,418 @@ try {
     }
     const html = await renderToString(createSSRApp(App).use(createPinia()))
     assert.ok(!html.includes('aria-label="窗口控制"'))
+  })
+
+  await test('History pages retain selections and search while same-tip refreshes retain loaded ancestors', async () => {
+    const store = freshStore()
+    const full = structuredClone(fixture)
+    const state = {
+      token: 'page-token',
+      signature: 'roots',
+      basis: 'roots',
+      focus: null,
+      nextOffset: 5,
+      total: full.commits.length,
+    }
+    store.repo = { ...full, commits: full.commits.slice(0, 5), history: state }
+    store.query = 'fixture-search'
+    store.selectedCommit = store.repo.commits[1]
+    store.commitBody = 'keep detail'
+    nativeHandler = async (method) =>
+      method === 'history-read'
+        ? { commits: full.commits.slice(5, 10), history: { ...state, nextOffset: 10 } }
+        : method === 'snapshot'
+          ? { ...full, commits: full.commits.slice(0, 5), history: state }
+          : nativeRuntime
+    assert.equal(await store.loadHistory(), true)
+    assert.equal(store.repo.commits.length, 10)
+    assert.equal(store.selectedCommit.hash, full.commits[1].hash)
+    assert.equal(store.query, 'fixture-search')
+    await store.refresh()
+    assert.equal(store.repo.commits.length, 10)
+    assert.equal(store.commitBody, 'keep detail')
+    assert.equal(store.repo.history.nextOffset, 10)
+  })
+  await test('Late history pages cannot modify a switched tab or an updated graph', async () => {
+    const store = freshStore(),
+      pending = deferred(),
+      full = structuredClone(fixture)
+    const state = {
+      token: 'pages',
+      signature: 'roots',
+      basis: 'roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    store.repo = { ...full, commits: full.commits.slice(0, 5), history: state }
+    nativeHandler = async (method) => (method === 'history-read' ? pending.promise : nativeRuntime)
+    const read = store.loadHistory()
+    store.newTab()
+    pending.resolve({ commits: full.commits.slice(5), history: { ...state, nextOffset: null } })
+    assert.equal(await read, false)
+    assert.equal(store.repo.commits.length, 0)
+    assert.equal(store.historyLoading, false)
+  })
+  await test('SHA location replaces the view explicitly, clears filters and selects the requested commit', async () => {
+    const store = freshStore(),
+      full = structuredClone(fixture)
+    const state = {
+      token: 'pages',
+      signature: 'roots',
+      basis: 'roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    store.repo = { ...full, commits: full.commits.slice(0, 5), history: state }
+    store.query = full.commits[8].hash
+    store.setBranchFilter(store.repo.branches[0])
+    nativeHandler = async (method) =>
+      method === 'history-read'
+        ? {
+            commits: full.commits.slice(8),
+            history: {
+              ...state,
+              token: 'focus',
+              signature: 'focus',
+              focus: full.commits[8].hash,
+              nextOffset: null,
+            },
+          }
+        : method === 'commit'
+          ? { files: [], body: 'older commit' }
+          : nativeRuntime
+    assert.equal(await store.loadHistory('locate', store.query), true)
+    assert.equal(store.selectedCommit.hash, full.commits[8].hash)
+    assert.equal(store.branchFilter, '')
+    assert.equal(store.query, '')
+    assert.equal(store.repo.history.focus, full.commits[8].hash)
+    assert.equal(store.commitBody, 'older commit')
+  })
+  await test('SHA lookup failures leave existing history, query and selection intact', async () => {
+    const store = freshStore(),
+      full = structuredClone(fixture)
+    store.repo.history = {
+      token: 'pages',
+      signature: 'roots',
+      basis: 'roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    store.query = 'deadbee'
+    store.selectedCommit = store.repo.commits[0]
+    nativeHandler = async () => {
+      throw Error('提交不存在或 SHA 不唯一')
+    }
+    assert.equal(await store.loadHistory('locate', store.query), false)
+    assert.deepEqual(store.repo.commits, full.commits)
+    assert.equal(store.query, 'deadbee')
+    assert.equal(store.visibleCommits.length, full.commits.length)
+    assert.equal(store.selectedCommit.hash, full.commits[0].hash)
+    assert.match(store.historyError, /不存在/)
+  })
+  await test('Changed root snapshots reset pagination while same-root checkout only refreshes decorations', async () => {
+    const { retainHistory } = await vite.ssrLoadModule('/src/historyPaging.ts')
+    const full = structuredClone(fixture)
+    const history = {
+      token: 'pages',
+      signature: 'roots',
+      basis: 'roots',
+      focus: null,
+      nextOffset: 10,
+      total: 16,
+    }
+    const current = { ...full, commits: full.commits.slice(0, 10), history }
+    const next = {
+      ...full,
+      commits: full.commits.slice(0, 5),
+      history: { ...history, token: 'new-token', nextOffset: 5 },
+    }
+    assert.equal(retainHistory(current, next).commits.length, 10)
+    assert.equal(retainHistory(current, next).history.token, 'new-token')
+    const changed = {
+      ...next,
+      history: { ...next.history, signature: 'new-roots', basis: 'new-roots' },
+    }
+    assert.equal(retainHistory(current, changed), changed)
+  })
+
+  await test('Loading an old branch preserves its keyword and the existing detail selection', async () => {
+    const store = freshStore(),
+      full = structuredClone(fixture)
+    const state = {
+      token: 'pages',
+      signature: 'roots',
+      basis: 'roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    store.repo = { ...full, commits: full.commits.slice(0, 5), history: state }
+    store.query = 'docs'
+    store.selectedCommit = store.repo.commits[0]
+    store.commitBody = 'keep detail'
+    const branch = store.repo.branches.find((b) => b.name === 'develop')
+    nativeHandler = async (method) =>
+      method === 'history-read'
+        ? {
+            commits: full.commits.slice(6),
+            history: { ...state, signature: 'focus', focus: branch.hash, nextOffset: null },
+          }
+        : nativeRuntime
+    store.setBranchFilter(branch, 'local:develop')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(store.repo.history.focus, branch.hash)
+    assert.equal(store.query, 'docs')
+    assert.equal(store.selectedCommit.hash, full.commits[0].hash)
+    assert.equal(store.commitBody, 'keep detail')
+  })
+  await test('History filters survive a fresh store by canonical repository path; explicit clear survives restart', async () => {
+    const { historyFilterKey } = await vite.ssrLoadModule('/src/services/historyFilter.ts')
+    const live = { ...structuredClone(fixture), path: '/tmp/filter-persist/app' }
+    let store = freshStore()
+    const calls = []
+    nativeHandler = async (method) => {
+      calls.push(method)
+      return method === 'runtime' ? nativeRuntime : structuredClone(live)
+    }
+    await store.open(live.path)
+    const branch = store.repo.branches.find((b) => b.name === 'develop')
+    const source = JSON.stringify(['local', 'refs/heads/develop'])
+    store.setBranchFilter(branch, source)
+    setActivePinia(createPinia())
+    store = useRepositoryStore()
+    await store.open(live.path)
+    assert.equal(store.branchFilter, 'refs/heads/develop')
+    assert.equal(store.sidebarBranchSelection, source)
+    assert.equal(store.repo.branch, 'main')
+    assert.ok(!calls.includes('action'))
+    store.clearBranchFilter()
+    assert.equal(storage.has(historyFilterKey(live.path)), false)
+    setActivePinia(createPinia())
+    store = useRepositoryStore()
+    await store.open(live.path)
+    assert.equal(store.branchFilter, '')
+  })
+  await test('Same-named repositories retain separate preferences and opening new tabs never clears them', async () => {
+    const a = { ...structuredClone(fixture), path: '/tmp/filter-one/app' },
+      b = { ...structuredClone(fixture), path: '/tmp/filter-two/app' }
+    let store = freshStore()
+    nativeHandler = async (method, args) =>
+      method === 'runtime' ? nativeRuntime : structuredClone(args.repo === b.path ? b : a)
+    await store.open(a.path)
+    store.setBranchFilter(
+      store.repo.branches.find((x) => x.name === 'develop'),
+      JSON.stringify(['local', 'refs/heads/develop']),
+    )
+    store.newTab()
+    await store.open(b.path)
+    store.setBranchFilter(store.repo.branches.find((x) => x.name === 'main'))
+    store.newTab()
+    setActivePinia(createPinia())
+    store = useRepositoryStore()
+    await store.open(a.path)
+    assert.equal(store.branchFilter, 'refs/heads/develop')
+    store.newTab()
+    await store.open(b.path)
+    assert.equal(store.branchFilter, 'refs/heads/main')
+    assert.equal(store.sidebarBranchSelection, '')
+  })
+  await test('Restoring a deleted full ref clears saved preferences and does not select a same-named tag', async () => {
+    const { historyFilterKey, writeHistoryFilter } = await vite.ssrLoadModule(
+      '/src/services/historyFilter.ts',
+    )
+    const store = freshStore(),
+      live = { ...structuredClone(fixture), path: '/tmp/filter-removed' }
+    live.branches = live.branches.filter((b) => b.name !== 'develop')
+    live.branches.push({
+      ...fixture.branches[0],
+      name: 'develop',
+      kind: 'tag',
+      fullRef: 'refs/tags/develop',
+    })
+    await writeHistoryFilter(live.path, { fullRef: 'refs/heads/develop', section: 'local' })
+    nativeHandler = async (method) => (method === 'runtime' ? nativeRuntime : structuredClone(live))
+    await store.open(live.path)
+    assert.equal(store.branchFilter, '')
+    assert.equal(storage.has(historyFilterKey(live.path)), false)
+    assert.ok(store.notices.some((n) => n.text.includes('原筛选引用已不存在')))
+  })
+  await test('Denied preference storage keeps filtering in this session and reports only the affected repository', async () => {
+    const store = freshStore(),
+      a = { ...structuredClone(fixture), path: '/tmp/filter-denied/app' },
+      b = { ...structuredClone(fixture), path: '/tmp/filter-ok/app' }
+    nativeHandler = async (method, args) =>
+      method === 'runtime' ? nativeRuntime : structuredClone(args.repo === b.path ? b : a)
+    await store.open(a.path)
+    const first = store.activeTabId,
+      original = localStorage.setItem
+    try {
+      localStorage.setItem = (key, value) => {
+        if (key.startsWith('gitcode.historyFilter.v1:')) throw Error('quota')
+        return original(key, value)
+      }
+      store.setBranchFilter(store.repo.branches.find((b) => b.name === 'develop'))
+      assert.match(store.historyPreferenceWarning, /未能保存/)
+      store.newTab()
+      await store.open(b.path)
+      assert.equal(store.historyPreferenceWarning, '')
+      store.closeTab(first, true)
+      await store.open(a.path)
+      assert.equal(store.branchFilter, 'refs/heads/develop')
+      assert.match(store.historyPreferenceWarning, /未能保存/)
+    } finally {
+      localStorage.setItem = original
+    }
+    store.setBranchFilter(store.repo.branches.find((b) => b.name === 'develop'))
+    await nextTick()
+    assert.equal(store.historyPreferenceWarning, '')
+  })
+  await test('A late failed flush cannot replace a newer successful preference or warn in another repository', async () => {
+    const store = freshStore(),
+      live = { ...structuredClone(fixture), path: '/tmp/filter-flush' }
+    nativeHandler = async (method) => (method === 'runtime' ? nativeRuntime : structuredClone(live))
+    await store.open(live.path)
+    const pending = deferred(),
+      previous = window.gitkApp
+    let flushes = 0
+    window.gitkApp = {
+      ...previous,
+      flushDraftStorage: () => (++flushes === 1 ? pending.promise : Promise.resolve()),
+    }
+    try {
+      store.setBranchFilter(store.repo.branches.find((b) => b.name === 'develop'))
+      store.setBranchFilter(store.repo.branches.find((b) => b.name === 'main'))
+      await nextTick()
+      pending.reject(Error('old flush failed'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(store.branchFilter, 'refs/heads/main')
+      assert.equal(store.historyPreferenceWarning, '')
+    } finally {
+      if (previous) window.gitkApp = previous
+      else delete window.gitkApp
+    }
+  })
+  await test('SHA location is temporary and never overwrites the remembered branch; explicit return clears it', async () => {
+    const { readHistoryFilter } = await vite.ssrLoadModule('/src/services/historyFilter.ts')
+    const store = freshStore(),
+      live = { ...structuredClone(fixture), path: '/tmp/filter-sha' }
+    const state = {
+      token: 'normal',
+      signature: 'roots',
+      basis: 'roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    live.history = state
+    live.commits = live.commits.slice(0, 5)
+    nativeHandler = async (method) =>
+      method === 'runtime'
+        ? nativeRuntime
+        : method === 'history-read'
+          ? {
+              commits: structuredClone(fixture.commits.slice(8)),
+              history: {
+                ...state,
+                signature: 'focus',
+                focus: fixture.commits[8].hash,
+                nextOffset: null,
+              },
+            }
+          : method === 'commit'
+            ? { files: [], body: 'older' }
+            : structuredClone(live)
+    await store.open(live.path)
+    store.setBranchFilter(store.repo.branches[0], JSON.stringify(['local', 'refs/heads/main']))
+    assert.equal(await store.loadHistory('locate', fixture.commits[8].hash), true)
+    assert.equal(store.branchFilter, '')
+    assert.equal(readHistoryFilter(live.path).fullRef, 'refs/heads/main')
+    assert.equal(store.repo.history.focusSource, 'sha')
+    await store.loadHistory('reset')
+    assert.equal(readHistoryFilter(live.path), null)
+  })
+  await test('Restoring an old branch loads its history read-only; clearing it exits its scope and preserves the keyword', async () => {
+    const { writeHistoryFilter, readHistoryFilter } = await vite.ssrLoadModule(
+      '/src/services/historyFilter.ts',
+    )
+    const store = freshStore(),
+      live = { ...structuredClone(fixture), path: '/tmp/filter-old' }
+    const state = {
+      token: 'normal',
+      signature: 'roots',
+      basis: 'roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    live.history = state
+    live.commits = live.commits.slice(0, 5)
+    const calls = []
+    nativeHandler = async (method) => {
+      calls.push(method)
+      return method === 'runtime'
+        ? nativeRuntime
+        : method === 'history-read'
+          ? {
+              commits: structuredClone(fixture.commits.slice(6)),
+              history: {
+                ...state,
+                signature: 'focus',
+                focus: fixture.commits[6].hash,
+                nextOffset: null,
+              },
+            }
+          : structuredClone(live)
+    }
+    await writeHistoryFilter(live.path, { fullRef: 'refs/heads/develop', section: 'local' })
+    await store.open(live.path)
+    assert.equal(store.branchFilter, 'refs/heads/develop')
+    assert.equal(store.repo.history.focusSource, 'branch')
+    assert.equal(calls.filter((c) => c === 'history-read').length, 1)
+    assert.equal(store.selectedCommit, null)
+    assert.ok(!calls.includes('action'))
+    store.query = 'docs'
+    store.clearBranchFilter()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    assert.equal(store.repo.history.focus, null)
+    assert.equal(store.query, 'docs')
+    assert.equal(readHistoryFilter(live.path), null)
+  })
+  await test('Cancelling first trust never reads, validates or deletes a remembered filter for that repository', async () => {
+    const { writeHistoryFilter, historyFilterKey } = await vite.ssrLoadModule(
+      '/src/services/historyFilter.ts',
+    )
+    const store = freshStore(),
+      path = '/tmp/filter-untrusted'
+    await writeHistoryFilter(path, { fullRef: 'refs/heads/missing', section: 'local' })
+    const raw = storage.get(historyFilterKey(path)),
+      original = window.gitk.repositoryTrust
+    window.gitk.repositoryTrust = async () => ({
+      path,
+      gitDir: path + '/.git',
+      trusted: false,
+      token: 'pending',
+    })
+    const calls = []
+    nativeHandler = async (method) => {
+      calls.push(method)
+      if (method !== 'runtime') throw Error('Unexpected read before trust')
+      return nativeRuntime
+    }
+    try {
+      const opening = store.open(path)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      assert.equal(store.trustRequest.path, path)
+      store.cancelTrust()
+      assert.equal(await opening, false)
+      assert.equal(storage.get(historyFilterKey(path)), raw)
+      assert.deepEqual(calls, ['runtime'])
+    } finally {
+      window.gitk.repositoryTrust = original
+    }
   })
 } finally {
   globalThis.window = originalWindow

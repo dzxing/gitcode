@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useMergeStore } from '../stores/merge'
 import { useRepositoryStore } from '../stores/repository'
 import { conflictBlocks, resolveBlock } from '../mergeConflicts'
@@ -8,6 +8,11 @@ const merge = useMergeStore(),
   repo = useRepositoryStore(),
   index = ref(0),
   confirmDiscard = ref(false)
+const editorRoot = ref<HTMLElement>()
+onMounted(async () => {
+  await nextTick()
+  editorRoot.value?.querySelector<HTMLButtonElement>('[aria-label="返回冲突列表"]')?.focus()
+})
 const incomingLabel = computed(
   () =>
     repo.repo.branches.find(
@@ -24,7 +29,7 @@ const incomingLabel = computed(
     '合入提交',
 )
 const file = computed(() => merge.session.file),
-  blocks = computed(() => conflictBlocks(merge.session.draft)),
+  blocks = computed(() => conflictBlocks(merge.session.draft, file.value?.markerSize)),
   disabled = computed(() => repo.busy || merge.loading || merge.stale)
 const rebase = computed(() => merge.session.state?.rebase)
 const oursLabel = computed(() =>
@@ -42,6 +47,7 @@ function apply(side: 'ours' | 'theirs' | 'both') {
     merge.session.draft,
     Math.min(index.value, blocks.value.length - 1),
     side,
+    file.value?.markerSize,
   )
   index.value = Math.min(index.value, Math.max(0, blocks.value.length - 1))
 }
@@ -58,9 +64,11 @@ function reloadFile() {
 </script>
 <template>
   <section
+    ref="editorRoot"
     v-if="file"
     class="merge-editor"
     aria-label="冲突解决编辑器"
+    @keydown.esc.stop.prevent="merge.dismissEditor"
   >
     <header class="merge-editor-heading">
       <Icon
@@ -130,7 +138,10 @@ function reloadFile() {
       v-if="!file.editable"
       class="merge-editor-warning"
     >
-      二进制、大文件或不支持的编码不提供文本编辑。可采用完整版本；特殊文件类型请使用外部工具处理。
+      {{
+        file.manualReason ||
+        '二进制、大文件或不支持的编码不提供文本编辑。可采用完整版本；特殊文件类型请使用外部工具处理。'
+      }}
     </p>
     <div
       v-if="confirmDiscard"
@@ -168,8 +179,9 @@ function reloadFile() {
         }}</pre>
       </div>
       <div class="merge-pane merge-result">
-        <h3>合并结果 · 可编辑</h3>
+        <h3>合并结果 · {{ file.editable ? '可编辑' : '只读' }}</h3>
         <textarea
+          autocomplete="off"
           v-model="merge.session.draft"
           aria-label="编辑合并结果"
           spellcheck="false"
@@ -261,7 +273,7 @@ function reloadFile() {
 .merge-editor {
   position: absolute;
   inset: 0;
-  z-index: 8;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -281,10 +293,10 @@ function reloadFile() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--ui-font-size);
 }
 .merge-editor-heading span {
-  font-size: 10px;
+  font-size: var(--ui-font-size);
   color: var(--git-modified);
   white-space: nowrap;
 }
@@ -300,16 +312,17 @@ function reloadFile() {
   padding: 8px 10px;
   border-bottom: 1px solid var(--line);
   flex-wrap: wrap;
-  font-size: 11px;
+  font-size: var(--ui-font-help);
 }
 .merge-editor-toolbar button,
 .merge-block-actions button {
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   min-height: 27px;
 }
 .merge-three-panes {
   display: grid;
-  grid-template-columns: 1fr 1.2fr 1fr;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(100px, 1fr) minmax(100px, 1fr);
   flex: 1;
   min-height: 100px;
   min-width: 0;
@@ -325,19 +338,15 @@ function reloadFile() {
 .merge-pane:last-child {
   border-right: 0;
 }
-.rebase-three-panes {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(140px, 1fr) minmax(140px, 1fr);
-}
-.rebase-three-panes > .merge-pane:first-child {
+.merge-three-panes > .merge-pane:first-child {
   grid-column: 1;
   grid-row: 1;
 }
-.rebase-three-panes > .merge-pane:last-child {
+.merge-three-panes > .merge-pane:last-child {
   grid-column: 2;
   grid-row: 1;
 }
-.rebase-three-panes > .merge-result {
+.merge-three-panes > .merge-result {
   grid-column: 1 / -1;
   grid-row: 2;
   border-right: 0;
@@ -346,7 +355,7 @@ function reloadFile() {
 .merge-pane h3 {
   padding: 8px;
   margin: 0;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   border-bottom: 1px solid var(--line);
   background: var(--surface-raised);
   overflow: hidden;
@@ -365,7 +374,8 @@ function reloadFile() {
   border-radius: 0;
   background: var(--bg);
   color: var(--text);
-  font: 12px/1.65 var(--mono);
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
   white-space: pre;
   tab-size: 4;
   resize: none;
@@ -378,7 +388,7 @@ function reloadFile() {
   max-height: 30%;
   overflow: auto;
   border-top: 1px solid var(--line);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
 }
 .merge-result summary {
   padding: 6px 8px;
@@ -395,7 +405,7 @@ function reloadFile() {
   margin: 0;
   padding: 8px 12px;
   line-height: 1.6;
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   color: var(--git-modified);
   border-bottom: 1px solid var(--line);
   overflow-wrap: anywhere;
@@ -409,12 +419,12 @@ function reloadFile() {
   gap: 10px;
   padding: 10px;
   border-top: 1px solid var(--line);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   color: var(--text-secondary);
 }
 .merge-editor footer button {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   flex-shrink: 0;
 }
 .merge-editor footer > span {

@@ -7,6 +7,11 @@ import type { GitFlowConfig } from '../types'
 
 const flow = useGitFlowStore(),
   repo = useRepositoryStore()
+const foundRemoteBases = computed(() =>
+  (flow.state?.remoteBases || []).filter((source) =>
+    flow.state?.missing.some((name) => source.remoteRef === `refs/heads/${name}`),
+  ),
+)
 const panelElement = ref<HTMLElement>()
 const initializationElement = ref<HTMLElement>(),
   initPlanElement = ref<HTMLElement>(),
@@ -24,13 +29,11 @@ const fieldGroups = [
   {
     id: 'branches',
     title: '基础分支',
-    hint: '生产分支保存已发布版本，开发分支集成下一版本。',
     fields: fields.slice(0, 2),
   },
   {
     id: 'prefixes',
     title: '命名前缀',
-    hint: '分支前缀以 / 结尾；版本标签前缀可留空，保存不会创建标签。',
     fields: fields.slice(2),
   },
 ]
@@ -52,7 +55,7 @@ const rulesVerified = computed(
 )
 const readinessStatus = computed(() =>
   !repo.connected
-    ? '本机核心未连接 · 规则状态待核对'
+    ? '本地 Git 服务未连接 · 规则状态待核对'
     : repo.runtime?.gitAvailable === false
       ? '本机 Git 不可用'
       : flow.requiresRecheck
@@ -178,7 +181,6 @@ function showWorktree() {
         aria-label="仓库设置分类"
       >
         <button aria-current="page"><Icon name="GitMerge" />GitFlow</button
-        ><small>设置应用于当前仓库</small
         ><button
           class="text-button"
           :disabled="repo.busy"
@@ -194,33 +196,26 @@ function showWorktree() {
             class="gitflow-warning"
             role="status"
           >
-            本机核心未连接，当前规则与结果仅供查看，执行前需重新核对。
+            未连接本地 Git 服务，暂时无法执行 GitFlow 操作。重新连接后将刷新仓库状态。
             <button
               class="text-button"
               :disabled="repo.busy || repo.connecting"
               @click="flow.recheck"
             >
-              {{ repo.connecting ? '正在连接…' : '连接并核对' }}
+              {{ repo.connecting ? '正在连接…' : '重新连接' }}
             </button>
           </div>
           <p
-            v-if="flow.draftRestored"
+            v-if="flow.draftRestored || flow.restartNotice"
             class="gitflow-note"
           >
-            已保留本仓库的表单草稿，请以操作结果确认执行状态。<button
+            已恢复未完成的输入。<button
               class="text-button"
               :disabled="repo.busy"
               @click="flow.resetDraft"
             >
               丢弃草稿
             </button>
-          </p>
-          <p
-            v-if="flow.restartNotice"
-            class="gitflow-note"
-          >
-            已从本机存储恢复输入，起点按本次打开的仓库状态重新读取。请核对后再执行；这不代表恢复了之前的
-            Git 操作。
           </p>
           <div
             v-if="flow.result && !flow.visibleResult"
@@ -276,7 +271,7 @@ function showWorktree() {
               :disabled="repo.busy"
               @click="flow.recheck"
             >
-              刷新核对
+              重新检查
             </button>
           </p>
           <p
@@ -288,7 +283,7 @@ function showWorktree() {
               :disabled="repo.busy"
               @click="flow.recheck"
             >
-              刷新核对
+              重新检查
             </button>
           </p>
           <template v-if="flow.panel === 'overview'">
@@ -328,16 +323,17 @@ function showWorktree() {
                   class="secondary-button"
                   :disabled="!!flow.finishEntryBlocked"
                   :title="flow.finishEntryBlocked"
-                  aria-describedby="flow-finish-entry-note"
+                  :aria-describedby="flow.finishEntryBlocked ? 'flow-finish-entry-note' : undefined"
                   @click="flow.open('finish')"
                 >
                   <Icon name="GitMerge" />完成分支…
                 </button>
                 <p
+                  v-if="flow.finishEntryBlocked"
                   id="flow-finish-entry-note"
                   class="gitflow-disabled-reason"
                 >
-                  {{ flow.finishEntryBlocked || '执行合并，可按选项创建标签和清理本地分支。' }}
+                  {{ flow.finishEntryBlocked }}
                 </p>
               </div>
             </div>
@@ -354,12 +350,20 @@ function showWorktree() {
             >
               {{
                 flow.state?.error
-                  ? '规则存在异常，请检查仓库 GitFlow 设置。'
+                  ? '规则存在异常，请检查GitFlow 设置。'
                   : flow.state?.configured
-                    ? `缺少基础分支：${flow.state.missing.join('、')}`
+                    ? `本地缺少基础分支：${flow.state.missing.join('、')}；请先核对远端，再补齐本地分支。`
                     : '基础分支已存在时保存规则即可；如有缺失，请选择起点并预览初始化，确认时会同时保存规则。'
               }}
             </div>
+            <p
+              v-if="foundRemoteBases.length && !flow.state?.ready"
+              class="gitflow-note"
+            >
+              已发现远端同名分支：{{
+                foundRemoteBases.map((source) => source.name).join('、')
+              }}。补齐时可恢复为本地跟踪分支；确认前会在线核对。
+            </p>
             <button
               class="text-button"
               :data-flow-focus="flow.startEntryBlocked ? '' : undefined"
@@ -373,7 +377,10 @@ function showWorktree() {
             <div class="gitflow-settings-form">
               <h3>GitFlow 分支规则</h3>
               <p>只作用于当前仓库；保存规则不会移动或重命名已有分支。</p>
-              <form @submit.prevent="flow.execute('gitflow-save')">
+              <form
+                autocomplete="off"
+                @submit.prevent="flow.execute('gitflow-save')"
+              >
                 <fieldset
                   v-for="group in fieldGroups"
                   :key="group.id"
@@ -381,12 +388,6 @@ function showWorktree() {
                   :disabled="repo.busy"
                 >
                   <legend>{{ group.title }}</legend>
-                  <p
-                    :id="`flow-${group.id}-hint`"
-                    class="gitflow-group-help"
-                  >
-                    {{ group.hint }}
-                  </p>
                   <div class="gitflow-rule-rows">
                     <div
                       v-for="field in group.fields"
@@ -399,7 +400,7 @@ function showWorktree() {
                           :id="`flow-${field.key}`"
                           v-model="flow.config[field.key]"
                           :data-flow-focus="field.key === 'production' ? '' : undefined"
-                          :aria-describedby="`flow-${group.id}-hint flow-${field.key}-hint`"
+                          :aria-describedby="`flow-${field.key}-hint`"
                           class="form-input"
                           :required="field.key !== 'versionTag'"
                           maxlength="200"
@@ -516,6 +517,26 @@ function showWorktree() {
                 <h3 id="flow-init-heading">{{ repairMode ? '补齐基础分支' : '初始化基础分支' }}</h3>
                 <p>只创建缺失的生产与开发分支，不切换分支、不推送，保留工作区现有修改。</p>
                 <p
+                  v-if="repo.repo.remotes?.length"
+                  class="gitflow-note"
+                >
+                  远端候选来自最近获取的远端跟踪引用，不代表服务器实时状态。从远端恢复时会在线核对，并设置本地分支的上游。
+                </p>
+                <p
+                  v-else
+                  class="gitflow-note"
+                >
+                  尚未配置远程，可从已有本地分支创建缺失分支。
+                </p>
+                <button
+                  v-if="repo.repo.remotes?.length"
+                  class="secondary-button"
+                  :disabled="repo.busy || repo.fetching"
+                  @click="flow.fetchRemoteBases()"
+                >
+                  {{ repo.fetching ? '正在获取远端分支…' : '获取远端分支' }}
+                </button>
+                <p
                   v-if="flow.missing.length"
                   class="gitflow-note"
                 >
@@ -557,15 +578,29 @@ function showWorktree() {
                       value=""
                       disabled
                     >
-                      请选择现有本地分支
+                      请选择起点或远端同名分支
                     </option>
-                    <option
-                      v-for="source in flow.localBranches"
-                      :key="source.name"
-                      :value="source.fullRef || `refs/heads/${source.name}`"
+                    <optgroup
+                      v-if="flow.remoteSourcesFor(branch).length"
+                      label="从远端同名分支恢复并跟踪"
                     >
-                      {{ source.name }}
-                    </option>
+                      <option
+                        v-for="source in flow.remoteSourcesFor(branch)"
+                        :key="source.fullRef"
+                        :value="source.fullRef"
+                      >
+                        {{ source.name }}
+                      </option>
+                    </optgroup>
+                    <optgroup label="从现有本地分支创建">
+                      <option
+                        v-for="source in flow.localBranches"
+                        :key="source.name"
+                        :value="source.fullRef || `refs/heads/${source.name}`"
+                      >
+                        {{ source.name }}
+                      </option>
+                    </optgroup>
                   </select>
                 </div>
                 <p
@@ -613,8 +648,12 @@ function showWorktree() {
                   >
                     创建 <strong>{{ item.name }}</strong
                     ><br /><span
-                      >基于 {{ item.sourceRef.replace('refs/heads/', '') }} ·
+                      >基于 {{ item.sourceRef.replace(/^refs\/(heads|remotes)\//, '') }} ·
                       {{ item.oid.slice(0, 8) }}</span
+                    >
+                    <span v-if="item.tracking"
+                      ><br />关联上游 {{ item.tracking.remote }} /
+                      {{ item.tracking.remoteRef.replace('refs/heads/', '') }}</span
                     >
                   </p>
                   <p>同时保存当前分支规则，工作区内容保持原样。</p>
@@ -631,7 +670,10 @@ function showWorktree() {
             </div>
           </template>
           <template v-else-if="flow.panel === 'start'">
-            <form @submit.prevent="!flow.startBlocked && flow.execute('gitflow-start')">
+            <form
+              autocomplete="off"
+              @submit.prevent="!flow.startBlocked && flow.execute('gitflow-start')"
+            >
               <fieldset :disabled="repo.busy">
                 <div
                   class="gitflow-type-picker"
@@ -733,7 +775,7 @@ function showWorktree() {
                 :disabled="repo.busy"
                 @click="flow.recheck"
               >
-                刷新核对
+                重新检查
               </button>
             </div>
           </div>
@@ -761,7 +803,7 @@ function showWorktree() {
               }}
             </p>
             <p v-if="flow.visibleResult.refreshError">
-              状态读取失败：{{ flow.visibleResult.refreshError }}。请刷新核对，不要重复执行。
+              状态读取失败：{{ flow.visibleResult.refreshError }}。请重新检查，不要重复执行。
             </p>
             <button
               v-if="
@@ -779,22 +821,23 @@ function showWorktree() {
               :disabled="repo.busy"
               @click="flow.recheck"
             >
-              刷新核对
+              重新检查
             </button>
           </div>
         </div>
       </div>
     </div>
-    <footer class="gitflow-panel-footer">
+    <footer
+      v-if="flow.panel !== 'settings'"
+      class="gitflow-panel-footer"
+    >
       <button
         class="text-button"
         :disabled="repo.busy"
-        @click="flow.open(flow.panel === 'settings' ? 'overview' : 'settings')"
+        @click="flow.open('settings')"
       >
-        <Icon name="Settings2" />{{
-          flow.panel === 'settings' ? '返回操作面板' : '仓库 GitFlow 设置'
-        }}</button
-      ><span>收起保留表单草稿</span>
+        <Icon name="Settings2" />GitFlow 设置
+      </button>
     </footer>
   </section>
 </template>

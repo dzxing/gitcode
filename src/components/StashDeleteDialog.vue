@@ -30,7 +30,7 @@ watch(
 <template>
   <dialog
     ref="dialog"
-    class="dialog stash-delete-dialog"
+    class="dialog dialog-confirmation stash-delete-dialog prompt-bar"
     aria-labelledby="stash-delete-title"
     @cancel.prevent="stash.closeDelete"
     @click="$event.target === dialog && stash.closeDelete()"
@@ -91,13 +91,13 @@ watch(
   width: 420px;
 }
 .delete-abort {
-  font-size: 11px;
+  font-size: var(--dialog-font-help);
   margin-bottom: 12px;
 }
 .stash-delete-dialog .stash-delete-name {
   color: var(--bright);
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--dialog-font-body);
 }
 .stash-delete-dialog .stash-delete-error,
 .delete-confirm {

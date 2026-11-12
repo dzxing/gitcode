@@ -8,10 +8,70 @@ import {
   type GraphVisibility,
 } from '../graphVisibility'
 import { branchReference } from '../references'
+import type { ReferenceLabelStyle } from '../referenceLabels'
 const key = 'gitcode.graph-visibility'
 export const useGraphViewStore = defineStore('graph-view', () => {
   const preferences = ref<Record<string, GraphVisibility>>({})
   const warning = ref('')
+  const labelStyle = ref<ReferenceLabelStyle>('gitkraken')
+  try {
+    const saved = localStorage.getItem('gitcode.graph-label-style')
+    if (saved === 'current' || saved === 'idea' || saved === 'gitkraken') labelStyle.value = saved
+  } catch {
+    /* Optional preference. */
+  }
+  function setLabelStyle(value: ReferenceLabelStyle) {
+    if (!['current', 'gitkraken', 'idea'].includes(value)) return
+    labelStyle.value = value
+    try {
+      localStorage.setItem('gitcode.graph-label-style', value)
+    } catch {
+      warning.value = '图谱显示设置仅在本次会话保留。'
+    }
+  }
+  const showLongEdges = ref(false)
+  const dimMergeCommits = ref(true)
+  const labelsAfterMessage = ref(true)
+  try {
+    const saved = localStorage.getItem('gitcode.graph-labels-after-message')
+    if (saved === 'true' || saved === 'false') labelsAfterMessage.value = saved === 'true'
+  } catch {
+    /* Optional preference. */
+  }
+  function toggleLabelsAfterMessage() {
+    labelsAfterMessage.value = !labelsAfterMessage.value
+    try {
+      localStorage.setItem('gitcode.graph-labels-after-message', String(labelsAfterMessage.value))
+    } catch {
+      warning.value = '图谱显示设置仅在本次会话保留。'
+    }
+  }
+  try {
+    dimMergeCommits.value = localStorage.getItem('gitcode.graph-dim-merges') !== 'false'
+  } catch {
+    /* Optional preference. */
+  }
+  function toggleMergeCommits() {
+    dimMergeCommits.value = !dimMergeCommits.value
+    try {
+      localStorage.setItem('gitcode.graph-dim-merges', String(dimMergeCommits.value))
+    } catch {
+      warning.value = '图谱显示设置仅在本次会话保留。'
+    }
+  }
+  try {
+    showLongEdges.value = localStorage.getItem('gitcode.graph-long-edges') === 'true'
+  } catch {
+    /* Optional preference. */
+  }
+  function toggleLongEdges() {
+    showLongEdges.value = !showLongEdges.value
+    try {
+      localStorage.setItem('gitcode.graph-long-edges', String(showLongEdges.value))
+    } catch {
+      warning.value = '图谱显示设置仅在本次会话保留。'
+    }
+  }
   try {
     const saved: unknown = JSON.parse(localStorage.getItem(key) || 'null')
     if (saved && typeof saved === 'object' && !Array.isArray(saved))
@@ -87,6 +147,14 @@ export const useGraphViewStore = defineStore('graph-view', () => {
   }
   const reset = (path: string) => set(path, { hidden: [], solo: [] })
   return {
+    labelStyle,
+    setLabelStyle,
+    labelsAfterMessage,
+    toggleLabelsAfterMessage,
+    showLongEdges,
+    toggleLongEdges,
+    dimMergeCommits,
+    toggleMergeCommits,
     state,
     visibleBranches,
     warning,

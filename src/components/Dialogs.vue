@@ -2,13 +2,11 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import Icon from './Icon.vue'
-import { desktop, isDesktop, joinPath, pathName } from '../services/desktop'
-import DirectoryBrowser from './DirectoryBrowser.vue'
 import { branchReference } from '../references'
+import { getUIPlatform } from '../services/platform'
 
 const store = useRepositoryStore()
-const localReady = computed(() => isDesktop() || store.connected)
-const path = ref('')
+const modifierKey = computed(() => (getUIPlatform() === 'macos' ? '⌘' : 'Ctrl'))
 const branch = ref('')
 const switchAfter = ref(false)
 const upstreamRef = ref(''),
@@ -65,7 +63,7 @@ const pushStatus = computed(() => {
   const check = store.syncPreview?.remoteCheck
   if (store.busy) return '正在检查远端目标…'
   if (publishDirty.value) return '目标已修改，请核对远端状态。'
-  if (!check) return '本机核心尚不支持远端检查，请重启开发服务或桌面应用。'
+  if (!check) return '本地 Git 服务尚不支持远端检查，请重启开发服务或桌面应用。'
   if (check.state === 'error') return check.message
   if (check.state === 'absent')
     return store.syncPreview?.publish
@@ -92,38 +90,34 @@ async function checkPublishTarget() {
     await store.setPublishTarget(publishRemote.value, publishBranch.value.trim())
 }
 
-const remoteUrl = ref('')
-const cloneDestination = ref(''),
-  createDestination = ref('')
-const destination = computed({
-  get: () => (store.modal === 'clone' ? cloneDestination.value : createDestination.value),
-  set: (value) => {
-    if (store.modal === 'clone') cloneDestination.value = value
-    else createDestination.value = value
-  },
-})
 const canClose = computed(() => !store.busy || store.modal === 'help')
-const directoryMode = ref<'repo' | 'parent' | null>(null)
-const pickingDirectory = ref(false)
-const pickerError = ref('')
 const dialog = ref<HTMLDialogElement>()
 const input = ref<HTMLInputElement>()
-const destinationInput = ref<HTMLInputElement>()
 let previousFocus: HTMLElement | null = null
 watch(
   () => store.modal,
   async (value) => {
-    publishRemotes.value = []
-    publishRemote.value = ''
-    publishBranch.value = ''
+    if (value !== 'push' || !store.syncPreview?.publish) {
+      publishRemotes.value = []
+      publishRemote.value = ''
+      publishBranch.value = ''
+    }
     if (value) {
+      if (value === 'branch' && store.inlineBranchActive) {
+        dialog.value?.close()
+        return
+      }
       if (
         [
+          'open',
+          'clone',
+          'create',
           'stash-delete',
-          'merge-conflicts',
           'gitflow-finish',
           'checkout-protected',
           'navigation',
+          'recovery',
+          'commit-operation',
         ].includes(value)
       ) {
         dialog.value?.close()
@@ -137,11 +131,9 @@ watch(
         branch.value = `${store.remoteCheckout.branch}-local`
       switchAfter.value = false
       frozen.value = store.captureOperation()
-      pickerError.value = ''
       await nextTick()
       dialog.value?.showModal()
-      if (value === 'create') destinationInput.value?.focus()
-      else input.value?.focus()
+      input.value?.focus()
     } else {
       dialog.value?.close()
       previousFocus?.focus()
@@ -151,57 +143,18 @@ watch(
 function close() {
   if (canClose.value) store.modal = null
 }
-function browseRepository() {
-  return browse('repo')
-}
-function browseParent() {
-  return browse('parent')
-}
-async function browse(mode: 'repo' | 'parent') {
-  if (!isDesktop()) {
-    directoryMode.value = mode
-    return
-  }
-  if (pickingDirectory.value) return
-  pickingDirectory.value = true
-  pickerError.value = ''
-  try {
-    const selected = await desktop.chooseDirectory(
-      mode === 'repo' ? path.value || (!store.isNewTab ? store.repo.path : undefined) : undefined,
-    )
-    if (selected) choosePath(selected, mode)
-  } catch (reason) {
-    pickerError.value = (reason as Error).message
-  } finally {
-    pickingDirectory.value = false
-  }
-}
-function choosePath(selected: string, mode = directoryMode.value) {
-  if (mode === 'repo') path.value = selected
-  else {
-    const remoteName =
-      store.modal === 'clone'
-        ? remoteUrl.value
-            .replace(/[\\/]+$/, '')
-            .split(/[\\/:]/)
-            .pop()
-            ?.replace(/\.git$/, '')
-        : ''
-    const name = destination.value ? pathName(destination.value) : remoteName || 'new-project'
-    destination.value = joinPath(selected, name)
-  }
-  directoryMode.value = null
-}
-function openRecent(recent: string) {
-  path.value = recent
-  void store.open(recent)
-}
 </script>
 
 <template>
   <dialog
     ref="dialog"
     class="dialog"
+    :class="{
+      'dialog-confirmation': store.modal === 'close',
+      'prompt-bar': ['branch', 'upstream', 'push', 'pull', 'checkout-remote'].includes(
+        store.modal || '',
+      ),
+    }"
     @cancel.prevent="close"
     @click="$event.target === dialog && close()"
     aria-labelledby="dialog-title"
@@ -210,11 +163,15 @@ function openRecent(recent: string) {
       v-if="
         store.modal &&
         ![
+          'open',
+          'clone',
+          'create',
           'stash-delete',
-          'merge-conflicts',
           'gitflow-finish',
           'checkout-protected',
           'navigation',
+          'recovery',
+          'commit-operation',
         ].includes(store.modal)
       "
       class="dialog-content"
@@ -230,241 +187,35 @@ function openRecent(recent: string) {
           :size="18"
         />
       </button>
-      <div
-        v-if="['open', 'clone', 'create'].includes(store.modal) && !isDesktop()"
-        class="local-core-note"
-        :class="{ unavailable: !store.connected }"
-        role="status"
-      >
-        <template v-if="store.connected"
-          ><strong>本机 Git 核心已连接</strong
-          ><span>{{
-            store.runtime?.environment === 'wsl'
-              ? '正在访问 WSL 目录；Windows 磁盘可从 /mnt/c、/mnt/d 进入。'
-              : '选择本机目录，仓库由本机 Git 核心处理。'
-          }}</span></template
-        >
-        <template v-else
-          ><strong>{{
-            store.connecting ? '正在连接本机 Git 核心…' : '尚未连接本机 Git 核心'
-          }}</strong
-          ><span>{{ store.connectionError || '连接后即可选择目录并管理本地仓库。' }}</span
-          ><button
-            type="button"
-            class="secondary-button"
-            :disabled="store.connecting || store.busy"
-            @click="store.init()"
-          >
-            {{ store.connecting ? '连接中…' : '连接本机核心' }}
-          </button></template
-        >
-      </div>
-      <template v-if="store.modal === 'open'">
-        <span class="dialog-icon"
-          ><Icon
-            name="FolderOpen"
-            :size="26"
-        /></span>
-        <h2 id="dialog-title">打开本地仓库</h2>
-        <p>连接你的项目，让每一次更改都清晰可见。</p>
-        <form @submit.prevent="store.open(path)">
-          <label for="repo-path">仓库路径</label>
-          <div class="path-picker">
-            <input
-              id="repo-path"
-              ref="input"
-              v-model="path"
-              class="form-input"
-              placeholder="选择本机 Git 仓库目录"
-              required
-              :disabled="store.busy"
-            /><button
-              type="button"
-              class="secondary-button"
-              :disabled="store.busy || pickingDirectory || !localReady"
-              @click="browseRepository"
-            >
-              <Icon
-                name="FolderOpen"
-                :size="15"
-              />浏览
-            </button>
-          </div>
-          <small class="form-help">{{
-            isDesktop()
-              ? '浏览将打开系统目录选择窗口，也可输入本机绝对路径。'
-              : '浏览本机核心可访问的目录，也可输入该环境中的绝对路径。'
-          }}</small
-          ><button
-            v-if="isDesktop()"
-            type="button"
-            class="text-button"
-            :disabled="store.busy || pickingDirectory || !localReady"
-            @click="directoryMode = 'repo'"
-          >
-            使用内置目录浏览器</button
-          ><button
-            class="primary-button dialog-submit"
-            :disabled="store.busy || !localReady || !path.trim()"
-          >
-            <Icon
-              :name="store.busy ? 'LoaderCircle' : 'FolderOpen'"
-              :class="{ spin: store.busy }"
-            />{{ store.busy ? '正在读取仓库…' : '打开仓库' }}
-          </button>
-        </form>
-        <div
-          v-if="store.recent.length"
-          class="recent-repos"
-        >
-          <h3>最近打开</h3>
-          <button
-            v-for="recent in store.recent"
-            :key="recent"
-            :disabled="store.busy"
-            @click="openRecent(recent)"
-          >
-            <Icon name="FolderGit2" /><span
-              ><strong>{{ pathName(recent) }}</strong
-              ><small>{{ recent }}</small></span
-            ><Icon
-              name="ChevronRight"
-              :size="14"
-            />
-          </button>
-        </div>
-        <div class="privacy-note">
-          <Icon
-            name="ShieldCheck"
-            :size="14"
-          />仓库由本机 Git 核心读取，不上传到云端。
-        </div>
-      </template>
-      <template v-else-if="store.modal === 'clone' || store.modal === 'create'">
-        <span class="dialog-icon"
-          ><Icon
-            :name="store.modal === 'clone' ? 'Cloud' : 'Plus'"
-            :size="26"
-        /></span>
-        <h2 id="dialog-title">{{ store.modal === 'clone' ? '克隆仓库' : '创建本地仓库' }}</h2>
-        <p>
-          {{
-            store.modal === 'clone'
-              ? '将远程项目克隆到本机，然后在新标签中打开。'
-              : '在新目录中初始化 Git 仓库，从 main 分支开始。'
-          }}
-        </p>
-        <form
-          @submit.prevent="
-            store.createRepository(
-              store.modal === 'clone' ? 'clone' : 'init',
-              destination,
-              remoteUrl,
-            )
-          "
-        >
-          <template v-if="store.modal === 'clone'"
-            ><label for="remote-url">仓库地址</label
-            ><input
-              id="remote-url"
-              ref="input"
-              v-model="remoteUrl"
-              class="form-input"
-              placeholder="https://github.com/owner/project.git"
-              required
-              :disabled="store.busy"
-            /><small class="form-help"
-              >支持 HTTPS、SSH 地址及本地仓库绝对路径，使用本机 Git 凭据。</small
-            ></template
-          >
-          <label
-            for="destination-path"
-            :class="{ 'spaced-label': store.modal === 'clone' }"
-            >新仓库路径</label
-          >
-          <div class="path-picker">
-            <input
-              id="destination-path"
-              ref="destinationInput"
-              v-model="destination"
-              class="form-input"
-              placeholder="选择父目录后填写新项目名称"
-              required
-              :disabled="store.busy"
-            /><button
-              type="button"
-              class="secondary-button"
-              :disabled="store.busy || pickingDirectory || !localReady"
-              @click="browseParent"
-            >
-              <Icon
-                name="FolderOpen"
-                :size="15"
-              />父目录
-            </button>
-          </div>
-          <small class="form-help">父目录须已存在；填写尚未创建的新目录作为仓库路径。</small
-          ><button
-            v-if="isDesktop()"
-            type="button"
-            class="text-button"
-            :disabled="store.busy || pickingDirectory || !localReady"
-            @click="directoryMode = 'parent'"
-          >
-            使用内置目录浏览器
-          </button>
-          <button
-            class="primary-button dialog-submit"
-            :disabled="
-              store.busy ||
-              !localReady ||
-              !destination.trim() ||
-              (store.modal === 'clone' && !remoteUrl.trim())
-            "
-          >
-            <Icon
-              :name="store.busy ? 'LoaderCircle' : store.modal === 'clone' ? 'Cloud' : 'Plus'"
-              :class="{ spin: store.busy }"
-            />{{
-              store.busy
-                ? '正在处理，请稍候…'
-                : store.modal === 'clone'
-                  ? '克隆并打开'
-                  : '创建并打开'
-            }}
-          </button>
-        </form>
-        <button
-          v-if="store.busy"
-          class="text-button cancel-operation"
-          type="button"
-          :disabled="store.cancelling"
-          @click="store.cancelOperation()"
-        >
-          {{ store.cancelling ? '正在取消…' : '取消当前 Git 操作' }}
-        </button>
-        <div class="privacy-note">
-          <Icon
-            name="Info"
-            :size="14"
-          />{{
-            store.modal === 'clone'
-              ? '克隆最多等待 5 分钟；取消或失败后，目标目录可能留有部分文件。'
-              : '只初始化新目录，不会覆盖或重新初始化已有目录。'
-          }}
-        </div>
-      </template>
-      <template v-else-if="store.modal === 'close'">
+      <template v-if="store.modal === 'close'">
         <span class="dialog-icon"
           ><Icon
             name="FileText"
             :size="26"
         /></span>
-        <h2 id="dialog-title">关闭这个仓库标签？</h2>
+        <h2 id="dialog-title">
+          {{
+            store.pendingCloseTabs.length > 1
+              ? `关闭这 ${store.pendingCloseTabs.length} 个标签？`
+              : '关闭这个仓库标签？'
+          }}
+        </h2>
         <p>
-          这个标签里有尚未保存的提交说明或冲突处理草稿，关闭后草稿将被丢弃。本地文件、Git
+          标签中有尚未完成的提交说明或冲突处理草稿，关闭后这些草稿将被丢弃。本地文件、Git
           暂存区和提交记录都会保留。
         </p>
+        <ul
+          v-if="store.pendingCloseTabs.length > 1"
+          class="close-tabs-list"
+        >
+          <li
+            v-for="tab in store.pendingCloseTabs"
+            :key="tab.id"
+            :title="tab.path"
+          >
+            {{ tab.name }}
+          </li>
+        </ul>
         <div class="dialog-actions">
           <button
             class="secondary-button"
@@ -473,7 +224,7 @@ function openRecent(recent: string) {
             保留标签</button
           ><button
             class="primary-button"
-            @click="store.pendingCloseId !== null && store.closeTab(store.pendingCloseId, true)"
+            @click="store.closeTabs([...store.pendingCloseIds], true)"
           >
             丢弃草稿并关闭
           </button>
@@ -486,10 +237,16 @@ function openRecent(recent: string) {
           {{ store.remoteCheckout.branch }}
           与远程分支指向不同提交。可以新建本地分支，或将同名本地分支重置到远程提交。
         </p>
-        <p>重置会移动本地分支；未推送提交将不再属于该分支。本地文件更改会自动贮藏并尝试恢复。</p>
-        <form @submit.prevent="confirmRemote('create')">
+        <p>
+          重置会将本地分支移到远程提交，本地独有的提交可能不再属于该分支。本地文件更改会自动贮藏并尝试恢复。
+        </p>
+        <form
+          autocomplete="off"
+          @submit.prevent="confirmRemote('create')"
+        >
           <label for="remote-checkout-name">新本地分支名称</label>
           <input
+            autocomplete="off"
             id="remote-checkout-name"
             ref="input"
             v-model="branch"
@@ -535,7 +292,10 @@ function openRecent(recent: string) {
         <p>
           {{ store.upstreamRequest.branch.name }} 尚未关联远程分支。请选择拉取目标，设置后继续拉取。
         </p>
-        <form @submit.prevent="store.confirmUpstream(upstreamRef)">
+        <form
+          autocomplete="off"
+          @submit.prevent="store.confirmUpstream(upstreamRef)"
+        >
           <label for="pull-upstream">远程分支</label>
           <select
             id="pull-upstream"
@@ -594,6 +354,7 @@ function openRecent(recent: string) {
         <h2 id="dialog-title">从这里，开启新分支</h2>
         <p>基于下方显示的提交创建分支，可选择创建后切换。</p>
         <form
+          autocomplete="off"
           @submit.prevent="
             frozen &&
             store.run(
@@ -605,6 +366,7 @@ function openRecent(recent: string) {
         >
           <label for="branch-name">分支名称</label
           ><input
+            autocomplete="off"
             id="branch-name"
             ref="input"
             v-model="branch"
@@ -627,6 +389,14 @@ function openRecent(recent: string) {
               :disabled="store.busy"
             />创建后切换到新分支</label
           ><button
+            type="button"
+            class="secondary-button prompt-cancel"
+            :disabled="store.busy"
+            @click="close"
+          >
+            取消
+          </button>
+          <button
             class="primary-button dialog-submit"
             :disabled="store.busy || !branch.trim() || !frozen?.expectedHead"
           >
@@ -676,6 +446,7 @@ function openRecent(recent: string) {
           </select>
           <label for="publish-branch">远端分支</label>
           <input
+            autocomplete="off"
             id="publish-branch"
             v-model="publishBranch"
             @blur="checkPublishTarget"
@@ -737,7 +508,19 @@ function openRecent(recent: string) {
                 : store.retrySync('push')
             "
           >
-            重试检查
+            重新检查
+          </button>
+          <button
+            v-if="
+              ['behind', 'diverged'].includes(store.syncPreview.remoteCheck?.state || '') &&
+              !store.syncPreview.publish
+            "
+            class="primary-button"
+            :disabled="store.busy"
+            title="获取并合并当前分支的远端更新；成功后重新核对并推送，冲突或目标变化时停止"
+            @click="store.pullAndPush()"
+          >
+            拉取并推送
           </button>
           <button
             v-if="
@@ -825,7 +608,7 @@ function openRecent(recent: string) {
             尽可能快进（否则合并）
           </button>
           <p v-if="store.repo.merge === undefined">
-            本机核心需要重启，才能加载新增的合并处理功能。
+            本地 Git 服务需要重启，才能加载新增的合并处理功能。
           </p>
           <p>
             {{
@@ -866,7 +649,7 @@ function openRecent(recent: string) {
             class="secondary-button"
             @click="store.retrySync(store.modal === 'push' ? 'push' : 'pull')"
           >
-            重新读取目标</button
+            重试</button
           ><button
             class="primary-button"
             :disabled="
@@ -877,7 +660,7 @@ function openRecent(recent: string) {
             "
             @click="store.confirmSync()"
           >
-            {{ store.modal === 'push' ? pushLabel : '确认拉取' }}
+            {{ store.modal === 'push' ? pushLabel : '拉取' }}
           </button>
         </div>
       </template>
@@ -887,44 +670,41 @@ function openRecent(recent: string) {
             name="Keyboard"
             :size="26"
         /></span>
-        <h2 id="dialog-title">让 Git 工作更顺手</h2>
+        <h2 id="dialog-title">快捷键与操作说明</h2>
         <p>GitCode · 本地 Git 工作台</p>
         <div class="shortcut-list">
-          <div><span>新标签页</span><kbd>Alt T</kbd></div>
-          <div><span>打开仓库</span><kbd>Ctrl / ⌘ O</kbd></div>
-          <div><span>搜索提交</span><kbd>Ctrl / ⌘ K</kbd></div>
-          <div><span>刷新仓库</span><kbd>Ctrl / ⌘ R</kbd></div>
-          <div><span>创建提交</span><kbd>Ctrl / ⌘ Enter</kbd></div>
+          <div><span>新标签页</span><kbd>Alt+T</kbd></div>
+          <div><span>切换标签</span><kbd>Ctrl+Tab / Ctrl+Shift+Tab</kbd></div>
+          <div>
+            <span>关闭当前标签</span><kbd>{{ modifierKey }}+W</kbd>
+          </div>
+          <div>
+            <span>打开仓库</span><kbd>{{ modifierKey }}+O</kbd>
+          </div>
+          <div>
+            <span>搜索提交</span><kbd>{{ modifierKey }}+K</kbd>
+          </div>
+          <div><span>筛选分支</span><kbd>/</kbd></div>
+          <div>
+            <span>刷新本地状态</span><kbd>{{ modifierKey }}+R</kbd>
+          </div>
+          <div>
+            <span>创建提交</span><kbd>{{ modifierKey }}+Enter</kbd>
+          </div>
           <div><span>关闭弹窗 / 差异</span><kbd>Esc</kbd></div>
         </div>
         <p class="help-note">
           顶部 +
-          打开新标签页，支持打开、克隆、创建仓库。侧栏单击分支筛选历史，双击本地分支打开切换确认。提交树中的本地分支标签单击尝试切换；“+N”查看全部引用，远程引用和标签查看引用详情。点击文件查看差异，使用文件右侧的
+          打开新标签页，支持打开、克隆、创建仓库。侧栏单击分支筛选历史，双击本地分支尝试切换；本地修改阻碍切换时提示处理。提交树中的本地分支标签单击尝试切换；“+N”查看全部引用，远程引用和标签查看引用详情。点击文件查看差异，使用文件右侧的
           + / − 暂存或取消暂存。远程操作使用本机已有的 Git 凭据。
         </p>
         <div class="privacy-note">
           <Icon
             name="Info"
             :size="14"
-          />标签页状态在本次会话中保留，刷新页面后可从最近打开重新进入。
+          />每个仓库分别保留搜索条件和提交说明草稿。
         </div>
       </template>
-      <p
-        v-if="pickerError"
-        class="directory-error"
-        role="alert"
-      >
-        {{ pickerError }}
-      </p>
     </div>
   </dialog>
-  <DirectoryBrowser
-    v-if="directoryMode"
-    :mode="directoryMode"
-    :initial-path="
-      directoryMode === 'repo' ? path || (!store.isNewTab ? store.repo.path : undefined) : undefined
-    "
-    @select="choosePath($event)"
-    @close="directoryMode = null"
-  />
 </template>

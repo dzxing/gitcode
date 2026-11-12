@@ -97,6 +97,7 @@ function drop(index: number) {
           </button>
         </div>
         <textarea
+          autocomplete="off"
           v-if="step.type === 'reword'"
           v-model="step.message"
           :aria-label="`修改提交说明 ${step.sha.slice(0, 7)}`"
@@ -168,7 +169,7 @@ footer {
   gap: 12px;
   padding: 12px 16px;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   border-bottom: 1px solid var(--line);
 }
 header > span {
@@ -191,7 +192,7 @@ b {
 .rebase-order {
   margin: 0 0 12px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
 }
 .rebase-step {
   padding: 5px;
@@ -218,7 +219,7 @@ b {
   border: 1px solid var(--line);
   border-radius: 3px;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--ui-font-size);
 }
 .rebase-commit {
   display: flex;
@@ -227,11 +228,11 @@ b {
   flex: 1;
   min-width: 0;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--ui-font-size);
 }
 .rebase-commit code {
   color: var(--text-secondary);
-  font: 11px var(--mono);
+  font: var(--ui-font-help)/1.5 var(--mono);
 }
 .rebase-commit span {
   overflow: hidden;
@@ -247,7 +248,8 @@ textarea {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--line);
-  font: 12px/1.5 var(--font);
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
 }
 footer {
   border-bottom: 0;
@@ -260,12 +262,16 @@ footer > span {
   min-width: 120px;
 }
 footer > button {
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   white-space: nowrap;
 }
 .rebase-error {
   padding: 8px 16px;
   color: var(--git-deleted);
-  font-size: 11px;
+  font-size: var(--ui-font-help);
+}
+.rebase-commit > span {
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
 }
 </style>

@@ -5,7 +5,7 @@ async function openSettings(page: Page) {
   await page.getByRole('button', { name: '打开 GitFlow 操作面板', exact: true }).click()
   await page
     .locator('.gitflow-panel')
-    .getByRole('button', { name: '仓库 GitFlow 设置', exact: true })
+    .getByRole('button', { name: 'GitFlow 设置', exact: true })
     .click()
 }
 
@@ -22,13 +22,13 @@ test('GitFlow entry remains discoverable when collapsed and settings drafts surv
     '请先配置并保存 GitFlow 规则',
   )
   await expect(panel.getByRole('button', { name: '配置 GitFlow', exact: true })).toBeFocused()
-  await panel.getByRole('button', { name: '仓库 GitFlow 设置', exact: true }).click()
+  await panel.getByRole('button', { name: 'GitFlow 设置', exact: true }).click()
   await panel.getByLabel('Feature 前缀', { exact: true }).fill('work/')
   await expect(panel.getByRole('button', { name: '保存规则', exact: true })).toBeEnabled()
   await panel.getByRole('button', { name: '收起 GitFlow 面板', exact: true }).click()
   await openSettings(page)
   await expect(panel.getByLabel('Feature 前缀', { exact: true })).toHaveValue('work/')
-  await expect(panel.getByText('已保留本仓库的表单草稿，请以操作结果确认执行状态。')).toBeVisible()
+  await expect(panel.getByText('已恢复未完成的输入。')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(panel).not.toBeVisible()
 })
@@ -93,6 +93,12 @@ test('GitFlow Start uses the desktop bridge once and reports local-only success'
         gitPath: 'git',
         gitError: '',
       }),
+      repositoryTrust: async (path: string) => ({
+        path,
+        gitDir: path + '/.git',
+        trusted: true,
+        token: '',
+      }),
       snapshot: async () => structuredClone(state),
       action: async (_repo, request) => {
         if (request.action !== 'gitflow-start') throw new Error('Unexpected action')
@@ -143,9 +149,7 @@ test('GitFlow Start uses the desktop bridge once and reports local-only success'
   })
   await page.goto('/')
   await page.keyboard.press('Control+o')
-  const dialog = page.getByRole('dialog', { name: '打开本地仓库' })
-  await dialog.getByLabel('仓库路径', { exact: true }).fill('/mock/project')
-  await dialog.getByRole('button', { name: '打开仓库', exact: true }).click()
+  await expect(page.locator('.history-panel')).toBeVisible()
   await page.getByRole('button', { name: '打开 GitFlow 操作面板', exact: true }).click()
   const panel = page.locator('.gitflow-panel')
   await panel.getByRole('button', { name: '开始新分支…', exact: true }).click()

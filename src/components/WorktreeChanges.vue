@@ -189,6 +189,7 @@ onBeforeUnmount(clearMenuListeners)
         ><Icon
           name="Search"
           :size="13" /><input
+          autocomplete="off"
           :value="view.query"
           aria-label="筛选工作区文件"
           placeholder="筛选文件或路径…"
@@ -263,6 +264,7 @@ onBeforeUnmount(clearMenuListeners)
         :key="zone.id"
         :data-staging-zone="zone.id"
         class="staging-zone"
+        :aria-busy="store.indexWorking"
         :class="{ 'is-collapsed': collapsedZones.has(zone.id), 'is-empty': !zone.rows }"
         :style="{
           '--zone-weight': Math.max(1, zone.rows),
@@ -307,6 +309,22 @@ onBeforeUnmount(clearMenuListeners)
               }}</small>
             </button>
           </h3>
+          <span
+            v-if="store.indexWorking"
+            class="staging-zone-progress"
+            role="status"
+            ><Icon
+              name="LoaderCircle"
+              :size="12"
+              class="spin"
+            />{{
+              store.activeOperation === 'stage'
+                ? '暂存中'
+                : store.activeOperation === 'unstage'
+                  ? '取消中'
+                  : '处理中'
+            }}</span
+          >
           <button
             v-if="zone.files.length"
             class="staging-batch-action"
@@ -422,7 +440,7 @@ onBeforeUnmount(clearMenuListeners)
 .worktree-search input {
   min-width: 0;
   width: 100%;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
 }
 .worktree-search .icon-button {
   width: 20px;
@@ -454,8 +472,13 @@ onBeforeUnmount(clearMenuListeners)
   z-index: 15;
   top: 31px;
   right: 0;
-  width: 190px;
-  padding: 7px;
+  width: max-content;
+  min-width: 190px;
+  max-width: calc(100vw - 16px);
+  padding: 5px;
+  font-family: var(--font-ui);
+  font-size: var(--ui-font-size);
+  line-height: 1.5;
   border: 1px solid var(--line);
   border-radius: 5px;
   box-shadow: 0 6px 22px #0005;
@@ -463,8 +486,8 @@ onBeforeUnmount(clearMenuListeners)
 }
 .worktree-menu-content strong {
   display: block;
-  padding: 5px 6px 3px;
-  font-size: 10px;
+  padding: 5px 10px;
+  font-size: var(--ui-font-help);
   color: var(--muted);
 }
 .worktree-menu-content label,
@@ -473,15 +496,19 @@ onBeforeUnmount(clearMenuListeners)
   align-items: center;
   justify-content: flex-start;
   width: 100%;
-  min-height: 28px;
+  min-height: 30px;
   gap: 7px;
-  padding: 0 6px;
-  font-size: 11px;
+  padding: 5px 10px;
+  font-size: var(--ui-font-size);
+  white-space: nowrap;
   border-radius: 3px;
 }
-.worktree-menu-content > button:hover,
-.worktree-menu-content label:hover {
+.worktree-menu-content > button:hover:not(:disabled),
+.worktree-menu-content label:not(:has(input:disabled)):hover {
   background: var(--control-hover-bg);
+}
+.worktree-menu-content label:has(input:disabled) {
+  color: var(--control-disabled-color);
 }
 .worktree-menu-content input {
   appearance: auto;
@@ -549,7 +576,7 @@ onBeforeUnmount(clearMenuListeners)
 }
 .worktree-layout-toggle button {
   padding: 4px 5px;
-  font-size: 10px;
+  font-size: var(--ui-font-size);
   color: var(--text-secondary);
   border-radius: 3px;
 }
@@ -577,13 +604,13 @@ onBeforeUnmount(clearMenuListeners)
 .staging-zone-title {
   flex: 1;
   margin: 0;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   font-weight: 600;
 }
 .staging-zone-title small {
   margin-left: 5px;
   color: var(--muted);
-  font: 10px var(--mono);
+  font: var(--ui-font-help)/1.5 var(--mono);
 }
 .staging-zone-title:focus-visible {
   outline: 1px solid var(--focus-ring);
@@ -593,7 +620,7 @@ onBeforeUnmount(clearMenuListeners)
   min-height: 25px;
   padding: 0 6px;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: var(--ui-font-size);
   color: var(--text-secondary);
 }
 .staging-batch-action:not(:disabled):hover {
@@ -605,17 +632,17 @@ onBeforeUnmount(clearMenuListeners)
   align-items: center;
   gap: 8px;
   padding: 0 10px 4px;
-  font-size: 10px;
+  font-size: var(--ui-font-size);
   color: var(--text-secondary);
 }
 .zone-selection-summary button {
-  font-size: 10px;
+  font-size: var(--ui-font-size);
 }
 .staging-selection-note {
   margin: 0;
   padding: 0 10px 5px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   line-height: 1.5;
 }
 .worktree-tree {
@@ -632,6 +659,6 @@ onBeforeUnmount(clearMenuListeners)
   gap: 10px;
   padding: 7px 12px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--ui-font-help);
 }
 </style>

@@ -1,26 +1,61 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch, useId } from 'vue'
+import { isCommitShaQuery } from '../historyPaging'
 import { useRepositoryStore } from '../stores/repository'
-import { buildHistoryGraph, HISTORY_ROW_HEIGHT } from '../graph'
-import type { Commit, StashEntry } from '../types'
+import { buildHistoryGraph, HISTORY_ROW_HEIGHT, type GraphNavigationArrow } from '../graph'
+import { ideaGraphLayout } from '../ideaGraphLayout'
+import {
+  defaultGraphViewport,
+  graphPaint,
+  paintHistoryGraph,
+  graphArrowPath,
+  graphArrowHit,
+} from '../graphPainting'
+import type { Commit, StashEntry, CommitMetadata } from '../types'
 import Icon from './Icon.vue'
+import { desktop } from '../services/desktop'
+import { getUIPlatform } from '../services/platform'
 import ReferenceBadge from './ReferenceBadge.vue'
+import BranchInlineForm from './BranchInlineForm.vue'
 import {
   resolveCommitReferences,
   groupCommitReferences,
   type CommitReference,
   type ReferenceGroup,
 } from '../referenceLabels'
-import MergeEditor from './MergeEditor.vue'
-import { useMergeStore } from '../stores/merge'
 import DiffViewer from './DiffViewer.vue'
 import { useContextMenuStore } from '../stores/contextMenu'
 import { useStashStore } from '../stores/stash'
 import { branchReference } from '../references'
 import { useGraphViewStore } from '../stores/graphView'
+import { useFontStore } from '../stores/fonts'
 
 const store = useRepositoryStore()
+function selectHistoryCommit(commit: Commit, event: MouseEvent) {
+  if (event.ctrlKey || event.metaKey) {
+    const removing = menu.selectedCommits.includes(commit.hash)
+    menu.selectedCommits = menu.selectedCommits.includes(commit.hash)
+      ? menu.selectedCommits.filter((sha) => sha !== commit.hash)
+      : [...menu.selectedCommits, commit.hash]
+    if (removing) {
+      const remaining = store.repo.commits.find((c) => menu.selectedCommits.includes(c.hash))
+      if (remaining) void store.selectCommit(remaining)
+      else store.clearSelection()
+      return
+    }
+  } else if (event.shiftKey && menu.selectedCommits.length) {
+    const visible = store.visibleCommits
+    const start = visible.findIndex((c) => c.hash === menu.selectedCommits[0])
+    const end = visible.findIndex((c) => c.hash === commit.hash)
+    menu.selectedCommits =
+      start < 0 || end < 0
+        ? [commit.hash]
+        : visible.slice(Math.min(start, end), Math.max(start, end) + 1).map((c) => c.hash)
+  } else menu.selectedCommits = [commit.hash]
+  void store.selectCommit(commit)
+}
 const graphView = useGraphViewStore()
+const fonts = useFontStore()
 const graphBranches = computed(() =>
   graphView.visibleBranches(store.repo.path, store.repo.branches),
 )
@@ -32,19 +67,28 @@ function resolveVisibleReferences(commit: Commit) {
 }
 const menu = useContextMenuStore()
 const stash = useStashStore()
-const merge = useMergeStore()
 const historyPanel = ref<HTMLElement>()
+const historySvg = ref<SVGSVGElement>()
+const viewport = ref({ ...defaultGraphViewport })
+const paint = computed(() => graphPaint(viewport.value))
+const referenceStarts = ref(new Map<string, number>())
+let referenceMeasureNeeded = true
 const searchInput = ref<HTMLInputElement>()
-const refsDialog = ref<HTMLDialogElement>()
+const searchFocused = ref(false)
+const searchShortcut = getUIPlatform() === 'macos' ? '⌘ K' : 'Ctrl K'
+const refsPopover = ref<HTMLElement>()
 const refsCommit = ref<Commit | null>(null)
+let refsVersion = 0
 const referenceTailInset = 6
 const pointerExpandedReference = ref(''),
   focusedExpandedReference = ref('')
 let refsTrigger: HTMLElement | null = null
+let refsAnchor: DOMRect | null = null
 let refsOriginKey = '',
   refsOriginHash = ''
 const searching = computed(() => !!store.query.trim() || !!store.branchFilter)
 const visibleStashes = computed(() => {
+  if (store.repo.history?.focus) return []
   const term = store.query.trim().toLocaleLowerCase()
   // Stashes belong to the repository. A branch-history filter must not hide them.
   return stash.entries.filter(
@@ -52,10 +96,23 @@ const visibleStashes = computed(() => {
       !term || `${entry.message} ${entry.branch} ${entry.oid}`.toLocaleLowerCase().includes(term),
   )
 })
-const showWorktree = computed(() => store.changes > 0)
-const graph = computed(() =>
-  buildHistoryGraph(store.visibleCommits, visibleStashes.value, showWorktree.value),
+const showWorktree = computed(() => store.changes > 0 && !store.repo.history?.focus)
+const layoutBasis = computed(
+  () => ideaGraphLayout(store.repo.commits, store.repo.branches, !!store.repo.history).identities,
 )
+const rawGraph = computed(() =>
+  buildHistoryGraph(
+    store.visibleCommits,
+    visibleStashes.value,
+    showWorktree.value,
+    !!store.repo.history && (!store.query.trim() || shaQuery.value),
+    graphBranches.value,
+    !graphView.showLongEdges,
+    layoutBasis.value,
+    store.repo.commits,
+  ),
+)
+const graph = computed(() => paintHistoryGraph(rawGraph.value, viewport.value))
 const relative = (date: string) => {
   const minutes = Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 60000))
   if (minutes < 1) return '刚刚'
@@ -89,37 +146,92 @@ const referenceHashes = computed(
 const currentReferenceHash = computed(
   () => store.repo.branches.find((branch) => branch.kind === 'local' && branch.current)?.hash || '',
 )
-// CSS snaps a 1px tail onto one device row. SVG needs a half-pixel center
-// for the same rasterization; a 2px current-reference guide stays integral.
+// The whole guide is drawn in SVG, so CSS tails cannot drift from its endpoint.
 const referenceNodes = computed(() =>
-  graph.value.nodes
+  (graphView.labelsAfterMessage ? [] : graph.value.nodes)
     .filter((node) => referenceHashes.value.has(node.hash))
     .map((node) => ({
       ...node,
-      guideY: node.y + (node.hash === currentReferenceHash.value ? 0 : 0.5),
-    })),
+      guideX: paint.value.x(referenceStarts.value.get(node.hash) ?? -referenceTailInset),
+    }))
+    .filter((node) => node.guideX < node.x - paint.value.radius),
+)
+function measureGraphPainting() {
+  const svg = historySvg.value
+  const matrix = svg?.getScreenCTM()
+  if (!svg || !matrix || matrix.a <= 0 || matrix.d <= 0) return
+  const ratio = window.devicePixelRatio || 1
+  const next = {
+    ratio,
+    scaleX: matrix.a,
+    scaleY: matrix.d,
+    phaseX: (((matrix.e * ratio) % 1) + 1) % 1,
+    phaseY: (((matrix.f * ratio) % 1) + 1) % 1,
+  }
+  if (JSON.stringify(next) !== JSON.stringify(viewport.value)) viewport.value = next
+  if (!referenceMeasureNeeded) return
+  referenceMeasureNeeded = false
+  const inverse = matrix.inverse()
+  const starts = new Map<string, number>()
+  historyPanel.value
+    ?.querySelectorAll<HTMLElement>('.commit-row[data-commit-hash] .ref-labels')
+    .forEach((labels) => {
+      const row = labels.closest<HTMLElement>('.commit-row')
+      const badge = labels.querySelector('.ref-labels-content') || labels
+      if (!row) return
+      const bounds = badge.getBoundingClientRect()
+      const local = new DOMPoint(bounds.right, bounds.top).matrixTransform(inverse)
+      starts.set(row.dataset.commitHash!, local.x)
+    })
+  if (JSON.stringify([...starts]) !== JSON.stringify([...referenceStarts.value]))
+    referenceStarts.value = starts
+}
+watch(
+  [
+    rawGraph,
+    referenceData,
+    pointerExpandedReference,
+    focusedExpandedReference,
+    () => graphView.labelsAfterMessage,
+    () => graphView.labelStyle,
+    () => JSON.stringify(fonts.settings.code),
+  ],
+  () => {
+    referenceMeasureNeeded = true
+    void nextTick(updateExpandedReferences)
+  },
+  { flush: 'post' },
 )
 function updateExpansionLimit(group: HTMLElement) {
-  const right = Math.min(
-    window.innerWidth,
-    historyPanel.value?.getBoundingClientRect().right || window.innerWidth,
-  )
+  const panelBounds = historyPanel.value?.getBoundingClientRect()
+  const right = Math.min(window.innerWidth, panelBounds?.right || window.innerWidth)
+  const left = Math.max(0, panelBounds?.left || 0) + 8
   group.style.setProperty(
     '--ref-expanded-limit',
-    `${Math.max(group.getBoundingClientRect().width, Math.min(640, right - group.getBoundingClientRect().left - 8))}px`,
+    `${graphView.labelsAfterMessage ? Math.min(640, Math.max(0, right - left - 8)) : Math.max(group.getBoundingClientRect().width, Math.min(640, right - group.getBoundingClientRect().left - 8))}px`,
   )
+  const content = group.querySelector<HTMLElement>('.ref-labels-content')
+  const anchor = group.getBoundingClientRect().right
+  const width = content?.getBoundingClientRect().width || 0
+  const offset = graphView.labelsAfterMessage
+    ? anchor - Math.max(left + width, Math.min(anchor, right - 8))
+    : 0
+  group.style.setProperty('--ref-expanded-right', `${offset}px`)
 }
 function expandFromPointer(commit: Commit, event: MouseEvent) {
   const group = (event.currentTarget as HTMLElement).closest<HTMLElement>('.ref-labels')
   if (group) {
     updateExpansionLimit(group)
     pointerExpandedReference.value = commit.hash
+    void nextTick(() => updateExpansionLimit(group))
   }
 }
 function referenceFocusIn(commit: Commit, event: FocusEvent) {
   if ((event.target as HTMLElement).matches(':focus-visible')) {
-    updateExpansionLimit(event.currentTarget as HTMLElement)
+    const group = event.currentTarget as HTMLElement
+    updateExpansionLimit(group)
     focusedExpandedReference.value = commit.hash
+    void nextTick(() => updateExpansionLimit(group))
   }
 }
 function referenceFocusOut(commit: Commit, event: FocusEvent) {
@@ -132,17 +244,58 @@ function referenceFocusOut(commit: Commit, event: FocusEvent) {
 function referencePointerLeave(commit: Commit) {
   if (pointerExpandedReference.value === commit.hash) pointerExpandedReference.value = ''
 }
-function updateExpandedReferences() {
+function updateExpandedReferences(event?: Event) {
+  if (event?.type === 'scroll') closeReferences()
+  else positionReferences(event?.type === 'resize')
+  if (event?.type === 'scroll') hideArrowHint()
+  if (event?.type === 'resize') referenceMeasureNeeded = true
   historyPanel.value
     ?.querySelectorAll<HTMLElement>('.ref-labels.is-expanded')
     .forEach(updateExpansionLimit)
+  measureGraphPainting()
 }
 let panelResize: ResizeObserver | undefined
+function editorFontLoaded() {
+  referenceMeasureNeeded = true
+  updateExpandedReferences()
+}
+let ratioQuery: MediaQueryList | undefined
+function followPixelRatio() {
+  ratioQuery?.removeEventListener('change', pixelRatioChanged)
+  ratioQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+  ratioQuery.addEventListener('change', pixelRatioChanged)
+}
+function pixelRatioChanged() {
+  referenceMeasureNeeded = true
+  measureGraphPainting()
+  followPixelRatio()
+}
 onMounted(() => {
-  panelResize = new ResizeObserver(updateExpandedReferences)
-  if (historyPanel.value) panelResize.observe(historyPanel.value)
+  document.fonts.addEventListener('loadingdone', editorFontLoaded)
+  followPixelRatio()
+  panelResize = new ResizeObserver(() => {
+    referenceMeasureNeeded = true
+    updateExpandedReferences()
+    positionReferences(true)
+  })
+  if (historyPanel.value) {
+    try {
+      panelResize.observe(historyPanel.value, { box: 'device-pixel-content-box' })
+    } catch {
+      panelResize.observe(historyPanel.value)
+    }
+  }
+  window.addEventListener('resize', updateExpandedReferences)
+  window.visualViewport?.addEventListener('resize', updateExpandedReferences)
+  measureGraphPainting()
 })
-onBeforeUnmount(() => panelResize?.disconnect())
+onBeforeUnmount(() => {
+  document.fonts.removeEventListener('loadingdone', editorFontLoaded)
+  panelResize?.disconnect()
+  ratioQuery?.removeEventListener('change', pixelRatioChanged)
+  window.removeEventListener('resize', updateExpandedReferences)
+  window.visualViewport?.removeEventListener('resize', updateExpandedReferences)
+})
 function moreDescription(commit: Commit) {
   return `另有 ${Math.max(0, referenceGroups(commit).length - 1)} 组引用，查看全部 ${references(commit).length} 个引用：${commit.subject}`
 }
@@ -169,7 +322,7 @@ async function activateReference(commit: Commit, reference: CommitReference, eve
   if (event.detail > 1) return
   const branch = reference.branch
   if (branch?.kind !== 'local') {
-    showReferences(commit, event)
+    await showReferences(commit, event)
     return
   }
   if (store.busy || store.modal || branch.current) return
@@ -205,20 +358,213 @@ function selectStashNode(entry: StashEntry) {
       ?.focus({ preventScroll: true }),
   )
 }
+const graphId = `graph-${useId().replace(/[^a-zA-Z0-9-]/g, '')}`
+const arrowHint = ref<{ key: string; x: number; y: number } | null>(null)
+const metadata = ref(new Map<string, CommitMetadata | null>())
+const metadataFailures = new Map<string, number>()
+function rememberMetadata(key: string, value: CommitMetadata | null) {
+  if (metadata.value.size >= 256 && !metadata.value.has(key)) {
+    const oldest = metadata.value.keys().next().value!
+    metadata.value.delete(oldest)
+    metadataFailures.delete(oldest)
+  }
+  metadata.value.set(key, value)
+  if (value) metadataFailures.delete(key)
+  else metadataFailures.set(key, Date.now())
+}
+let metadataPending = false
+let graphDisposed = false
+const hintedArrow = computed(() =>
+  graph.value.arrows.find((arrow) => arrow.key === arrowHint.value?.key),
+)
+const hintMetadata = computed(() => {
+  const arrow = hintedArrow.value
+  if (!arrow) return null
+  return (
+    store.repo.commits.find((commit) => commit.hash === arrow.targetHash) ||
+    metadata.value.get(
+      `${store.repo.path}\0${store.repo.history?.signature || ''}\0${arrow.targetHash}`,
+    ) ||
+    null
+  )
+})
+const hintUnavailable = computed(
+  () =>
+    !!hintedArrow.value &&
+    !store.visibleCommits.some((commit) => commit.hash === hintedArrow.value?.targetHash),
+)
+const hintDate = computed(() => {
+  const value = hintMetadata.value?.date
+  return value && !Number.isNaN(Date.parse(value))
+    ? new Date(value).toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })
+    : ''
+})
+async function loadArrowMetadata() {
+  const arrow = hintedArrow.value
+  if (!arrow || metadataPending || hintMetadata.value || graphDisposed) return
+  const path = store.repo.path,
+    hash = arrow.targetHash,
+    key = `${path}\0${store.repo.history?.signature || ''}\0${hash}`
+  if (metadata.value.has(key)) {
+    if (metadata.value.get(key) || Date.now() - (metadataFailures.get(key) || 0) < 5000) return
+    metadata.value.delete(key)
+  }
+  metadataPending = true
+  try {
+    const value = await desktop.historyMetadata(path, hash)
+    if (!graphDisposed) rememberMetadata(key, value)
+  } catch {
+    if (!graphDisposed) rememberMetadata(key, null)
+  } finally {
+    metadataPending = false
+    if (!graphDisposed && hintedArrow.value?.targetHash !== hash) void loadArrowMetadata()
+  }
+}
+function showArrowHint(arrow: GraphNavigationArrow, event: MouseEvent | FocusEvent) {
+  const bounds = (event.currentTarget as Element).getBoundingClientRect()
+  const x = event instanceof MouseEvent ? event.clientX : bounds.right
+  const y = event instanceof MouseEvent ? event.clientY : bounds.top
+  arrowHint.value = {
+    key: arrow.key,
+    x: Math.max(8, Math.min(x + 6, window.innerWidth - 338)),
+    y: Math.max(8, Math.min(y + 8, window.innerHeight - 150)),
+  }
+  void loadArrowMetadata()
+}
+function hideArrowHint() {
+  arrowHint.value = null
+}
+function graphArrowTitle(arrow: GraphNavigationArrow) {
+  const target = store.repo.commits.find((commit) => commit.hash === arrow.targetHash)
+  return `${arrow.direction === 'down' ? '向下跳转到父提交' : '向上跳转到子提交'} ${arrow.targetHash.slice(0, 7)}${target ? ` · ${target.subject}` : ''}`
+}
+watch(
+  [
+    () => store.activeTabId,
+    () => store.repo.path,
+    () => store.modal,
+    () => store.query,
+    () => store.branchFilter,
+    () => graphView.showLongEdges,
+    () => store.repo.history?.token,
+  ],
+  hideArrowHint,
+)
+onBeforeUnmount(() => {
+  graphDisposed = true
+})
+async function jumpGraphArrow(arrow: GraphNavigationArrow, event: MouseEvent | KeyboardEvent) {
+  if (store.busy || store.modal || store.historyLoading) return
+  const target = store.visibleCommits.find((commit) => commit.hash === arrow.targetHash)
+  if (!target) {
+    showArrowHint(arrow, event as MouseEvent)
+    return
+  }
+  hideArrowHint()
+  const tab = store.activeTabId
+  const pending = store.selectCommit(target)
+  await nextTick()
+  if (tab !== store.activeTabId || store.selectedCommit?.hash !== target.hash) return
+  const row = [...(historyPanel.value?.querySelectorAll<HTMLElement>('.commit-row') || [])].find(
+    (element) => element.dataset.commitHash === target.hash,
+  )
+  const scroller = historyScroll.value
+  if (row && scroller) {
+    const bounds = row.getBoundingClientRect()
+    const visible = scroller.getBoundingClientRect()
+    const headerHeight =
+      historyPanel.value?.querySelector('.table-head')?.getBoundingClientRect().height || 0
+    const top = visible.top + headerHeight
+    if (bounds.top < top) scroller.scrollTop += bounds.top - top
+    else if (bounds.bottom > visible.bottom) scroller.scrollTop += bounds.bottom - visible.bottom
+  }
+  row?.querySelector<HTMLButtonElement>('.commit-select')?.focus({ preventScroll: true })
+  await pending
+}
 function nodeMenu(event: MouseEvent, hash: string) {
   const commit = store.visibleCommits.find((c) => c.hash === hash)
   if (commit) menu.open(event, { kind: 'commit', commit })
 }
-function showReferences(commit: Commit, event: MouseEvent) {
+async function showReferences(commit: Commit, event: MouseEvent) {
+  const version = ++refsVersion
   refsCommit.value = commit
   refsTrigger = event.currentTarget as HTMLElement
+  refsAnchor = refsTrigger.getBoundingClientRect()
   refsOriginKey =
     refsTrigger.closest<HTMLElement>('[data-reference-key]')?.dataset.referenceKey || ''
   refsOriginHash = commit.hash
-  refsDialog.value?.showModal()
+  await nextTick()
+  if (version !== refsVersion || !refsTrigger?.isConnected) return
+  refsPopover.value?.showPopover()
+  positionReferences()
+  refsPopover.value
+    ?.querySelector<HTMLButtonElement>('.reference-popup-action')
+    ?.focus({ preventScroll: true })
 }
-function closeReferences() {
-  refsDialog.value?.close()
+function positionReferences(followAnchor = false) {
+  const popup = refsPopover.value
+  if (!popup?.matches(':popover-open') || !refsTrigger?.isConnected) return
+  if (followAnchor || !refsAnchor) refsAnchor = refsTrigger.getBoundingClientRect()
+  const anchor = refsAnchor
+  const bounds = popup.getBoundingClientRect()
+  const left = graphView.labelsAfterMessage ? anchor.right - bounds.width : anchor.left
+  const top =
+    anchor.bottom + 4 + bounds.height <= window.innerHeight - 8
+      ? anchor.bottom + 4
+      : anchor.top - bounds.height - 4
+  popup.style.left = `${Math.max(8, Math.min(left, window.innerWidth - bounds.width - 8))}px`
+  popup.style.top = `${Math.max(8, Math.min(top, window.innerHeight - bounds.height - 8))}px`
+}
+function closeReferences(restore = false) {
+  refsVersion++
+  refsPopover.value?.hidePopover()
+  refsCommit.value = null
+  refsAnchor = null
+  if (restore) restoreReferenceFocus()
+}
+function referencesToggled() {
+  if (!refsPopover.value?.matches(':popover-open')) {
+    refsVersion++
+    refsCommit.value = null
+  }
+}
+function referencesKeyboard(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    closeReferences(true)
+    return
+  }
+  if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+  const buttons = [
+    ...(refsPopover.value?.querySelectorAll<HTMLButtonElement>('.reference-popup-action') || []),
+  ]
+  if (!buttons.length) return
+  event.preventDefault()
+  const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  buttons[
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? buttons.length - 1
+        : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+  ]?.focus()
+}
+function popupReferenceMenu(event: MouseEvent | KeyboardEvent, reference: CommitReference) {
+  const commit = refsCommit.value
+  if (!commit) return
+  referenceMenu(event, reference, commit)
+  menu.trigger = refsTrigger
+  closeReferences()
+}
+async function popupReferenceActivate(reference: CommitReference, event: MouseEvent) {
+  const commit = refsCommit.value
+  if (!commit) return
+  if (reference.branch?.kind === 'local') {
+    if (store.busy) return
+    closeReferences(true)
+    await activateReference(commit, reference, event)
+  } else popupReferenceMenu(event, reference)
 }
 function restoreReferenceFocus() {
   refsCommit.value = null
@@ -245,8 +591,44 @@ watch(
     focusedExpandedReference.value = ''
   },
 )
-watch(() => store.repo, closeReferences)
-defineExpose({ focusSearch: () => searchInput.value?.focus() })
+watch(
+  () => store.repo,
+  () => closeReferences(),
+)
+watch(
+  () => store.modal,
+  () => closeReferences(),
+)
+function focusSearch() {
+  const input = searchInput.value
+  if (!input) return
+  input.focus({ preventScroll: true })
+  input.select()
+  input.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+defineExpose({ focusSearch })
+watch([() => store.query, () => store.branchFilter, () => graphView.labelsAfterMessage], () =>
+  closeReferences(),
+)
+const shaQuery = computed(() => !!store.repo.history && isCommitShaQuery(store.query))
+const historyScroll = ref<HTMLElement>()
+async function locateSha() {
+  if (shaQuery.value && (await store.loadHistory('locate', store.query.trim()))) {
+    await nextTick()
+    historyScroll.value?.scrollTo({ top: 0 })
+    historyPanel.value
+      ?.querySelector<HTMLButtonElement>('.commit-row.selected .commit-select')
+      ?.focus({ preventScroll: true })
+  }
+}
+async function loadMore() {
+  const element = historyScroll.value
+  const top = element?.scrollTop || 0
+  const hash = store.selectedCommit?.hash
+  await store.loadHistory()
+  await nextTick()
+  if (element && store.selectedCommit?.hash === hash) element.scrollTop = top
+}
 function clearHistoryFilters() {
   store.query = ''
   store.clearBranchFilter()
@@ -257,10 +639,12 @@ function clearHistoryFilters() {
   <main
     ref="historyPanel"
     class="history-panel"
+    :data-label-style="graphView.labelStyle"
     :class="{
       'show-author': store.showAuthor,
       'show-time': store.showTime,
       'show-sha': store.showSha,
+      'labels-after-message': graphView.labelsAfterMessage,
     }"
     :style="{
       '--history-row-height': `${HISTORY_ROW_HEIGHT}px`,
@@ -279,12 +663,22 @@ function clearHistoryFilters() {
         ><Icon
           name="Search"
           :size="14" /><input
+          autocomplete="off"
           ref="searchInput"
           v-model="store.query"
-          placeholder="搜索提交、作者或 SHA…"
-          aria-label="搜索提交" /><kbd v-if="!store.query">⌘ K</kbd
+          placeholder="搜索提交说明、作者或分支名"
+          title="关键词仅搜索已加载历史；7 至 64 位 SHA 可定位更早的提交"
+          @keydown.enter.prevent="locateSha"
+          @focus="searchFocused = true"
+          @blur="searchFocused = false"
+          aria-label="搜索提交" /><kbd v-if="!store.query">{{ searchShortcut }}</kbd
+        ><span
+          v-if="searchFocused && !store.query.trim() && !store.repo.history?.focus"
+          class="commit-search-hint"
+          role="status"
+          >仅搜索已加载的 {{ store.repo.commits.length }} 条提交</span
         ><button
-          v-else
+          v-if="store.query"
           class="icon-button"
           aria-label="清除搜索"
           @click="store.query = ''"
@@ -295,6 +689,46 @@ function clearHistoryFilters() {
           /></button
       ></label>
     </header>
+    <div
+      v-if="store.historyPreferenceWarning"
+      class="history-scope-banner"
+      role="status"
+    >
+      {{ store.historyPreferenceWarning }}
+    </div>
+    <div
+      v-if="store.repo.history?.focus"
+      class="history-scope-banner"
+      role="status"
+    >
+      <span>定位视图 · {{ store.repo.history.focus.slice(0, 12) }} 及其祖先</span>
+      <button
+        class="text-button"
+        :disabled="store.historyLoading || store.busy"
+        @click="store.loadHistory('reset')"
+      >
+        返回全部历史
+      </button>
+    </div>
+    <div
+      v-else-if="store.query.trim()"
+      class="history-scope-banner"
+      role="status"
+    >
+      <span>{{
+        shaQuery
+          ? 'SHA 定位：按 Enter 查找提交'
+          : `仅搜索已加载的 ${store.repo.commits.length} 条提交`
+      }}</span>
+      <button
+        v-if="shaQuery && store.repo.history"
+        class="text-button"
+        :disabled="store.historyLoading || store.busy"
+        @click="locateSha"
+      >
+        {{ store.historyLoading ? '正在定位…' : '按 SHA 定位' }}
+      </button>
+    </div>
     <div
       v-if="
         store.repo.branches.some((branch) => graphView.isHidden(store.repo.path, branch)) ||
@@ -328,6 +762,7 @@ function clearHistoryFilters() {
       </button>
     </div>
     <div
+      ref="historyScroll"
       class="history-scroll"
       tabindex="0"
       aria-label="提交图谱"
@@ -337,7 +772,7 @@ function clearHistoryFilters() {
     >
       <div
         class="history-table"
-        :style="{ '--graph-width': `${graph.width}px` }"
+        :style="{ '--graph-width': `${graph.recommendedWidth}px` }"
       >
         <div
           class="table-head commit-grid"
@@ -346,12 +781,14 @@ function clearHistoryFilters() {
           @contextmenu="menu.open($event, { kind: 'columns' })"
           @keydown="menu.keyboard($event, { kind: 'columns' })"
         >
-          <span>分支 / 标签</span><span>关系图</span><span>提交说明</span
+          <span class="reference-heading">分支 / 标签</span><span title="提交关系图">图谱</span
+          ><span>{{ graphView.labelsAfterMessage ? '提交说明 / 分支标签' : '提交说明' }}</span
           ><span class="author-heading">作者</span><span class="time-cell">时间</span
           ><span class="sha-cell">SHA</span>
         </div>
         <div class="history-body">
           <svg
+            ref="historySvg"
             class="commit-graph"
             :width="graph.width"
             :height="(graph.rows.length + graph.rowOffset) * HISTORY_ROW_HEIGHT"
@@ -367,11 +804,12 @@ function clearHistoryFilters() {
                 :key="node.hash"
                 :data-reference-hash="node.hash"
                 :class="{ 'is-current-reference': node.hash === currentReferenceHash }"
-                :x1="-referenceTailInset"
+                :x1="node.guideX"
                 :x2="node.x"
-                :y1="node.guideY"
-                :y2="node.guideY"
+                :y1="node.y"
+                :y2="node.y"
                 :stroke="node.color"
+                :stroke-width="paint.lineWidth"
               />
             </g>
             <path
@@ -381,8 +819,10 @@ function clearHistoryFilters() {
               :data-parent-hash="edge.parentHash"
               :d="edge.d"
               :stroke="edge.color"
-              :stroke-dasharray="edge.boundary ? '3 3' : undefined"
-              stroke-width="2"
+              :stroke-dasharray="edge.boundary || edge.dotted ? '3 3' : undefined"
+              :stroke-width="paint.lineWidth"
+              stroke-linecap="round"
+              stroke-linejoin="round"
               fill="none"
             />
             <path
@@ -393,7 +833,9 @@ function clearHistoryFilters() {
               :data-stash-base="edge.parentHash"
               :d="edge.d"
               :stroke="edge.color"
-              stroke-width="1.5"
+              :stroke-width="paint.lineWidth"
+              stroke-linecap="round"
+              stroke-linejoin="round"
               stroke-dasharray="3 3"
               fill="none"
             />
@@ -429,17 +871,116 @@ function clearHistoryFilters() {
                 fill="none"
                 stroke-width="1.4"
               />
+              <rect
+                v-if="
+                  store.selectedStash?.oid === node.entry.oid &&
+                  store.selectedStash?.ref === node.entry.ref
+                "
+                class="graph-selection-ring stash-selection-ring"
+                :x="node.x - 9"
+                :y="node.y - 8"
+                width="18"
+                height="16"
+                rx="4"
+                fill="none"
+                :stroke="node.color"
+                :stroke-width="paint.selectionWidth"
+              />
             </g>
             <circle
               v-if="showWorktree && !searching"
               :cx="graph.worktree.x"
-              :cy="HISTORY_ROW_HEIGHT / 2"
-              r="6"
+              :cy="graph.worktree.y"
+              :r="paint.radius + 1"
               fill="var(--bg)"
               :stroke="graph.worktree.color"
-              stroke-width="1.6"
+              :stroke-width="paint.lineWidth"
               stroke-dasharray="2 2"
             />
+            <g v-if="showWorktree && !searching && !store.selectedCommit && !store.selectedStash">
+              <circle
+                class="graph-selection-ring worktree-selection-ring"
+                :cx="graph.worktree.x"
+                :cy="graph.worktree.y"
+                :r="paint.selectionRadius"
+                fill="none"
+                :stroke="graph.worktree.color"
+                :stroke-width="paint.selectionWidth"
+              />
+            </g>
+            <g
+              v-for="(arrow, index) in graph.arrows"
+              :key="arrow.key"
+              class="graph-jump-arrow"
+              :class="{ 'is-hovered': arrowHint?.key === arrow.key }"
+              :aria-disabled="store.busy || !!store.modal || store.historyLoading"
+              @mouseenter="showArrowHint(arrow, $event)"
+              @mousemove="showArrowHint(arrow, $event)"
+              @mouseleave="hideArrowHint"
+              @click.stop="jumpGraphArrow(arrow, $event)"
+            >
+              <defs>
+                <clipPath :id="`${graphId}-arrow-${index}`">
+                  <rect
+                    x="0"
+                    :y="arrow.rowTop"
+                    :width="graph.width"
+                    :height="HISTORY_ROW_HEIGHT"
+                  />
+                </clipPath>
+              </defs>
+              <g :clip-path="`url(#${graphId}-arrow-${index})`">
+                <ellipse
+                  class="graph-arrow-hit"
+                  :cx="graphArrowHit(arrow, paint.lineWidth).cx"
+                  :cy="graphArrowHit(arrow, paint.lineWidth).cy"
+                  :rx="graphArrowHit(arrow, paint.lineWidth).rx"
+                  :ry="graphArrowHit(arrow, paint.lineWidth).ry"
+                  :transform="`rotate(${graphArrowHit(arrow, paint.lineWidth).angle} ${graphArrowHit(arrow, paint.lineWidth).cx} ${graphArrowHit(arrow, paint.lineWidth).cy})`"
+                />
+                <path
+                  class="graph-arrow-mark"
+                  :d="`M${arrow.fromX} ${arrow.fromY} L${arrow.x} ${arrow.y}`"
+                  fill="none"
+                  :stroke-width="paint.lineWidth + 2 / viewport.ratio"
+                />
+                <path
+                  class="graph-arrow-mark"
+                  :d="graphArrowPath(arrow)"
+                  fill="none"
+                  :stroke-width="paint.arrowWidth + 2 / viewport.ratio"
+                />
+                <path
+                  class="graph-arrow-segment"
+                  :d="`M${arrow.fromX} ${arrow.fromY} L${arrow.x} ${arrow.y}`"
+                  fill="none"
+                  :stroke="arrow.color"
+                  :stroke-width="paint.lineWidth"
+                  stroke-linecap="round"
+                />
+                <path
+                  class="graph-arrow-head"
+                  role="button"
+                  tabindex="0"
+                  :data-graph-arrow="arrow.direction"
+                  :data-arrow-target="arrow.targetHash"
+                  :aria-label="graphArrowTitle(arrow)"
+                  :aria-describedby="arrowHint?.key === arrow.key ? `${graphId}-hint` : undefined"
+                  :aria-disabled="store.busy || !!store.modal || store.historyLoading"
+                  @focus="showArrowHint(arrow, $event)"
+                  @blur="hideArrowHint"
+                  @keydown.enter.prevent="jumpGraphArrow(arrow, $event)"
+                  @keydown.space.prevent="jumpGraphArrow(arrow, $event)"
+                  @keydown.esc.prevent="hideArrowHint"
+                  :d="graphArrowPath(arrow)"
+                  fill="none"
+                  :stroke="arrow.color"
+                  :stroke-width="paint.arrowWidth"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </g>
+            </g>
             <g
               v-for="node in graph.nodes"
               :key="node.hash"
@@ -450,13 +991,24 @@ function clearHistoryFilters() {
               <circle
                 :cx="node.x"
                 :cy="node.y"
-                :r="store.selectedCommit?.hash === node.hash ? 7 : 5"
+                :r="paint.radius"
                 :fill="node.merge ? 'var(--bg)' : node.color"
                 :stroke="node.color"
-                :stroke-width="node.merge ? 2 : 1"
+                :stroke-width="node.merge ? paint.lineWidth : 0"
+              />
+              <circle
+                v-if="store.selectedCommit?.hash === node.hash"
+                class="node-selection-ring graph-selection-ring"
+                :cx="node.x"
+                :cy="node.y"
+                :r="paint.selectionRadius"
+                fill="none"
+                :stroke="node.color"
+                :stroke-width="paint.selectionWidth"
               />
               <circle
                 v-if="node.merge"
+                class="merge-node-center"
                 :cx="node.x"
                 :cy="node.y"
                 r="1.5"
@@ -479,6 +1031,10 @@ function clearHistoryFilters() {
               />工作区</span
             ><span></span
             ><span class="wip-message"
+              ><span
+                v-if="graphView.labelsAfterMessage"
+                class="inline-kind-label"
+                >工作区</span
               ><strong>未提交的更改</strong
               ><span class="wip-count">{{ store.changes }} 个文件</span></span
             ><span class="wip-owner">本机</span
@@ -491,6 +1047,9 @@ function clearHistoryFilters() {
             <button
               v-if="row.kind === 'stash'"
               class="stash-row commit-grid"
+              :style="{
+                '--row-graph-width': `${graph.stashRowWidths.get(`stash:${row.stash.ref}:${row.stash.oid}`) || graph.recommendedWidth}px`,
+              }"
               :data-stash-oid="row.stash.oid"
               :data-stash-ref="row.stash.ref"
               :aria-pressed="
@@ -513,9 +1072,12 @@ function clearHistoryFilters() {
                   :size="12"
                 />贮藏</span
               ><span></span
-              ><span class="stash-row-message">{{
-                row.stash.message.replace(/^(?:On|WIP on) [^:]+:\s*/, '')
-              }}</span
+              ><span class="stash-row-message"
+                ><span
+                  v-if="graphView.labelsAfterMessage"
+                  class="inline-kind-label"
+                  >贮藏</span
+                >{{ row.stash.message.replace(/^(?:On|WIP on) [^:]+:\s*/, '') }}</span
               ><span
                 class="author-cell"
                 aria-hidden="true"
@@ -530,87 +1092,113 @@ function clearHistoryFilters() {
                 class="commit-row commit-grid"
                 tabindex="-1"
                 :data-commit-hash="commit.hash"
-                :style="{ '--row-color': nodeColors.get(commit.hash) }"
+                :style="{
+                  '--row-color': nodeColors.get(commit.hash),
+                  '--row-graph-width': `${graph.rowWidths.get(commit.hash) || graph.recommendedWidth}px`,
+                }"
                 @contextmenu="menu.open($event, { kind: 'commit', commit })"
                 @keydown="menu.keyboard($event, { kind: 'commit', commit })"
-                :class="{ selected: store.selectedCommit?.hash === commit.hash }"
+                :class="{
+                  selected:
+                    menu.selectedCommits.includes(commit.hash) ||
+                    store.selectedCommit?.hash === commit.hash,
+                  'is-merge': graphView.dimMergeCommits && commit.parents.length >= 2,
+                }"
               >
                 <button
                   class="commit-select"
                   :title="commit.subject"
                   :aria-label="`查看提交 ${commit.subject}`"
                   :aria-pressed="store.selectedCommit?.hash === commit.hash"
-                  @click="store.selectCommit(commit)"
+                  @click="selectHistoryCommit(commit, $event)"
                 ></button>
-                <span
-                  class="ref-cell"
-                  :class="{
-                    'has-reference': referenceHashes.has(commit.hash),
-                    'is-current-reference': commit.hash === currentReferenceHash,
-                  }"
-                  :style="{ '--ref-color': nodeColors.get(commit.hash) }"
+                <Teleport
+                  :disabled="!graphView.labelsAfterMessage"
+                  :to="`#commit-ref-${commit.hash}`"
+                  defer
                 >
                   <span
-                    v-if="referenceGroups(commit).length"
-                    class="ref-labels"
+                    class="ref-cell"
                     :class="{
-                      'is-expanded':
-                        pointerExpandedReference === commit.hash ||
-                        focusedExpandedReference === commit.hash,
+                      'has-reference': referenceHashes.has(commit.hash),
+                      'is-current-reference': commit.hash === currentReferenceHash,
                     }"
-                    @mouseleave="referencePointerLeave(commit)"
-                    @focusin="referenceFocusIn(commit, $event)"
-                    @focusout="referenceFocusOut(commit, $event)"
+                    :style="{ '--ref-color': nodeColors.get(commit.hash) }"
                   >
+                    <BranchInlineForm
+                      v-if="
+                        store.modal === 'branch' &&
+                        store.inlineBranchActive &&
+                        commit.hash === store.repo.head
+                      "
+                    />
                     <span
-                      class="ref-labels-sizing"
-                      aria-hidden="true"
-                      inert
+                      v-else-if="referenceGroups(commit).length"
+                      class="ref-labels"
+                      :class="{
+                        'is-expanded':
+                          pointerExpandedReference === commit.hash ||
+                          focusedExpandedReference === commit.hash,
+                      }"
+                      @mouseleave="referencePointerLeave(commit)"
+                      @focusin="referenceFocusIn(commit, $event)"
+                      @focusout="referenceFocusOut(commit, $event)"
                     >
-                      <ReferenceBadge
-                        v-for="group in referenceGroups(commit).slice(0, 1)"
-                        :key="group.key"
-                        :group="group"
-                        title=""
-                        action-label=""
-                        presentation
-                      />
                       <span
-                        v-if="referenceGroups(commit).length > 1"
-                        class="ref-more-sizing"
-                        >+{{ referenceGroups(commit).length - 1 }}</span
+                        class="ref-labels-sizing"
+                        aria-hidden="true"
+                        inert
                       >
-                    </span>
-                    <span class="ref-labels-content">
-                      <ReferenceBadge
-                        v-for="group in referenceGroups(commit).slice(0, 1)"
-                        :key="group.key"
-                        :group="group"
-                        :title="referenceTitle(group)"
-                        :action-label="referenceActionLabel(group.primary)"
-                        :busy="store.busy"
-                        @expand="(event) => expandFromPointer(commit, event)"
-                        @activate="
-                          (reference, event) => activateReference(commit, reference, event)
-                        "
-                        @inspect="(_, event) => showReferences(commit, event)"
-                        @menu="(event, reference) => referenceMenu(event, reference, commit)"
-                        @keyboard="
-                          (event, reference) => referenceKeyboard(event, reference, commit)
-                        "
-                      />
-                      <button
-                        v-if="referenceGroups(commit).length > 1"
-                        class="ref-more"
-                        :title="moreDescription(commit)"
-                        :aria-label="moreDescription(commit)"
-                        @click="showReferences(commit, $event)"
-                      >
-                        +{{ referenceGroups(commit).length - 1 }}
-                      </button>
+                        <ReferenceBadge
+                          :appearance="graphView.labelStyle"
+                          v-for="group in referenceGroups(commit).slice(0, 1)"
+                          :key="group.key"
+                          :group="group"
+                          title=""
+                          action-label=""
+                          presentation
+                        />
+                        <span
+                          v-if="referenceGroups(commit).length > 1"
+                          class="ref-more-sizing"
+                          >+{{ referenceGroups(commit).length - 1 }}</span
+                        >
+                      </span>
+                      <span class="ref-labels-content">
+                        <ReferenceBadge
+                          :appearance="graphView.labelStyle"
+                          v-for="group in referenceGroups(commit).slice(0, 1)"
+                          :key="group.key"
+                          :group="group"
+                          :title="referenceTitle(group)"
+                          :action-label="referenceActionLabel(group.primary)"
+                          :busy="store.busy"
+                          @expand="(event) => expandFromPointer(commit, event)"
+                          @activate="
+                            (reference, event) => activateReference(commit, reference, event)
+                          "
+                          @inspect="(_, event) => showReferences(commit, event)"
+                          @menu="(event, reference) => referenceMenu(event, reference, commit)"
+                          @keyboard="
+                            (event, reference) => referenceKeyboard(event, reference, commit)
+                          "
+                        />
+                        <button
+                          v-if="referenceGroups(commit).length > 1"
+                          class="ref-more"
+                          :title="moreDescription(commit)"
+                          :aria-label="moreDescription(commit)"
+                          aria-haspopup="dialog"
+                          :aria-expanded="refsCommit?.hash === commit.hash"
+                          :aria-controls="`${graphId}-references`"
+                          @click="showReferences(commit, $event)"
+                        >
+                          +{{ referenceGroups(commit).length - 1 }}
+                        </button>
+                      </span>
                     </span>
                   </span>
-                </span>
+                </Teleport>
                 <span
                   class="graph-lane-cell"
                   :class="{ 'has-reference': references(commit).length > 0 }"
@@ -621,9 +1209,19 @@ function clearHistoryFilters() {
                   ><Icon
                     v-if="commit.parents.length > 1"
                     name="GitMerge"
-                    :size="13"
-                  /><span>{{ commit.subject }}</span></span
-                >
+                    :size="13" /><span class="commit-subject">{{ commit.subject }}</span
+                  ><span
+                    :id="`commit-ref-${commit.hash}`"
+                    v-show="
+                      graphView.labelsAfterMessage &&
+                      (referenceGroups(commit).length > 0 ||
+                        (store.modal === 'branch' &&
+                          store.inlineBranchActive &&
+                          commit.hash === store.repo.head))
+                    "
+                    class="commit-ref-target"
+                  ></span
+                ></span>
                 <span class="author-cell"
                   ><span
                     class="avatar"
@@ -646,12 +1244,16 @@ function clearHistoryFilters() {
             <Icon
               :name="searching ? 'Search' : 'GitCommitHorizontal'"
               :size="30"
-            /><strong>{{ searching ? '没有匹配的提交' : '从第一次提交开始' }}</strong>
+            /><strong>{{
+              store.historyLoading ? '正在读取历史…' : searching ? '没有匹配的提交' : '暂无提交记录'
+            }}</strong>
             <p>
               {{
-                searching
-                  ? '试试其他关键词，或清除分支筛选。'
-                  : '暂存文件并填写提交说明，创建第一条记录。'
+                store.historyLoading
+                  ? '正在读取所选引用的历史，请稍候。'
+                  : searching
+                    ? '请调整搜索条件，或清除分支筛选。'
+                    : '暂存文件并填写提交说明，以创建首次提交。'
               }}
             </p>
             <button
@@ -665,7 +1267,20 @@ function clearHistoryFilters() {
         </div>
       </div>
       <div
-        v-if="store.visibleCommits.length"
+        v-if="store.repo.history?.nextOffset !== null && store.repo.history"
+        class="history-pagination"
+      >
+        <span>已加载 {{ store.repo.commits.length }} / {{ store.repo.history.total }} 条</span>
+        <button
+          class="secondary-button"
+          :disabled="store.historyLoading || store.busy"
+          @click="loadMore"
+        >
+          {{ store.historyLoading ? '正在加载…' : '加载更早的 250 条提交' }}
+        </button>
+      </div>
+      <div
+        v-else-if="store.repo.commits.length"
         class="history-end"
       >
         <span></span
@@ -673,17 +1288,28 @@ function clearHistoryFilters() {
           name="GitCommitHorizontal"
           :size="14"
         /><small>{{
-          store.repo.total > 250
-            ? '显示最近 250 条提交'
-            : searching
-              ? `找到 ${store.visibleCommits.length} 条提交`
-              : '故事，从这里开始'
+          searching
+            ? `已加载历史中找到 ${store.visibleCommits.length} 条提交`
+            : '已显示全部可用历史'
         }}</small
         ><span></span>
       </div>
+      <div
+        v-if="store.historyError"
+        class="history-page-error"
+        role="alert"
+      >
+        <span>{{ store.historyError }}</span>
+        <button
+          class="text-button"
+          :disabled="store.historyLoading || store.busy"
+          @click="store.loadHistory('reset')"
+        >
+          重新加载历史
+        </button>
+      </div>
     </div>
     <DiffViewer v-if="store.selectedFile" />
-    <MergeEditor v-if="merge.session.editor && merge.session.file" />
     <footer class="history-footer">
       <span><span class="legend-dot teal"></span>颜色区分图谱轨道</span
       ><span
@@ -692,12 +1318,15 @@ function clearHistoryFilters() {
         ><span class="footer-separator">·</span>拓扑排序</span
       >
     </footer>
-    <dialog
-      ref="refsDialog"
-      class="refs-dialog"
+    <div
+      ref="refsPopover"
+      :id="`${graphId}-references`"
+      popover="auto"
+      role="dialog"
+      class="refs-popover"
       aria-labelledby="refs-title"
-      @click="$event.target === refsDialog && closeReferences()"
-      @close="restoreReferenceFocus"
+      @toggle="referencesToggled"
+      @keydown="referencesKeyboard"
     >
       <header>
         <div>
@@ -707,7 +1336,7 @@ function clearHistoryFilters() {
         <button
           class="icon-button"
           aria-label="关闭引用列表"
-          @click="closeReferences"
+          @click="closeReferences(true)"
         >
           <Icon
             name="X"
@@ -715,32 +1344,69 @@ function clearHistoryFilters() {
           />
         </button>
       </header>
-      <p>{{ refsCommit?.subject }}</p>
+      <p :title="refsCommit?.subject">{{ refsCommit?.subject }}</p>
       <ul>
         <li
           v-for="reference in refsCommit ? references(refsCommit) : []"
           :key="reference.key"
         >
-          <Icon
-            :name="
-              reference.kind === 'local'
-                ? 'Laptop'
-                : reference.kind === 'remote'
-                  ? 'Cloud'
-                  : reference.kind === 'tag'
-                    ? 'Tag'
-                    : 'GitBranch'
+          <button
+            class="reference-popup-action"
+            :title="reference.branch ? reference.key : reference.rawLabel"
+            :aria-label="referenceActionLabel(reference)"
+            :aria-disabled="store.busy && reference.kind === 'local' ? true : undefined"
+            @click="popupReferenceActivate(reference, $event)"
+            @contextmenu.prevent.stop="popupReferenceMenu($event, reference)"
+            @keydown="
+              ($event.key === 'ContextMenu' || ($event.shiftKey && $event.key === 'F10')) &&
+              popupReferenceMenu($event, reference)
             "
-            :size="15"
-          /><span>{{ reference.label }}</span
-          ><strong v-if="reference.current">当前分支</strong
+          >
+            <Icon
+              :name="
+                reference.kind === 'local'
+                  ? 'Laptop'
+                  : reference.kind === 'remote'
+                    ? 'Cloud'
+                    : reference.kind === 'tag'
+                      ? 'Tag'
+                      : 'GitBranch'
+              "
+              :size="15"
+            /><span>{{ reference.label }}</span
+            ><strong v-if="reference.current">当前分支</strong></button
           ><code class="reference-full-name">{{
             reference.branch ? reference.key : reference.rawLabel
           }}</code>
         </li>
       </ul>
-    </dialog>
+    </div>
   </main>
+  <Teleport to="body">
+    <div
+      v-if="arrowHint && hintedArrow"
+      :id="`${graphId}-hint`"
+      role="tooltip"
+      class="graph-arrow-tooltip"
+      :style="{ left: `${arrowHint.x}px`, top: `${arrowHint.y}px` }"
+    >
+      <strong v-if="hintMetadata"
+        >跳转到“{{
+          hintMetadata.subject.length > 50
+            ? hintMetadata.subject.slice(0, 47) + '...'
+            : hintMetadata.subject
+        }}”</strong
+      >
+      <strong v-else>跳转到 {{ hintedArrow.targetHash.slice(0, 7) }}</strong>
+      <span v-if="hintMetadata">{{ hintMetadata.author }} · {{ hintDate }}</span>
+      <small>{{ hintedArrow.targetHash.slice(0, 7) }}</small>
+      <span
+        v-if="hintUnavailable"
+        class="graph-arrow-unavailable"
+        >目标提交尚未加载或被筛选隐藏；请加载更早的提交或调整筛选。</span
+      >
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -751,11 +1417,11 @@ function clearHistoryFilters() {
   gap: 0;
   align-items: center;
   text-align: left;
-  font-size: 12px;
+  font-size: var(--ui-font-size);
   color: var(--text);
   box-shadow: inset 0 -1px #ffffff03;
   position: relative;
-  background: #bd93d704;
+  background: var(--theme-purple-fill, #bd93d704);
 }
 .stash-row:hover {
   background: var(--control-hover-bg);
@@ -770,9 +1436,9 @@ function clearHistoryFilters() {
   margin-left: 10px;
   gap: 5px;
   padding: 2px 6px;
-  font-size: 10px;
-  color: #d4b4e6;
-  border: 1px solid #bd93d755;
+  font-size: var(--ui-font-size);
+  color: var(--theme-purple-text, #d4b4e6);
+  border: 1px solid var(--theme-purple-border, #bd93d755);
   border-radius: 3px;
 }
 .stash-row-message {
@@ -781,7 +1447,7 @@ function clearHistoryFilters() {
   text-overflow: ellipsis;
   min-width: 0;
   padding-left: 12px;
-  color: #d4b4e6;
+  color: var(--theme-purple-text, #d4b4e6);
 }
 .stash-row .author-cell {
   overflow: hidden;
@@ -792,5 +1458,9 @@ function clearHistoryFilters() {
 .stash-graph-node {
   pointer-events: all;
   cursor: default;
+}
+.stash-row-message {
+  font: var(--code-font-size)/1.2 var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
 }
 </style>

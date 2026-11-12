@@ -50,3 +50,35 @@ export function knownAncestor(commits: Commit[], ancestor: string, descendant: s
   }
   return false
 }
+
+// Collapse omitted commits into explicit dotted ancestry. A hidden parent is
+// never silently replaced by the next displayed row or an unrelated branch.
+export function projectHistory(commits: Commit[], visible: Commit[]) {
+  const visibleHashes = new Set(visible.map((commit) => commit.hash))
+  const targets = new Map<string, string[]>()
+  for (let row = commits.length - 1; row >= 0; row--) {
+    const commit = commits[row]
+    targets.set(
+      commit.hash,
+      visibleHashes.has(commit.hash)
+        ? [commit.hash]
+        : [...new Set(commit.parents.flatMap((parent) => targets.get(parent) || [parent]))],
+    )
+  }
+  const dotted = new Set<string>()
+  const projected = visible.map((commit) => {
+    const parents = [
+      ...new Set(
+        commit.parents.flatMap((parent) => {
+          const nearest = targets.get(parent) || [parent]
+          for (const hash of nearest)
+            if (hash !== parent && !commit.parents.includes(hash))
+              dotted.add(`${commit.hash}:${hash}`)
+          return nearest
+        }),
+      ),
+    ].filter((parent) => parent !== commit.hash)
+    return { ...commit, parents }
+  })
+  return { commits: projected, dotted }
+}

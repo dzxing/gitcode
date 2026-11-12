@@ -43,7 +43,7 @@ test('application menus invoke existing actions and keep tab draft protection', 
 }) => {
   await openFixtureRepository(page)
   const menubar = page.getByRole('menubar', { name: '应用菜单' })
-  await expect(menubar.getByRole('menuitem')).toHaveCount(4)
+  await expect(menubar.getByRole('menuitem')).toHaveCount(5)
   await page.getByLabel('提交说明', { exact: true }).fill('keep my draft')
   await menubar.getByRole('menuitem', { name: '文件 File', exact: true }).click()
   await page
@@ -54,7 +54,7 @@ test('application menus invoke existing actions and keep tab draft protection', 
   await page.getByRole('button', { name: '保留标签', exact: true }).click()
   await page.getByLabel('提交说明', { exact: true }).focus()
   await page.keyboard.press('Alt+v')
-  await page.getByRole('menuitemcheckbox', { name: '显示 SHA', exact: true }).click()
+  await page.getByRole('menuitemcheckbox', { name: '显示提交 SHA', exact: true }).click()
   await expect(page.locator('.history-panel')).toHaveClass(/show-sha/)
   await page.keyboard.press('Control+w')
   await expect(page.getByRole('dialog', { name: '关闭这个仓库标签？' })).toBeVisible()
@@ -100,6 +100,29 @@ test('window close guards inactive tab drafts and requires explicit discard appr
   await dialog.getByRole('checkbox', { name: '确认丢弃这些说明草稿' }).check()
   await dialog.getByRole('button', { name: '退出 GitCode', exact: true }).click()
   expect(await page.evaluate(() => (window as any).appCalls)).toContainEqual(['approve', 18])
+  expect(
+    await page.evaluate(() =>
+      JSON.parse(localStorage.getItem('gitcode.commitDraft.v1:/test-fixtures/repository')!),
+    ),
+  ).toEqual({ message: '', description: '' })
+})
+
+test('commit description and title recover on reload without sharing text with a new tab', async ({
+  page,
+}) => {
+  await openFixtureRepository(page)
+  await page.getByLabel('提交说明', { exact: true }).fill('recover this title')
+  await page.getByRole('button', { name: /详细说明/ }).click()
+  await page.getByLabel('提交详细说明', { exact: true }).fill('recover this body')
+  await page.reload()
+  await page
+    .getByRole('main', { name: '新标签页', exact: true })
+    .getByRole('button', { name: '打开仓库', exact: true })
+    .click()
+  await expect(page.getByLabel('提交说明', { exact: true })).toHaveValue('recover this title')
+  await expect(page.getByLabel('提交详细说明', { exact: true })).toHaveValue('recover this body')
+  await page.getByRole('button', { name: '新建标签页', exact: true }).click()
+  await expect(page.getByRole('main', { name: '新标签页', exact: true })).toBeVisible()
 })
 
 test('native View reset command reaches the same panel layout handler', async ({ page }) => {

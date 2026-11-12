@@ -792,7 +792,36 @@ test('sync plans reject mirrors, unsafe fetch mappings, multiple push URLs and s
   await assert.rejects(planFor(git, root, 'fetch'), /获取映射/)
 })
 
-test('fetch partial failure returns fresh state and reports each remote without pruning or tags', async (t) => {
+test('fetch removes a server-deleted branch without changing local branches, tags, index or worktree', async (t) => {
+  const { root, git, bare, head, write } = await remoteFixture(t)
+  await git.git(bare, ['update-ref', 'refs/heads/topic', head])
+  await act(git, root, { action: 'fetch' })
+  assert.equal((await git.git(root, ['rev-parse', 'refs/remotes/origin/topic'])).trim(), head)
+  await git.git(root, ['branch', 'topic', head])
+  await git.git(root, ['tag', 'local-only', head])
+  await git.git(root, ['update-ref', 'refs/remotes/other/keep', head])
+  await git.git(root, ['config', 'fetch.pruneTags', 'true'])
+  await git.git(root, ['config', 'remote.origin.pruneTags', 'true'])
+  await git.git(bare, ['update-ref', '-d', 'refs/heads/topic'])
+  await git.git(bare, ['update-ref', 'refs/heads/new-on-server', head])
+  await git.git(bare, ['update-ref', 'refs/tags/remote-only', head])
+  await write('a.txt', 'staged change\n')
+  await git.git(root, ['add', 'a.txt'])
+  await write('a.txt', 'unstaged change\n')
+  const index = await git.indexFingerprint(root)
+  const state = await act(git, root, { action: 'fetch' })
+  assert.ok(!state.snapshot.branches.some((branch) => branch.name === 'origin/topic'))
+  assert.ok(state.snapshot.branches.some((branch) => branch.name === 'origin/new-on-server'))
+  for (const ref of ['refs/heads/topic', 'refs/tags/local-only', 'refs/remotes/other/keep'])
+    assert.equal((await git.git(root, ['rev-parse', ref])).trim(), head)
+  assert.equal((await git.git(root, ['tag', '--list'])).trim(), 'local-only')
+  assert.equal(await git.head(root), head)
+  assert.equal(await git.currentBranch(root), 'main')
+  assert.equal(await git.indexFingerprint(root), index)
+  assert.equal(await fs.readFile(path.join(root, 'a.txt'), 'utf8'), 'unstaged change\n')
+})
+
+test('fetch prunes reachable remote tracking refs while preserving unreachable remotes and tags', async (t) => {
   const { root, git, bare, peer, head } = await remoteFixture(t)
   await git.git(root, ['update-ref', 'refs/remotes/origin/deleted-on-server', head])
   await git.git(root, ['config', 'fetch.prune', 'true'])
@@ -805,13 +834,15 @@ test('fetch partial failure returns fresh state and reports each remote without 
   await git.git(other, ['tag', 'remote-tag'])
   await git.git(other, ['push', 'origin', 'main', 'remote-tag'])
   await git.git(root, ['remote', 'add', 'broken', path.join(root, '.git', 'nonexistent.git')])
+  await git.git(root, ['update-ref', 'refs/remotes/broken/keep-on-failure', head])
   const plan = await planFor(git, root, 'fetch')
   const result = await git.action(root, { action: 'fetch', planId: plan.id })
   assert.equal(result.outcome, 'partial')
   assert.ok(result.steps.some((step) => step.remote === 'origin' && step.ok))
   assert.ok(result.steps.some((step) => step.remote === 'broken' && !step.ok))
   assert.equal(result.snapshot.branches.find((b) => b.name === 'origin/main').hash, next)
-  assert.ok(result.snapshot.branches.some((b) => b.name === 'origin/deleted-on-server'))
+  assert.ok(!result.snapshot.branches.some((b) => b.name === 'origin/deleted-on-server'))
+  assert.ok(result.snapshot.branches.some((b) => b.name === 'broken/keep-on-failure'))
   assert.equal((await git.git(root, ['tag', '--list'])).trim(), '')
   assert.equal((await git.git(bare, ['rev-parse', 'main'])).trim(), next)
 })
@@ -906,7 +937,7 @@ test('refs with commas remain intact and hook failure reports state changes with
     expectedBranch: 'main',
   })
   assert.equal(result.outcome, 'partial')
-  assert.match(result.warning, /结果待核实/)
+  assert.match(result.warning, /提交未生成.*暂存内容已变化/)
   assert.equal(result.snapshot.head, head)
   assert.ok(result.snapshot.staged.some((f) => f.path === 'hook.txt'))
 })
@@ -1003,7 +1034,8 @@ test('sync preview strips credentials and clone/init distinguish creation from r
   const created = await git.create({ kind: 'init', path: target })
   git.snapshot = snapshot
   assert.equal(created.snapshot, null)
-  assert.equal(created.path, target)
+  // Windows TEMP can use an 8.3 alias while creation returns the canonical path.
+  assert.equal(await fs.realpath(created.path), await fs.realpath(target))
   assert.match(created.warning, /已创建.*读取失败/)
   assert.ok((await fs.stat(path.join(target, '.git'))).isDirectory())
 })
@@ -1184,8 +1216,15 @@ test('setting upstream validates both refs and worktree occupancy is exposed wit
   t.after(() => fs.rm(linked, { recursive: true, force: true, maxRetries: 3 }))
   await git.git(root, ['worktree', 'add', linked, 'topic'])
   const snapshot = await git.snapshot(root)
-  assert.equal(snapshot.branches.find((b) => b.name === 'topic').worktreePath, linked)
-  assert.equal(snapshot.branches.find((b) => b.name === 'main').worktreePath, root)
+  // Git emits slash-separated canonical paths on Windows, including for 8.3 inputs.
+  assert.equal(
+    await fs.realpath(snapshot.branches.find((b) => b.name === 'topic').worktreePath),
+    await fs.realpath(linked),
+  )
+  assert.equal(
+    await fs.realpath(snapshot.branches.find((b) => b.name === 'main').worktreePath),
+    await fs.realpath(root),
+  )
   const request = {
     action: 'set-upstream',
     name: 'main',
@@ -1205,3 +1244,107 @@ test('setting upstream validates both refs and worktree occupancy is exposed wit
   await assert.rejects(act(git, root, { ...request, upstreamOid: 'f'.repeat(40) }), /已变化/)
   await assert.rejects(act(git, root, { ...request, fullRef: 'refs/heads/topic' }), /远程上游/)
 })
+
+test('branch identity remains exact with same-name tags and literal heads prefixes', async (t) => {
+  const { root, git, write, commit } = await repository(t)
+  await write('a.txt')
+  const base = await commit()
+  await git.git(root, ['tag', 'main'])
+  assert.equal(await git.currentBranch(root), 'main')
+  assert.equal((await git.snapshot(root)).branch, 'main')
+  await git.git(root, ['switch', '-c', 'heads/main'])
+  await git.git(root, ['tag', 'heads/main'])
+  assert.equal(await git.currentBranch(root), 'heads/main')
+  await git.git(root, ['switch', '--orphan', 'qa/unborn'])
+  await git.git(root, ['tag', 'qa/unborn', base])
+  assert.equal(await git.currentBranch(root), 'qa/unborn')
+  assert.equal(await git.head(root), '')
+  await git.git(root, ['switch', '--detach', base])
+  assert.equal(await git.currentBranch(root), '')
+})
+
+test('file-directory transitions reject partial stage and unstage selections without touching the index', async (t) => {
+  const { root, git, write, commit } = await repository(t)
+  await write('entry', 'old\n')
+  await commit()
+  await fs.rm(path.join(root, 'entry'))
+  await fs.mkdir(path.join(root, 'entry'))
+  await write('entry/child.txt', 'new\n')
+  const before = await git.indexFingerprint(root)
+  await assert.rejects(act(git, root, { action: 'stage', paths: ['entry'] }), /一并选择/)
+  assert.equal(await git.indexFingerprint(root), before)
+  await act(git, root, { action: 'stage', paths: ['entry', 'entry/child.txt'] })
+  const staged = await git.indexFingerprint(root)
+  await assert.rejects(act(git, root, { action: 'unstage', paths: ['entry'] }), /一并选择/)
+  assert.equal(await git.indexFingerprint(root), staged)
+  await assert.rejects(
+    act(git, root, { action: 'unstage', paths: ['entry/child.txt'] }),
+    /一并选择/,
+  )
+  await act(git, root, { action: 'unstage', paths: ['entry', 'entry/child.txt'] })
+  assert.equal((await git.status(root)).staged.length, 0)
+  assert.equal(await fs.readFile(path.join(root, 'entry', 'child.txt'), 'utf8'), 'new\n')
+})
+
+test('normal history and count exclude metadata refs while retaining detached HEAD and public tags', async (t) => {
+  const { root, git, write, commit } = await repository(t)
+  await write('a.txt')
+  const base = await commit()
+  await git.git(root, ['notes', 'add', '-m', 'private metadata'])
+  const tree = (await git.git(root, ['rev-parse', 'HEAD^{tree}'])).trim()
+  const extra = (await git.git(root, ['commit-tree', tree, '-m', 'metadata only'])).trim()
+  for (const ref of [
+    'refs/prefetch/remotes/origin/hidden',
+    'refs/other/hidden',
+    'refs/gitcode/recovery/test',
+  ])
+    await git.git(root, ['update-ref', ref, extra])
+  let state = await git.snapshot(root)
+  assert.equal(state.total, 1)
+  assert.deepEqual(
+    state.commits.map((c) => c.hash),
+    [base],
+  )
+  await git.git(root, ['tag', '-a', 'public-tag', '-m', 'tag', extra])
+  state = await git.snapshot(root)
+  assert.equal(state.total, 2)
+  assert.ok(state.commits.some((c) => c.hash === extra))
+  await git.git(root, ['tag', '-d', 'public-tag'])
+  await git.git(root, ['switch', '--detach', extra])
+  state = await git.snapshot(root)
+  assert.equal(state.total, 2)
+  assert.ok(state.commits.some((c) => c.hash === extra))
+})
+
+test('staged rename diffs preserve both paths even when rename detection is disabled in user config', async (t) => {
+  const { root, git, write, commit } = await repository(t)
+  await write('old.txt', 'one\ntwo\nthree\n')
+  await commit()
+  await git.git(root, ['mv', 'old.txt', 'renamed.txt'])
+  await git.git(root, ['config', 'diff.renames', 'false'])
+  const diff = await git.diff(root, 'renamed.txt', true)
+  assert.match(diff.diff, /rename from old.txt/)
+  assert.match(diff.diff, /rename to renamed.txt/)
+  assert.doesNotMatch(diff.diff, /new file mode/)
+})
+
+test(
+  'Windows long paths remain visible and can be staged without changing repository configuration',
+  { skip: process.platform !== 'win32' },
+  async (t) => {
+    const { root, git, write, commit } = await repository(t)
+    await write('base.txt')
+    await commit()
+    await git.git(root, ['config', 'core.longpaths', 'false'])
+    const name =
+      Array.from({ length: 10 }, (_, i) => 'directory-' + i + '-abcdefghijklmnop').join('/') +
+      '/deep.txt'
+    await fs.mkdir(path.dirname(path.join(root, name)), { recursive: true })
+    await write(name, 'deep\n')
+    assert.ok(path.join(root, name).length > 260)
+    assert.ok((await git.status(root)).unstaged.some((file) => file.path === name))
+    const result = await act(git, root, { action: 'stage', paths: [name] })
+    assert.ok(result.snapshot.staged.some((file) => file.path === name))
+    assert.match(await fs.readFile(path.join(root, '.git', 'config'), 'utf8'), /longpaths = false/)
+  },
+)

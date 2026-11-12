@@ -303,7 +303,7 @@ function keydown(event: KeyboardEvent) {
   min-height: 32px;
   justify-content: flex-start;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--ui-font-size);
   text-align: left;
 }
 .worktree-row-main > svg {
@@ -314,7 +314,7 @@ function keydown(event: KeyboardEvent) {
   padding: 0;
 }
 .worktree-file-caption.file-name {
-  font-size: 12px;
+  font-size: var(--ui-font-help);
   flex-direction: row;
   display: flex;
   align-items: baseline;
@@ -331,7 +331,7 @@ function keydown(event: KeyboardEvent) {
 }
 .worktree-file-caption.file-name small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -345,18 +345,18 @@ function keydown(event: KeyboardEvent) {
 .worktree-folder-main > small {
   margin-left: auto;
   color: var(--muted);
-  font: 11px var(--mono);
+  font: var(--ui-font-help)/1.5 var(--mono);
   font-weight: 400;
 }
 .worktree-index-badge {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   color: var(--muted);
 }
 .worktree-file-status {
   flex-shrink: 0;
   margin-left: auto;
-  font: 11px var(--mono);
+  font: var(--ui-font-help)/1.5 var(--mono);
 }
 .status-A {
   color: var(--git-added);

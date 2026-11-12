@@ -214,6 +214,7 @@ function openBranchMenu(event: MouseEvent) {
       <Icon
         name="Star"
         :size="13"
+        :filled="favorite"
       />
     </button>
     <Teleport

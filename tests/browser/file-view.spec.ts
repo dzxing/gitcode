@@ -67,6 +67,12 @@ test('file density preserves selections and drafts, distinguishes paths and pers
           gitPath: 'test',
           gitError: '',
         }),
+        repositoryTrust: async (path: string) => ({
+          path,
+          gitDir: path + '/.git',
+          trusted: true,
+          token: '',
+        }),
         snapshot: async () => structuredClone(fixture),
         commit: async () => ({ body: 'File view check', files: structuredClone(files) }),
         diff: async () => ({

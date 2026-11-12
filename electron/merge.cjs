@@ -15,18 +15,38 @@ class MergeOperations {
     this.validators = validators
     this.reads = new Map()
   }
-  async gitFile(repo, name, signal) {
-    const location = path.resolve(
-      repo,
-      (await this.git.git(repo, ['rev-parse', '--git-path', name], { signal })).trim(),
-    )
+  async gitFile(repo, name, signal, locations) {
+    const location =
+      locations?.get(name) ||
+      path.resolve(
+        repo,
+        (await this.git.git(repo, ['rev-parse', '--git-path', name], { signal })).trim(),
+      )
     return fs.readFile(location, { signal }).catch(missing)
   }
-  async state(repo, signal) {
-    const rebase = await this.git.rebase.state(repo, signal)
+  async state(repo, signal, locations) {
+    const rebase = await this.git.rebase.state(repo, signal, locations)
     const raw = await this.git.git(repo, ['ls-files', '--unmerged', '-z'], { signal }),
-      incoming = (await this.gitFile(repo, 'MERGE_HEAD', signal))?.toString('utf8').trim() || ''
-    if (!raw && !incoming && !rebase) return null
+      incoming =
+        (await this.gitFile(repo, 'MERGE_HEAD', signal, locations))?.toString('utf8').trim() || ''
+    const cherry = (await this.gitFile(repo, 'CHERRY_PICK_HEAD', signal, locations))
+      ?.toString('utf8')
+      .trim()
+    const revert = (await this.gitFile(repo, 'REVERT_HEAD', signal, locations))
+      ?.toString('utf8')
+      .trim()
+    const todo =
+      (await this.gitFile(repo, 'sequencer/todo', signal, locations))?.toString('utf8') || ''
+    const sequence = cherry
+      ? 'cherry-pick'
+      : revert
+        ? 'revert'
+        : /^pick /m.test(todo)
+          ? 'cherry-pick'
+          : /^revert /m.test(todo)
+            ? 'revert'
+            : null
+    if (!raw && !incoming && !rebase && !sequence) return null
     const files = new Map()
     for (const record of raw.split('\0').filter(Boolean)) {
       const match = record.match(/^(\d+) ([a-f0-9]+) ([123])\t([\s\S]+)$/)
@@ -38,11 +58,13 @@ class MergeOperations {
       files.set(file, value)
     }
     let unsupported = false
-    for (const name of ['CHERRY_PICK_HEAD', 'REVERT_HEAD', ...(!rebase ? ['rebase-apply'] : [])]) {
-      const location = path.resolve(
-        repo,
-        (await this.git.git(repo, ['rev-parse', '--git-path', name], { signal })).trim(),
-      )
+    for (const name of [...(!rebase ? ['rebase-apply'] : [])]) {
+      const location =
+        locations?.get(name) ||
+        path.resolve(
+          repo,
+          (await this.git.git(repo, ['rev-parse', '--git-path', name], { signal })).trim(),
+        )
       if (await fs.stat(location).catch(missing)) unsupported = true
     }
     if (incoming && !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(incoming)) unsupported = true
@@ -64,6 +86,33 @@ class MergeOperations {
     const config = await this.git.git(repo, ['config', '--null', '--list', '--includes'], {
       signal,
     })
+    const attributes = files.size
+      ? await this.git.git(
+          repo,
+          [
+            'check-attr',
+            '-z',
+            '--stdin',
+            'filter',
+            'working-tree-encoding',
+            'ident',
+            'conflict-marker-size',
+          ],
+          { signal, input: [...files.keys()].join('\0') + '\0' },
+        )
+      : ''
+    const formats = new Map()
+    const fields = attributes.split('\0')
+    for (let i = 0; i + 2 < fields.length; i += 3) {
+      const format = formats.get(fields[i]) || { markerSize: 7, manualReason: '' }
+      if (fields[i + 1] === 'conflict-marker-size') {
+        const size = Number(fields[i + 2])
+        if (Number.isSafeInteger(size) && size > 0 && size <= MAX_TEXT) format.markerSize = size
+      } else if (!['unspecified', 'unset'].includes(fields[i + 2]))
+        format.manualReason =
+          '该文件使用 LFS、内容过滤器或编码转换，不提供手动文本保存。请采用完整版本或外部工具处理。'
+      formats.set(fields[i], format)
+    }
     const signature = hash(
       JSON.stringify({
         head,
@@ -75,20 +124,27 @@ class MergeOperations {
         status,
         unsupported,
         config,
+        attributes,
         rebase,
+        sequence,
+        cherry,
+        revert,
+        todo,
       }),
     )
     return {
-      active: !!incoming || !!rebase,
-      incoming: rebase?.pausedOid || incoming,
+      active: !!incoming || !!rebase || !!sequence,
+      incoming: rebase?.pausedOid || cherry || revert || incoming,
       head,
       branch: branch || 'detached HEAD',
       ...(rebase ? { rebase } : {}),
+      ...(sequence ? { sequence } : {}),
       signature,
       unsupported,
       unsupportedReason,
       files: [...files.values()].map((f) => ({
         ...f,
+        ...formats.get(f.path),
         type: !f.stages[2]
           ? 'added-or-deleted-locally'
           : !f.stages[3]
@@ -127,7 +183,13 @@ class MergeOperations {
     )
     if (size > MAX_TEXT) return { exists: true, text: null, binary: true }
     try {
-      const text = await this.git.git(repo, ['cat-file', 'blob', stage.oid], { signal })
+      // A batch header keeps a leading BOM away from the transport decoder's
+      // start, where TextDecoder would otherwise discard it.
+      const framed = await this.git.git(repo, ['cat-file', '--batch'], {
+        signal,
+        input: stage.oid + '\n',
+      })
+      const text = framed.slice(framed.indexOf('\n') + 1, -1)
       return { exists: true, text: text.includes('\0') ? null : text, binary: text.includes('\0') }
     } catch (error) {
       if (signal?.aborted) throw error
@@ -150,7 +212,25 @@ class MergeOperations {
       if (buffer && buffer.length <= MAX_TEXT && !buffer.includes(0))
         working = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer)
     } catch {}
-    const editable = [base, ours, theirs].every((v) => !v.binary) && working !== null
+    const editable =
+      !conflict.manualReason && [base, ours, theirs].every((v) => !v.binary) && working !== null
+    let markerSize = conflict.markerSize || 7
+    // Attributes may have changed since Git wrote the markers. Retain the
+    // actual complete marker block's width when re-reading such a conflict.
+    const widths = [
+      ...new Set(
+        Array.from((working || '').matchAll(/^(<+)(?: |\r?$)/gm), (match) => match[1].length),
+      ),
+    ].sort((a, b) => a - b)
+    for (const size of widths) {
+      if (
+        new RegExp(`^={${size}}\\r?$`, 'm').test(working) &&
+        new RegExp(`^>{${size}}(?: |\\r?$)`, 'm').test(working)
+      ) {
+        markerSize = Math.min(markerSize, size)
+        break
+      }
+    }
     if ((await this.state(repo, signal))?.signature !== state.signature)
       throw new Error('读取期间文件发生变化，请重新打开。')
     const token = randomUUID()
@@ -167,6 +247,8 @@ class MergeOperations {
         theirs,
         working,
         editable,
+        markerSize,
+        ...(conflict.manualReason ? { manualReason: conflict.manualReason } : {}),
         supported: [...Object.values(conflict.stages)].every((v) =>
           ['100644', '100755'].includes(v.mode),
         ),
@@ -337,15 +419,19 @@ class MergeOperations {
       let expectedText
       if (request.choice === 'manual') {
         this.validators.string(request.content, '合并结果', { empty: true, max: MAX_TEXT })
-        if (
-          Buffer.byteLength(request.content) > MAX_TEXT ||
-          /^(?:<{7,}|={7,}|>{7,}|\|{7,})(?: |\r?$)/m.test(request.content)
-        )
-          throw new Error('合并结果仍含冲突标记或内容过大，请继续处理。')
         const read = await this.read(repo, request.file, signal)
         this.reads.delete(read.file.token)
-        if (!read.file.editable) throw new Error('二进制或非 UTF-8 文件不支持手动文本保存。')
+        if (!read.file.editable)
+          throw new Error(read.file.manualReason || '二进制或非 UTF-8 文件不支持手动文本保存。')
         if (read.state.signature !== state.signature) throw new Error('文件已变化，请重新打开。')
+        const size = read.file.markerSize || 7
+        if (
+          Buffer.byteLength(request.content) > MAX_TEXT ||
+          new RegExp(`^(?:<{${size},}|>{${size},}|\\|{${size},})(?: |\\r?$)`, 'm').test(
+            request.content,
+          )
+        )
+          throw new Error('合并结果仍含冲突标记或内容过大，请继续处理。')
         expectedText = read.file.working
       }
       this.reads.delete(request.token)
@@ -400,6 +486,7 @@ class MergeOperations {
       }
     }
     if (state.rebase) throw new Error('当前正在变基，请使用继续、跳过或中止变基。')
+    if (state.sequence) throw Error('请使用优选或还原的继续、跳过或中止操作。')
     if (!state.active) throw new Error('当前不是未完成的合并；贮藏恢复冲突解决后无需完成合并。')
     if (request.action === 'merge-abort')
       return {

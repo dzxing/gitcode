@@ -36,6 +36,9 @@ const fetchFlags = [
   '--no-write-fetch-head',
   '--refmap=',
 ]
+// Only Fetch All uses the validated remote-tracking mappings. Pull and push
+// preflight fetch into a single/private ref and must never prune other refs.
+const remoteFetchFlags = fetchFlags.map((flag) => (flag === '--no-prune' ? '--prune' : flag))
 
 class SyncOperations {
   constructor(git, validRemote) {
@@ -51,6 +54,11 @@ class SyncOperations {
     let head = contextHead,
       branch = contextBranch
     let selection
+    if (
+      (expected.commitOid !== undefined || expected.detachedSource !== undefined) &&
+      kind !== 'push'
+    )
+      throw Error('提交末端选择仅适用于推送。')
     if (expected.sourceRef !== undefined || expected.sourceOid !== undefined) {
       if (
         !['push', 'pull'].includes(kind) ||
@@ -64,6 +72,27 @@ class SyncOperations {
       if (kind === 'pull' && branch !== contextBranch)
         throw new Error(`请先切换到 ${branch}，再拉取其远程上游。`)
       selection = { sourceRef: expected.sourceRef, sourceOid: head }
+    }
+    if (kind === 'push' && expected.commitOid !== undefined) {
+      if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(expected.commitOid))
+        throw Error('无效的推送提交。')
+      const oid = (
+        await git.git(repo, ['rev-parse', '--verify', `${expected.commitOid}^{commit}`], { signal })
+      ).trim()
+      if (oid !== expected.commitOid) throw Error('推送提交已失效。')
+      if (!expected.detachedSource) {
+        const ancestor = await git.git(repo, ['merge-base', '--is-ancestor', oid, head], {
+          signal,
+          allowedCodes: [0, 1],
+          returnCode: true,
+        })
+        if (ancestor.code !== 0) throw Error('选中提交不属于推送源分支。')
+      } else branch = ''
+      selection = {
+        ...selection,
+        commitOid: oid,
+        ...(expected.detachedSource ? { detachedSource: true } : {}),
+      }
     }
     const raw = await git.git(repo, ['config', '--null', '--list', '--includes'], { signal })
     const config = parseConfig(raw)
@@ -137,11 +166,13 @@ class SyncOperations {
       }
       if (!entries.length) throw new Error('没有可获取的远程，所有远程均配置为跳过。')
     } else {
-      if (!head || !branch)
+      if (!head || (!branch && !expected.detachedSource))
         throw new Error('同步需要已提交的本地分支，当前可能是空仓库或分离 HEAD。')
+      if (branch) await git.checkReference(repo, `refs/heads/${branch}`, head, signal)
+      if (expected.commitOid) head = expected.commitOid
       const pullRemote = config.get(`branch.${branch}.remote`)
       const merge = config.all(`branch.${branch}.merge`)
-      const firstPush = kind === 'push' && !pullRemote && merge.length === 0
+      const firstPush = kind === 'push' && (!branch || (!pullRemote && merge.length === 0))
       if (!firstPush && (!pullRemote || merge.length !== 1 || !merge[0]?.startsWith('refs/heads/')))
         throw new Error(`分支 ${branch} 尚无明确上游，请先通过 Git 配置上游后重试。`)
       if (expected.publish && !firstPush)
@@ -166,6 +197,7 @@ class SyncOperations {
           : pullRemote
       if (firstPush) {
         const target = requested ? await git.branchName(repo, requested.branch, signal) : branch
+        if (!target) throw Error('请为此提交选择明确的远端目标分支。')
         destinationRef = `refs/heads/${target}`
         publish = { remote, branch: target, remotes }
       } else
@@ -265,12 +297,15 @@ class SyncOperations {
       contextHead,
       contextBranch: contextBranch || 'detached HEAD',
       selection,
-      sourceRef: branch ? `refs/heads/${branch}` : '',
+      sourceRef: branch ? `refs/heads/${branch}` : expected.commitOid || '',
       destinationRef,
       trackedDestination,
       publish,
       entries,
       fingerprint,
+      targetFingerprint: createHash('sha256')
+        .update(JSON.stringify({ raw, entries, branch, destinationRef, publish }))
+        .digest('hex'),
     }
   }
   async remoteCheck(plan, signal) {
@@ -397,7 +432,140 @@ class SyncOperations {
     if ([...state.staged, ...state.unstaged].some((f) => f.status === 'U'))
       throw new Error('请先解决已有冲突，再拉取远端更新。')
   }
+  async pullAndPush(repo, request, signal) {
+    const original = this.plans.get(request.planId)
+    this.plans.delete(request.planId)
+    if (
+      !original ||
+      original.repo !== repo ||
+      original.kind !== 'push' ||
+      original.expiresAt < Date.now()
+    )
+      throw new Error('推送目标已失效，请重新核对。')
+    if (original.publish || !['behind', 'diverged'].includes(original.remoteCheck?.state))
+      throw new Error('请先核对已有分支的远端更新，再选择拉取并推送。')
+    if (original.selection?.commitOid)
+      throw Error('按指定提交推送不能自动拉取后续推送，请先关闭计划并手动整合。')
+    if (original.branch !== original.contextBranch)
+      throw new Error(`请先切换到 ${original.branch}，再拉取并推送该分支。`)
+    await this.verify(original, signal)
+    const git = this.service
+    const phase = (message) => {
+      if (git.activity) git.activity = { ...git.activity, phase: message, percent: null }
+    }
+    let pulled
+    const issued = []
+    try {
+      phase('核对拉取与推送目标')
+      const pull = await this.plan(
+        repo,
+        'pull',
+        {
+          expectedHead: original.contextHead,
+          expectedBranch: original.contextBranch,
+          ...original.selection,
+          method: 'merge',
+        },
+        signal,
+      )
+      const target = this.plans.get(pull.id)
+      issued.push(pull.id)
+      if (
+        target.destinationRef !== original.destinationRef ||
+        target.entries[0].remote !== original.entries[0].remote ||
+        target.entries[0].url !== original.entries[0].url
+      ) {
+        this.plans.delete(pull.id)
+        throw new Error('拉取上游与本次推送目标不同，请分别核对并操作；未开始拉取。')
+      }
+      signal?.throwIfAborted()
+      phase('获取并合并远端更新')
+      pulled = await this.execute(repo, { action: 'pull', planId: pull.id }, signal)
+      if (pulled.outcome !== 'succeeded' || pulled.cleanupError || signal?.aborted)
+        return {
+          ...pulled,
+          ...(signal?.aborted ? { outcome: 'cancelled' } : {}),
+          warning: [pulled.warning, '后续推送已停止。请处理并核对仓库状态后手动推送。']
+            .filter(Boolean)
+            .join('\n'),
+        }
+      const receipt = pulled.integration
+      if (!receipt) throw new Error('无法确认拉取结果，已停止后续推送。')
+      await git.checkContext(
+        repo,
+        { expectedHead: receipt.head, expectedBranch: original.contextBranch },
+        signal,
+      )
+      // Accept only the exact fast-forward/no-op or the merge with the reviewed parents.
+      // An external/post-commit commit must not be silently included in the continuation.
+      const parents = (await git.git(repo, ['show', '-s', '--format=%P', receipt.head], { signal }))
+        .trim()
+        .split(' ')
+      const ancestor = async (a, b) =>
+        (await git.git(repo, ['merge-base', '--all', a, b], { signal, allowedCodes: [0, 1] }))
+          .trim()
+          .split('\n')
+          .includes(a)
+      const expected =
+        receipt.head === original.head
+          ? await ancestor(receipt.target, original.head)
+          : receipt.head === receipt.target
+            ? await ancestor(original.head, receipt.target)
+            : parents.length === 2 && parents[0] === original.head && parents[1] === receipt.target
+      if (!expected) throw new Error('拉取后的提交已发生额外变化，请检查历史后手动推送。')
+      phase('重新核对远端推送目标')
+      const next = await this.plan(
+        repo,
+        'push',
+        {
+          expectedHead: receipt.head,
+          expectedBranch: original.contextBranch,
+          sourceRef: original.sourceRef,
+          sourceOid: receipt.head,
+        },
+        signal,
+      )
+      const nextPlan = this.plans.get(next.id)
+      issued.push(next.id)
+      if (
+        nextPlan.targetFingerprint !== original.targetFingerprint ||
+        !['current', 'forward'].includes(next.remoteCheck?.state)
+      ) {
+        this.plans.delete(next.id)
+        throw new Error('拉取已完成，但推送目标或远端状态再次变化。已停止续推，请重新核对。')
+      }
+      signal?.throwIfAborted()
+      phase('推送合并后的提交')
+      const pushed = await this.execute(repo, { action: 'push', planId: next.id }, signal)
+      return {
+        ...pushed,
+        output: [pulled.output, pushed.output].filter(Boolean).join('\n'),
+        ...(pushed.outcome !== 'succeeded'
+          ? {
+              outcome: signal?.aborted ? 'cancelled' : 'partial',
+              warning: [
+                '拉取已完成；后续推送未正常完成，请核对远端结果，不要重复合并。',
+                pushed.warning,
+              ]
+                .filter(Boolean)
+                .join('\n'),
+            }
+          : {}),
+      }
+    } catch (error) {
+      if (!pulled) throw error
+      return {
+        output: pulled.output,
+        outcome: signal?.aborted ? 'cancelled' : 'partial',
+        error: git.safeError(error),
+        warning: '拉取阶段已执行，后续推送已停止。请核对实际仓库状态后手动推送。',
+      }
+    } finally {
+      for (const id of issued) this.plans.delete(id)
+    }
+  }
   async execute(repo, request, signal) {
+    if (request.action === 'pull-and-push') return this.pullAndPush(repo, request, signal)
     const plan = this.plans.get(request.planId)
     this.plans.delete(request.planId)
     if (!plan || plan.repo !== repo || plan.kind !== request.action || plan.expiresAt < Date.now())
@@ -416,6 +584,7 @@ class SyncOperations {
     try {
       if (plan.kind === 'fetch') {
         for (const entry of plan.entries) {
+          if (plan.backgroundSkip?.includes(entry.remote)) continue
           if (signal?.aborted) {
             failure = new Error('获取已取消，部分远程可能已经更新。')
             break
@@ -424,8 +593,21 @@ class SyncOperations {
             await this.verify(plan, signal)
             output += await git.git(
               repo,
-              ['fetch', ...fetchFlags, '--', entry.remote, ...entry.mappings],
-              { signal, timeout: 300000 },
+              [
+                'fetch',
+                ...remoteFetchFlags,
+                ...(git.background ? ['--no-auto-maintenance'] : []),
+                '--',
+                entry.remote,
+                ...entry.mappings,
+              ],
+              {
+                signal,
+                timeout: git.background ? 30000 : 300000,
+                ...(git.background
+                  ? { hooksPath: require('node:path').join(__dirname, 'no-hooks') }
+                  : {}),
+              },
             )
             steps.push({ remote: entry.remote, ok: true })
           } catch (error) {
@@ -462,10 +644,10 @@ class SyncOperations {
             entry.remote,
             `${plan.head}:${plan.destinationRef}`,
           ],
-          { signal, timeout: 300000 },
+          { signal, timeout: 300000, diagnose: true },
         )
         steps.push({ remote: entry.remote, ok: true })
-        if (plan.publish) {
+        if (plan.publish && plan.branch !== 'detached HEAD') {
           await this.verify(plan, signal)
           await git.git(
             repo,
@@ -511,6 +693,8 @@ class SyncOperations {
         mergeResult = await git.merge.integrate(repo, temporaryOid, signal, {
           ffOnly: plan.method !== 'merge',
         })
+        if (mergeResult.outcome === 'succeeded')
+          mergeResult.integration = { head: await git.head(repo, signal), target: temporaryOid }
       }
     } catch (error) {
       failure = error
@@ -581,6 +765,7 @@ class SyncOperations {
       outcome,
       ...(syncProblem ? { syncProblem, details } : {}),
       ...(mergeResult?.warning ? { warning: mergeResult.warning } : {}),
+      ...(mergeResult?.integration ? { integration: mergeResult.integration } : {}),
       ...(failure && plan.kind === 'push'
         ? {
             warning:

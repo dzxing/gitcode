@@ -1,0 +1,14 @@
+Material Symbols Outlined by Google
+
+Source: https://github.com/google/material-design-icons
+Upstream revision: 10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7
+License: Apache License, Version 2.0 (see LICENSE.txt)
+
+The original SVG files are stored, without path edits, in
+src/assets/icons/material-symbols/. The manifest records each upstream path,
+Git blob SHA and SHA-256 checksum. The renderer applies the application's
+currentColor and dimensions to these local SVG paths. No online icon font or
+runtime CDN is used. Star includes Google's original filled variant.
+
+These assets are bundled into the frontend; this notice and LICENSE.txt are
+included in desktop packages through the existing third-party/**/* rule.

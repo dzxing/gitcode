@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from '../../scripts/confirm-fixture-trust.mjs'
 import { test, expect } from '@playwright/test'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -50,6 +51,7 @@ async function fixture(page, options, work) {
     const dialog = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await dialog.getByLabel('仓库路径', { exact: true }).fill(root)
     await dialog.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(dialog).not.toBeVisible()
     const menu = async () => {
       await page
@@ -98,8 +100,22 @@ test('interactive rebase replaces navigation and graph, preserves details and ex
     await page.evaluate(async (sha) => {
       const { useRepositoryStore } = await import('/src/stores/repository.ts')
       const repo = useRepositoryStore()
+      // This fixture intentionally alters the loaded history. Pause external
+      // observation so it cannot restore the omitted row during menu planning.
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+      for (let i = 0; repo.externalRefreshing && i < 100; i++)
+        await new Promise((resolve) => setTimeout(resolve, 50))
       repo.repo.commits = repo.repo.commits.filter((commit) => commit.hash !== sha)
     }, f.first)
+    const eligibility = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/__gitcode/rpc') &&
+        response.request().postDataJSON().method === 'rebase-menu-read',
+    )
+    await f.menu()
+    await eligibility
+    // Branch menus apply asynchronous eligibility on the next opening.
+    await page.keyboard.press('Escape')
     await (
       await f.menu()
     )

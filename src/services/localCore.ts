@@ -34,12 +34,12 @@ export function createLocalCoreClient(
         token = ''
         session = null
         throw new LocalConnectionError(
-          '本机 Git 核心尚未连接或连接已失效。请重新连接并核对仓库状态。',
+          '本地 Git 服务尚未连接或连接已失效。请重新连接并核对仓库状态。',
         )
       }
       const data: unknown = await response.json()
       if (!data || typeof data !== 'object' || Array.isArray(data))
-        throw new LocalRequestError('本机核心返回了无效响应。')
+        throw new LocalRequestError('本地 Git 服务返回了无效响应。')
       const value = data as Record<string, unknown>
       if (!response.ok || value.error)
         throw new LocalRequestError(
@@ -53,7 +53,7 @@ export function createLocalCoreClient(
       if (error instanceof LocalConnectionError) throw error
       // Never replay a mutation after a transport failure: Git may have completed it.
       throw new LocalConnectionError(
-        '与本机 Git 核心的连接中断。请重新连接并核对仓库状态，刚才的操作可能已经生效。',
+        '与本地 Git 服务的连接中断。请重新连接并核对仓库状态，刚才的操作可能已经生效。',
       )
     }
   }
@@ -68,7 +68,7 @@ export function createLocalCoreClient(
             !/^[a-f0-9]{64}$/.test(value.token)
           ) {
             disconnected()
-            throw new LocalConnectionError('本机 Git 核心版本不匹配，请重新启动 GitCode。')
+            throw new LocalConnectionError('本地 Git 服务版本不匹配，请重新启动 GitCode。')
           }
           token = value.token
           return token
@@ -93,7 +93,24 @@ export function createLocalCoreClient(
     }
   }
   const bridge: DesktopBridge = {
+    historyMetadata: (repo, sha) => cancellableRead('history-metadata', [repo, sha]),
+    historyRead: (repo, request) => cancellableRead('history-read', [repo, request]),
+    repositoryTrust: (repo) => rpc('repository-trust', [repo]),
+    approveRepositoryTrust: (repo, token) => rpc('repository-trust-approve', [repo, token]),
+    partialStageRead: (repo, request) => cancellableRead('partial-stage-read', [repo, request]),
+    recoveryRead: (repo) => cancellableRead('recovery-read', [repo]),
+    repositoryChanges: (repo) => rpc('repository-changes', [repo]),
+    backgroundSnapshot: (repo, request) => cancellableRead('background-snapshot', [repo, request]),
+    activity: () => rpc('activity', []),
+    operationLog: (request) => rpc('operation-log', [request]),
+    clearOperationLog: (request) => rpc('operation-log-clear', [request]),
+    activitySettings: (value) => rpc('activity-settings', [value]),
+    automaticFetch: (repo) => rpc('auto-fetch', [repo]),
+    fetchStatus: (repo) => rpc('fetch-status', [repo]),
+    rebaseMenuRead: (repo, request) => cancellableRead('rebase-menu-read', [repo, request]),
     navigationRead: (repo, request) => cancellableRead('navigation-read', [repo, request]),
+    commitOperationRead: (repo, request) =>
+      cancellableRead('commit-operation-read', [repo, request]),
     mergeRead: (repo, file) => cancellableRead('merge-read', [repo, file]),
     stashRead: (repo, oid, file) => cancellableRead('stash-read', [repo, oid, file]),
     selectedCommitPlan: (repo, request) => cancellableRead('selected-commit-plan', [repo, request]),
@@ -103,6 +120,7 @@ export function createLocalCoreClient(
     diff: (repo, file, staged, oid) => rpc('diff', [repo, file, staged, oid || null]),
     action: (repo, value) => rpc('action', [repo, value]),
     gitflowPlan: (repo, value) => rpc('gitflow-plan', [repo, value]),
+    fetchSettingsRead: (repo) => cancellableRead('fetch-settings-read', [repo]),
     syncPlan: (repo, kind, expected) => cancellableRead('sync-plan', [repo, kind, expected]),
     create: (kind, target, url) => rpc('create', [kind, target, url]),
     listDirectory: (path) => rpc('directory', [path || null]),

@@ -65,7 +65,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
           :disabled="store.busy"
           @click="stash.recheck"
         >
-          重新读取贮藏
+          刷新
         </button>
       </div>
       <template v-else
@@ -131,19 +131,13 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
       >
         {{ stash.restoreBlocked }}
       </p>
-      <p
-        v-else
-        class="stash-hint"
-      >
-        Apply 保留记录；Pop 在恢复成功后移除记录。
-      </p>
       <button
         v-if="stash.stale"
         class="text-button"
         :disabled="store.busy"
         @click="stash.recheck"
       >
-        重新核对恢复目标
+        重新检查
       </button>
       <section
         v-if="stash.pendingRestore"
@@ -184,14 +178,24 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
           :title="stash.restoreBlocked || '恢复并保留这条记录'"
           @click="stash.restore('stash-apply')"
         >
-          恢复并保留</button
+          <Icon
+            v-if="store.busy && store.activeOperation === 'stash-apply'"
+            name="LoaderCircle"
+            :size="13"
+            class="spin"
+          />恢复并保留</button
         ><button
           class="secondary-button"
           :disabled="!!stash.restoreBlocked"
           :title="stash.restoreBlocked || '恢复成功后移除这条记录'"
           @click="stash.restore('stash-pop')"
         >
-          恢复并移除
+          <Icon
+            v-if="store.busy && store.activeOperation === 'stash-pop'"
+            name="LoaderCircle"
+            :size="13"
+            class="spin"
+          />恢复并移除
         </button>
       </div>
       <div class="stash-secondary-actions">
@@ -200,7 +204,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
           :disabled="store.busy || stash.selectedMissing"
           @click="stash.requestDelete"
         >
-          删除这条贮藏…</button
+          删除贮藏…</button
         ><button
           v-if="store.repo.unstaged.some((file) => file.status === 'U')"
           class="text-button"
@@ -216,8 +220,14 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
         :disabled="store.cancelling"
         @click="store.cancelOperation()"
       >
-        {{ store.cancelling ? '正在取消并核对…' : '取消当前操作（不等于回滚）' }}
+        {{ store.cancelling ? '正在取消…' : '取消操作' }}
       </button>
+      <p
+        v-if="store.busy && store.activeOperation.startsWith('stash-')"
+        class="stash-hint"
+      >
+        已完成的操作不会自动撤销。
+      </p>
     </footer>
   </section>
 </template>
@@ -242,32 +252,32 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
   min-width: 0;
 }
 .stash-ref {
-  color: #bd93d7;
-  font: 10px var(--mono);
+  color: var(--theme-purple-text, #bd93d7);
+  font: var(--ui-font-help)/1.5 var(--mono);
 }
 .stash-detail h2 {
-  font-size: 14px;
   margin: 8px 0 10px;
-  line-height: 1.6;
   overflow-wrap: anywhere;
   max-height: 75px;
   overflow: auto;
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
 }
 .stash-detail p {
   margin: 5px 0;
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   color: var(--text-secondary);
 }
 .stash-detail code {
   display: block;
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   color: var(--muted);
   overflow-wrap: anywhere;
   margin-top: 10px;
 }
 .stash-detail > small {
   display: block;
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   color: var(--muted);
   margin-top: 6px;
 }
@@ -284,7 +294,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
   height: 32px;
   padding: 0 7px;
   border-radius: 3px;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   text-align: left;
 }
 .stash-file > svg {
@@ -301,11 +311,11 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
 .stash-file > small {
   flex-shrink: 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
 }
 .stash-file > code {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--ui-font-size);
 }
 .stash-file:hover {
   background: var(--control-hover-bg);
@@ -314,7 +324,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
   background: var(--view-selection-bg);
 }
 .stash-restore-confirm {
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   line-height: 1.7;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -330,7 +340,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
   background: var(--surface-tabs);
 }
 .stash-target {
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   margin: 0 0 10px;
   overflow-wrap: anywhere;
 }
@@ -341,7 +351,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   margin-bottom: 10px;
 }
 .stash-checkbox input {
@@ -353,13 +363,13 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
 }
 .stash-hint {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   line-height: 1.7;
   margin: 10px 0;
 }
 .stash-error {
   color: var(--git-deleted);
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   line-height: 1.7;
   max-height: 110px;
   overflow: auto;
@@ -374,7 +384,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
 .stash-restore-buttons button {
   flex: 1;
   min-width: 100px;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   padding: 0 8px;
 }
 .stash-secondary-actions {
@@ -385,6 +395,6 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
 }
 .stash-secondary-actions button,
 .stash-restore-controls > .text-button {
-  font-size: 10px;
+  font-size: var(--ui-font-size);
 }
 </style>

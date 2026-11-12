@@ -1,7 +1,14 @@
 <script setup lang="ts">
+import { focusMenuItem } from '../menuFocus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
-import { branchReference, useContextMenuStore, type MenuContext } from '../stores/contextMenu'
+import {
+  branchContextCurrent,
+  commitContextCurrent,
+  branchReference,
+  useContextMenuStore,
+  type MenuContext,
+} from '../stores/contextMenu'
 import Icon from './Icon.vue'
 import { flowKind, flowTypes, useGitFlowStore } from '../stores/gitflow'
 import type { GitFlowType } from '../types'
@@ -12,10 +19,14 @@ import { useStashStore } from '../stores/stash'
 import { useNavigationStore, type NavigationMode } from '../stores/navigation'
 import { useGraphViewStore } from '../stores/graphView'
 import { knownAncestor } from '../graphVisibility'
+import { interactiveRebaseFromHistory } from '../rebaseMenu'
 import { nativeContextMenu, type NativeMenuItem } from '../services/contextMenu'
 import { desktop } from '../services/desktop'
 import { useRebaseStore } from '../stores/rebase'
 import { useMergeStore } from '../stores/merge'
+import { buildCommitMenu } from '../commitMenu'
+import { useCommitActionsStore } from '../stores/commitActions'
+import type { CommitOperation } from '../types'
 
 const store = useRepositoryStore()
 const menu = useContextMenuStore()
@@ -24,13 +35,17 @@ const sidebar = useSidebarStore()
 const stash = useStashStore()
 const navigation = useNavigationStore()
 const rebase = useRebaseStore()
-const rebaseAvailable = ref(false)
-const menuPreparing = ref(false)
+const rebaseAvailable = ref<boolean | null>(null)
+const rebaseMenuCache = new Map<string, boolean>()
+const rebaseMenuPending = new Set<string>()
+let disposed = false
 const graphView = useGraphViewStore()
 const element = ref<HTMLElement>()
 const nativeRequest = ref<number | null>(null)
 let requestSequence = 0
 const dialog = ref<HTMLDialogElement>()
+const jumpDialog = ref<HTMLDialogElement>()
+const jumpChoice = ref<{ target: MenuContext; direction: string; hashes: string[] } | null>(null)
 const nameInput = ref<HTMLInputElement>()
 const operation = ref<{
   action: 'create-branch' | 'track-branch' | 'rename-branch' | 'delete-branch' | 'set-upstream'
@@ -301,30 +316,28 @@ const rawItems = computed<Item[]>(() => {
     return result
   }
   if (target.kind === 'commit')
-    return [
-      { id: 'details', label: '查看提交详情' },
-      { id: 'copy-sha', label: '复制提交 SHA', separator: true },
-      { id: 'copy-subject', label: '复制提交说明' },
-      ...(store.repo.head &&
-      store.repo.branch !== 'detached HEAD' &&
-      target.commit.hash !== store.repo.head &&
-      !store.repo.merge
-        ? [
-            mutation('rebase', `将 ${store.repo.branch} 变基到此提交`, { separator: true }),
-            ...(rebaseAvailable.value
-              ? [mutation('rebase-interactive', '交互式变基到此提交')]
-              : []),
-          ]
-        : []),
-      mutation('create-branch', '在此创建分支', { separator: true }),
-      mutation('create-tag', '创建标签', { separator: true }),
-      mutation('create-annotated-tag', '创建附注标签'),
-    ]
+    return buildCommitMenu(store.repo, target.commit, {
+      connected: store.connected,
+      busy: store.busy,
+      rebasePlanning: store.rebasePlanning,
+      historyLoading: store.historyLoading,
+      flowPanel: !!store.gitflowPanel,
+      conflictDraft: useMergeStore().dirty,
+      interactive: rebaseAvailable.value,
+      commits: target.commits,
+    })
   if (target.kind === 'columns')
     return [
       { id: 'toggle-author', label: '作者', checked: store.showAuthor },
       { id: 'toggle-time', label: '时间', checked: store.showTime },
       { id: 'toggle-sha', label: 'SHA', checked: store.showSha },
+      {
+        id: 'toggle-long-edges',
+        label: '展开长连线',
+        checked: graphView.showLongEdges,
+        separator: true,
+      },
+      { id: 'toggle-merge-commits', label: '淡化合并提交', checked: graphView.dimMergeCommits },
       { id: 'reset-columns', label: '恢复默认列', separator: true },
     ]
   return [
@@ -341,7 +354,7 @@ const rawItems = computed<Item[]>(() => {
     { id: 'worktree', label: '查看工作区变更' },
     {
       id: 'refresh',
-      label: '刷新仓库状态',
+      label: '刷新本地状态',
       disabled: store.busy,
       reason: store.busy ? reason : '',
     },
@@ -391,12 +404,129 @@ function locate(target: MenuContext, head = false) {
       ?.scrollIntoView({ block: 'nearest' }),
   )
 }
+function closeJump() {
+  if (!jumpChoice.value) return
+  jumpDialog.value?.close()
+  jumpChoice.value = null
+  menu.trigger?.focus({ preventScroll: true })
+}
+function jumpKeys(event: KeyboardEvent) {
+  if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+  const buttons = [
+    ...(jumpDialog.value?.querySelectorAll<HTMLButtonElement>('.commit-jump-choice') || []),
+  ]
+  if (!buttons.length) return
+  event.preventDefault()
+  const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  buttons[
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? buttons.length - 1
+        : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length
+  ]?.focus()
+}
+async function jumpCommit(hash: string, target: MenuContext) {
+  closeJump()
+  if (!valid(target) || store.busy || store.historyLoading) return
+  let commit = store.visibleCommits.find((commit) => commit.hash === hash)
+  if (!commit && store.repo.history) {
+    if (!(await store.loadHistory('locate', hash))) {
+      if (valid(target)) store.notify(store.historyError || '目标提交暂时无法定位。', true)
+      return
+    }
+    commit = store.repo.commits.find((commit) => commit.hash === hash)
+  } else if (!commit) {
+    commit = store.repo.commits.find((commit) => commit.hash === hash)
+    if (commit) {
+      store.query = ''
+      store.clearBranchFilter(false)
+    }
+  }
+  if (!valid(target)) return
+  if (!commit) {
+    store.notify('目标提交尚未加载，请加载更早的历史后重试。', true)
+    return
+  }
+  await store.selectCommit(commit)
+  await nextTick()
+  if (
+    store.repo.path !== target.repo ||
+    store.activeTabId !== target.tabId ||
+    store.selectedCommit?.hash !== hash
+  )
+    return
+  const row = document.querySelector<HTMLElement>(`[data-commit-hash="${hash}"]`)
+  row?.scrollIntoView({ block: 'center' })
+  row?.querySelector<HTMLButtonElement>('.commit-select')?.focus({ preventScroll: true })
+}
 async function perform(item: Item) {
   const target = menu.target
   if (!target || item.disabled) return
   menu.close()
   if (!valid(target)) return
   const id = item.id
+  if (target.kind === 'commit' && id.startsWith('commit-')) {
+    await useCommitActionsStore().open(
+      id.slice(7) as CommitOperation | 'browse' | 'patch' | 'browser' | 'push' | 'checkout',
+      target.commits?.length ? target.commits : [target.commit],
+      {
+        repo: target.repo,
+        tabId: target.tabId,
+        expectedHead: target.head,
+        expectedBranch: target.currentBranch,
+      },
+    )
+    return
+  }
+  if (target.kind === 'commit' && id === 'recovery-undo') {
+    if (
+      store.repo.head !== target.head ||
+      store.repo.branch !== target.currentBranch ||
+      target.commit.hash !== store.repo.head
+    ) {
+      store.notify('当前分支或 HEAD 已变化，请重新打开菜单。', true)
+      return
+    }
+    store.modal = 'recovery'
+    return
+  }
+  if (target.kind === 'commit' && (id === 'jump-parent' || id === 'jump-child')) {
+    let hashes =
+      id === 'jump-parent'
+        ? target.commit.parents
+        : store.repo.commits
+            .filter((commit) => commit.parents.includes(target.commit.hash))
+            .map((commit) => commit.hash)
+    if (id === 'jump-child') {
+      try {
+        const result = await desktop.commitOperationRead(target.repo, {
+          kind: 'relations',
+          oids: [target.commit.hash],
+          expectedHead: target.head,
+          expectedBranch: target.currentBranch,
+        })
+        hashes = result.children || hashes
+      } catch (failure) {
+        store.notify((failure as Error).message, true)
+        return
+      }
+    }
+    if (!hashes.length) store.notify('没有可跳转的提交')
+    else if (hashes.length === 1) await jumpCommit(hashes[0], target)
+    else if (hashes.length > 1) {
+      jumpChoice.value = { target, direction: id === 'jump-parent' ? '父提交' : '子提交', hashes }
+      await nextTick()
+      jumpDialog.value?.show()
+      if (jumpDialog.value) {
+        const bounds = jumpDialog.value.getBoundingClientRect()
+        jumpDialog.value.style.left = `${Math.max(8, Math.min(menu.x, window.innerWidth - bounds.width - 8))}px`
+        jumpDialog.value.style.top = `${Math.max(8, Math.min(menu.y, window.innerHeight - bounds.height - 8))}px`
+      }
+      jumpDialog.value?.querySelector<HTMLButtonElement>('.commit-jump-choice')?.focus()
+    }
+    return
+  }
   if (target.kind === 'files') {
     const file = target.files[0]
     if (id === 'files-copy-path') {
@@ -608,7 +738,9 @@ async function perform(item: Item) {
           : target.kind === 'branch'
             ? target.branch.hash
             : target.kind === 'commit'
-              ? target.commit.hash
+              ? (target.commits?.length ? target.commits : [target.commit])
+                  .map((c) => c.hash)
+                  .join('\n')
               : ''
     try {
       await navigator.clipboard.writeText(value)
@@ -624,6 +756,8 @@ async function perform(item: Item) {
   } else if (id === 'toggle-author') store.showAuthor = !store.showAuthor
   else if (id === 'toggle-time') store.showTime = !store.showTime
   else if (id === 'toggle-sha') store.showSha = !store.showSha
+  else if (id === 'toggle-long-edges') graphView.toggleLongEdges()
+  else if (id === 'toggle-merge-commits') graphView.toggleMergeCommits()
   else if (id === 'reset-columns') store.resetColumns()
 }
 function closeOperation() {
@@ -703,14 +837,17 @@ function keydown(event: KeyboardEvent) {
     event.stopPropagation()
   }
   if (event.key === 'Escape' || event.key === 'Tab') menu.close()
-  else if (event.key === 'Home') buttons[0]?.focus()
-  else if (event.key === 'End') buttons.at(-1)?.focus()
-  else if (event.key === 'ArrowDown') buttons[(index + 1) % buttons.length]?.focus()
-  else if (event.key === 'ArrowUp') buttons[(index - 1 + buttons.length) % buttons.length]?.focus()
+  else if (event.key === 'Home') focusMenuItem(buttons[0])
+  else if (event.key === 'End') focusMenuItem(buttons.at(-1))
+  else if (event.key === 'ArrowDown') focusMenuItem(buttons[(index + 1) % buttons.length])
+  else if (event.key === 'ArrowUp')
+    focusMenuItem(buttons[(index - 1 + buttons.length) % buttons.length])
 }
+let scrollAnchor: DOMRect | undefined
 async function position() {
   await nextTick()
   if (!menu.target || !element.value) return
+  scrollAnchor = menu.trigger?.getBoundingClientRect()
   left.value = Math.max(8, Math.min(menu.x, window.innerWidth - element.value.offsetWidth - 8))
   top.value = Math.max(8, Math.min(menu.y, window.innerHeight - element.value.offsetHeight - 8))
   element.value
@@ -725,40 +862,55 @@ function cancelNativeMenu() {
       ?.close(request)
       .catch(() => {})
 }
+function prepareRebaseMenu(target: MenuContext) {
+  if (
+    !['branch', 'commit'].includes(target.kind) ||
+    !store.connected ||
+    store.busy ||
+    store.repo.merge ||
+    store.rebasePlanning ||
+    !target.head ||
+    target.currentBranch === 'detached HEAD'
+  )
+    return false
+  if (target.kind !== 'branch') return false
+  const fullRef = branchReference(target.branch)
+  const expectedOid = target.branch.hash
+  const oid = target.branch.commitHash || expectedOid
+  if (oid === target.head || knownAncestor(store.repo.commits, target.head, oid)) return false
+  const fromHistory = interactiveRebaseFromHistory(store.repo.commits, target.head, oid)
+  if (fromHistory !== null) return fromHistory
+  const key = JSON.stringify([target.repo, target.head, target.currentBranch, fullRef, expectedOid])
+  if (rebaseMenuCache.has(key)) return rebaseMenuCache.get(key)!
+  if (!rebaseMenuPending.has(key) && rebaseMenuPending.size < 4) {
+    rebaseMenuPending.add(key)
+    // The popup must be requested before any optional core read is started.
+    setTimeout(() => {
+      if (disposed) {
+        rebaseMenuPending.delete(key)
+        return
+      }
+      void desktop
+        .rebaseMenuRead(target.repo, { head: target.head, oid })
+        .then((info) => {
+          if (disposed) return
+          if (rebaseMenuCache.size >= 32)
+            rebaseMenuCache.delete(rebaseMenuCache.keys().next().value!)
+          rebaseMenuCache.set(key, info.canInteractive)
+        })
+        .catch(() => {})
+        .finally(() => rebaseMenuPending.delete(key))
+    }, 0)
+  }
+  // Branch menus omit unknown eligibility. Commit menus keep a fixed entry
+  // and validate on invocation; cached results apply on the next opening.
+  return null
+}
 async function showMenu() {
   cancelNativeMenu()
   const target = menu.target
   if (!target) return
-  rebaseAvailable.value = false
-  menuPreparing.value = true
-  if (
-    (target.kind === 'branch' || target.kind === 'commit') &&
-    !store.busy &&
-    store.connected &&
-    !store.repo.merge &&
-    !store.rebasePlanning &&
-    target.currentBranch !== 'detached HEAD'
-  ) {
-    try {
-      const fullRef = target.kind === 'branch' ? branchReference(target.branch) : target.commit.hash
-      const expectedOid = target.kind === 'branch' ? target.branch.hash : target.commit.hash
-      if (expectedOid !== target.head) {
-        const info = await desktop.navigationRead(target.repo, {
-          kind: 'rebase',
-          fullRef,
-          expectedOid,
-          expectedHead: target.head,
-          expectedBranch: target.currentBranch,
-        })
-        if (menu.target !== target) return
-        rebaseAvailable.value = !!info.rebase?.canInteractive
-      }
-    } catch {
-      /* Ordinary rebase still checks the actual preconditions on invocation. */
-    }
-    if (menu.target !== target) return
-  }
-  menuPreparing.value = false
+  rebaseAvailable.value = prepareRebaseMenu(target)
   const bridge = nativeContextMenu()
   if (!bridge) {
     await position()
@@ -793,8 +945,16 @@ watch(() => menu.target, showMenu)
 watch(
   () => [store.activeTabId, store.repo, store.repo.head],
   () => {
+    const target = menu.target || operation.value?.target || jumpChoice.value?.target
+    if (
+      target &&
+      (branchContextCurrent(target, store.repo, store.activeTabId) ||
+        commitContextCurrent(target, store.repo, store.activeTabId))
+    )
+      return
     menu.close(false)
     closeOperation()
+    closeJump()
   },
 )
 watch(
@@ -802,10 +962,22 @@ watch(
   () => menu.close(false),
 )
 function outside(event: Event) {
+  if (jumpChoice.value && !jumpDialog.value?.contains(event.target as Node)) closeJump()
   if (menu.target && !element.value?.contains(event.target as Node)) menu.close(false)
 }
 function scroll(event: Event) {
-  if (menu.target && !element.value?.contains(event.target as Node)) menu.close()
+  if (!menu.target || element.value?.contains(event.target as Node)) return
+  const bounds = menu.trigger?.getBoundingClientRect()
+  if (
+    !bounds ||
+    !scrollAnchor ||
+    nativeRequest.value !== null ||
+    Math.abs(bounds.top - scrollAnchor.top) > 0.5 ||
+    Math.abs(bounds.left - scrollAnchor.left) > 0.5 ||
+    Math.abs(bounds.width - scrollAnchor.width) > 0.5 ||
+    Math.abs(bounds.height - scrollAnchor.height) > 0.5
+  )
+    menu.close()
 }
 function resized() {
   menu.close()
@@ -820,6 +992,7 @@ onMounted(() => {
   window.addEventListener('blur', blurred)
 })
 onUnmounted(() => {
+  disposed = true
   document.removeEventListener('pointerdown', outside, true)
   document.removeEventListener('scroll', scroll, true)
   window.removeEventListener('resize', resized)
@@ -832,9 +1005,10 @@ onUnmounted(() => {
 <template>
   <Teleport to="body">
     <div
-      v-if="menu.target && nativeRequest === null && !menuPreparing"
+      v-if="menu.target && nativeRequest === null"
       ref="element"
       class="context-menu"
+      :class="{ 'commit-context-menu': menu.target.kind === 'commit' }"
       role="menu"
       :aria-label="`${objectTitle} 右键菜单`"
       :style="{ left: `${left}px`, top: `${top}px` }"
@@ -868,13 +1042,54 @@ onUnmounted(() => {
       >
     </div>
     <dialog
+      ref="jumpDialog"
+      class="dialog commit-jump-dialog"
+      aria-labelledby="commit-jump-title"
+      @cancel.prevent="closeJump"
+      @keydown.esc.prevent.stop="closeJump"
+      @keydown="jumpKeys"
+    >
+      <div
+        v-if="jumpChoice"
+        class="dialog-content"
+      >
+        <h2 id="commit-jump-title">选择{{ jumpChoice.direction }}</h2>
+        <div class="commit-jump-list">
+          <button
+            v-for="(hash, index) in jumpChoice.hashes"
+            :key="hash"
+            class="commit-jump-choice secondary-button"
+            @click="jumpCommit(hash, jumpChoice!.target)"
+          >
+            <code>{{ hash.slice(0, 8) }}</code>
+            <span
+              ><template v-if="jumpChoice.direction === '父提交'"
+                >父节点 {{ index + 1 }} · </template
+              >{{
+                store.repo.commits.find((commit) => commit.hash === hash)?.subject || '未加载的提交'
+              }}</span
+            >
+          </button>
+        </div>
+        <div class="dialog-actions">
+          <button
+            class="secondary-button"
+            @click="closeJump"
+          >
+            取消
+          </button>
+        </div>
+      </div>
+    </dialog>
+    <dialog
       ref="dialog"
-      class="dialog context-operation"
+      class="dialog context-operation prompt-bar"
       aria-labelledby="context-operation-title"
       @cancel.prevent="closeOperation"
       @click="$event.target === dialog && closeOperation()"
     >
       <form
+        autocomplete="off"
         v-if="operation"
         class="dialog-content"
         @submit.prevent="submit"

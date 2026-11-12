@@ -71,6 +71,7 @@ test('sidebar full names escape clipping without moving rows or adding checkout 
         gitPath: 'test',
         gitError: '',
       }),
+      repositoryTrust: async (path) => ({ path, gitDir: path + '/.git', trusted: true, token: '' }),
       snapshot: async () => structuredClone(state),
       commit: async () => ({ body: 'read-only', files: [] }),
       diff: async () => ({ diff: '', truncated: false }),

@@ -306,3 +306,51 @@ test('a new triangular push target is creation, not deletion of the existing ups
     'origin',
   )
 })
+
+test('same-name tag cannot turn an existing upstream into a different first-push target', async (t) => {
+  const f = await fixture(t)
+  await f.git.git(f.repo, ['tag', 'main'])
+  const plan = await f.git.syncPlan(f.repo, 'push', {
+    expectedHead: f.base,
+    expectedBranch: 'main',
+  })
+  assert.equal(plan.branch, 'main')
+  assert.equal(plan.sourceRef, 'refs/heads/main')
+  assert.equal(plan.destinationRef, 'refs/heads/main')
+  assert.equal(plan.publish, undefined)
+  const result = await f.execute(plan)
+  assert.equal(result.outcome, 'succeeded', result.error)
+  assert.deepEqual(
+    (
+      await f.git.git(f.repo, [
+        '--git-dir=' + f.bare,
+        'for-each-ref',
+        '--format=%(refname)',
+        'refs/heads',
+      ])
+    )
+      .trim()
+      .split('\n'),
+    ['refs/heads/main'],
+  )
+})
+
+test('same-name tag on an unpublished branch preserves exact first-push target', async (t) => {
+  const f = await fixture(t)
+  await f.git.git(f.repo, ['switch', 'feature/topic'])
+  await f.git.git(f.repo, ['tag', 'feature/topic'])
+  const plan = await f.git.syncPlan(f.repo, 'push', {
+    expectedHead: f.tip,
+    expectedBranch: 'feature/topic',
+  })
+  assert.equal(plan.sourceRef, 'refs/heads/feature/topic')
+  assert.equal(plan.destinationRef, 'refs/heads/feature/topic')
+  const result = await f.execute(plan)
+  assert.equal(result.outcome, 'succeeded', result.error)
+  assert.equal(
+    (
+      await f.git.git(f.repo, ['--git-dir=' + f.bare, 'rev-parse', 'refs/heads/feature/topic'])
+    ).trim(),
+    f.tip,
+  )
+})

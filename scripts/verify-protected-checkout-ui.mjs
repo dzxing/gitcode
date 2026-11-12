@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -38,6 +39,7 @@ export async function verifyProtectedCheckout(
     const d = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await d.getByRole('textbox', { name: '仓库路径', exact: true }).fill(repo)
     await d.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(d).not.toBeVisible()
   }
   try {
@@ -60,7 +62,7 @@ export async function verifyProtectedCheckout(
     if (scenario === 'staged') await git.git(repo, ['add', 'shared.txt'])
     await write('新增 文件.txt', 'untracked draft\n')
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     await open()
     await page.getByRole('textbox', { name: '提交说明', exact: true }).fill('Keep commit draft')
     const row = page.locator(
@@ -132,7 +134,7 @@ export async function verifyProtectedCheckout(
     assert.equal(restored.outcome, 'partial')
     assert.equal(restored.snapshot.stashes.length, 1)
     assert.equal(restored.snapshot.merge.active, false)
-    const list = page.getByRole('dialog', { name: '解决恢复冲突', exact: true })
+    const list = page.getByRole('region', { name: '解决恢复冲突', exact: true })
     await expect(list).toBeVisible()
     await expect(list).toContainText('无需创建合并提交')
     await expect(list.getByRole('button', { name: '中止合并', exact: true })).toHaveCount(0)
@@ -140,9 +142,9 @@ export async function verifyProtectedCheckout(
     await capture('restore-conflict-list')
     await list.getByRole('button', { name: '稍后处理', exact: true }).click()
     await page.reload()
-    await open()
     await expect(list).toBeVisible()
-    await list.locator('.conflict-file-name').dblclick()
+    await expect(page.getByRole('dialog', { name: '信任此仓库？', exact: true })).not.toBeVisible()
+    await list.locator('.conflict-file-name').click()
     const editor = page.getByRole('region', { name: '冲突解决编辑器', exact: true })
     await expect(editor).toBeVisible()
     await expect(editor.locator('.merge-pane:last-child h3')).toHaveText('恢复的修改')

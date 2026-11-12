@@ -75,6 +75,11 @@ for (const type of ['feature', 'release', 'hotfix'])
       assert.equal(result.snapshot.gitflow.finish, null)
       assert.equal(result.snapshot.branch, 'develop')
       assert.ok(!result.snapshot.branches.some((b) => b.name === f.branch))
+      assert.ok(
+        (await f.git.recovery.read(f.repo)).entries.some(
+          (entry) => entry.branch === f.branch && entry.oid === f.source,
+        ),
+      )
       assert.equal(await fs.readFile(path.join(f.repo, 'shared.txt'), 'utf8'), type + ' content\n')
       assert.equal((await f.git.git(f.repo, ['merge-base', f.source, 'develop'])).trim(), f.source)
       if (type === 'feature')

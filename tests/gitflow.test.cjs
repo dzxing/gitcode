@@ -60,6 +60,140 @@ async function setup(t, commit = true) {
   return { repo, git, request, action, plan, initialize, start }
 }
 
+async function remoteBaseFixture(t, remote = 'origin') {
+  const f = await setup(t)
+  const bare = f.repo + '-remote.git'
+  t.after(() => fs.rm(bare, { recursive: true, force: true, maxRetries: 3 }))
+  await f.git.git(f.repo, ['init', '--bare', bare])
+  await f.git.git(f.repo, ['remote', 'add', remote, bare])
+  const main = await f.git.head(f.repo)
+  const tree = (await f.git.git(f.repo, ['rev-parse', 'HEAD^{tree}'])).trim()
+  const develop = (
+    await f.git.git(f.repo, ['commit-tree', tree, '-p', main, '-m', 'remote develop'])
+  ).trim()
+  await f.git.git(f.repo, [
+    'push',
+    remote,
+    `${main}:refs/heads/main`,
+    `${develop}:refs/heads/develop`,
+  ])
+  await f.git.git(f.repo, ['fetch', remote])
+  await f.action({ action: 'gitflow-save', config: rules })
+  return { ...f, bare, main, develop, remote }
+}
+
+test('missing GitFlow develop restores the remote tip with upstream, preserving main, index and dirty files', async (t) => {
+  const f = await remoteBaseFixture(t, 'team/company')
+  await fs.appendFile(path.join(f.repo, 'one.txt'), 'local work\n')
+  const index = await f.git.indexFingerprint(f.repo)
+  const state = (await f.git.snapshot(f.repo)).gitflow
+  assert.deepEqual(state.missing, ['develop'])
+  assert.equal(state.ready, false)
+  assert.equal(
+    state.remoteBases.find((b) => b.remoteRef === 'refs/heads/develop').remote,
+    'team/company',
+  )
+  const p = await f.plan(rules, { develop: 'refs/remotes/team/company/develop' })
+  assert.equal(p.creates[0].oid, f.develop)
+  const result = await f.action({ action: 'gitflow-init', planId: p.id })
+  assert.equal(result.outcome, 'succeeded', result.error)
+  assert.equal(result.snapshot.gitflow.ready, true)
+  assert.equal(await f.git.currentBranch(f.repo), 'main')
+  assert.equal(await f.git.head(f.repo), f.main)
+  assert.equal(await f.git.indexFingerprint(f.repo), index)
+  assert.equal(await fs.readFile(path.join(f.repo, 'one.txt'), 'utf8'), 'base\nlocal work\n')
+  assert.equal((await f.git.git(f.repo, ['rev-parse', 'refs/heads/develop'])).trim(), f.develop)
+  assert.equal((await f.git.git(f.repo, ['rev-parse', 'develop@{upstream}'])).trim(), f.develop)
+  assert.equal(
+    (await f.git.git(f.repo, ['config', '--get', 'branch.develop.remote'])).trim(),
+    'team/company',
+  )
+})
+
+test('stale remote cache cannot initialize GitFlow until fetching the newer advertised tip', async (t) => {
+  const f = await remoteBaseFixture(t)
+  const tree = (await f.git.git(f.repo, ['rev-parse', 'HEAD^{tree}'])).trim()
+  const next = (
+    await f.git.git(f.repo, ['commit-tree', tree, '-p', f.develop, '-m', 'remote advance'])
+  ).trim()
+  await f.git.git(f.repo, ['push', 'origin', `${next}:refs/heads/develop`])
+  await f.git.git(f.repo, ['update-ref', 'refs/remotes/origin/develop', f.develop])
+  const config = await fs.readFile(path.join(f.repo, '.git/config'))
+  await assert.rejects(f.plan(rules, { develop: 'refs/remotes/origin/develop' }), /已更新/)
+  assert.deepEqual(await fs.readFile(path.join(f.repo, '.git/config')), config)
+  assert.equal(
+    (await f.git.snapshot(f.repo)).branches.some((b) => b.kind === 'local' && b.name === 'develop'),
+    false,
+  )
+  await f.git.git(f.repo, ['fetch', 'origin'])
+  assert.equal(
+    (await f.plan(rules, { develop: 'refs/remotes/origin/develop' })).creates[0].oid,
+    next,
+  )
+})
+
+test('remote deletion after preview blocks restoration without changing local refs or configuration', async (t) => {
+  const f = await remoteBaseFixture(t)
+  const p = await f.plan(rules, { develop: 'refs/remotes/origin/develop' })
+  const config = await fs.readFile(path.join(f.repo, '.git/config'))
+  await f.git.git(f.bare, ['update-ref', '-d', 'refs/heads/develop'])
+  const result = await f.action({ action: 'gitflow-init', planId: p.id })
+  assert.equal(result.outcome, 'failed')
+  assert.match(result.error, /不存在/)
+  assert.equal(
+    result.snapshot.branches.some((b) => b.kind === 'local' && b.name === 'develop'),
+    false,
+  )
+  assert.equal(await f.git.head(f.repo), f.main)
+  assert.deepEqual(await fs.readFile(path.join(f.repo, '.git/config')), config)
+})
+
+test('GitFlow exposes multiple remote bases and requires an explicit remote source', async (t) => {
+  const f = await remoteBaseFixture(t)
+  await f.git.git(f.repo, ['remote', 'add', 'backup', f.bare])
+  await f.git.git(f.repo, ['fetch', 'backup'])
+  const sources = (await f.git.snapshot(f.repo)).gitflow.remoteBases.filter(
+    (b) => b.remoteRef === 'refs/heads/develop',
+  )
+  assert.equal(sources.length, 2)
+  await assert.rejects(f.plan(rules, {}), /选择/)
+  const p = await f.plan(rules, { develop: 'refs/remotes/backup/develop' })
+  assert.equal(p.creates[0].tracking.remote, 'backup')
+})
+
+test('GitFlow uses fetch mappings for custom tracking names and excludes negative or ambiguous mappings', async (t) => {
+  const f = await remoteBaseFixture(t)
+  await f.git.git(f.repo, [
+    'config',
+    '--replace-all',
+    'remote.origin.fetch',
+    '+refs/heads/develop:refs/remotes/cache/base',
+  ])
+  await f.git.git(f.repo, ['update-ref', 'refs/remotes/cache/base', f.develop])
+  let p = await f.plan(rules, { develop: 'refs/remotes/cache/base' })
+  assert.equal(p.creates[0].tracking.remoteRef, 'refs/heads/develop')
+  await f.git.git(f.repo, ['config', '--add', 'remote.origin.fetch', '^refs/heads/develop'])
+  await assert.rejects(f.plan(rules, { develop: 'refs/remotes/cache/base' }), /选择/)
+  await f.git.git(f.repo, ['config', '--unset-all', 'remote.origin.fetch', '\\^refs/heads/develop'])
+  await f.git.git(f.repo, ['remote', 'add', 'other', f.bare])
+  await f.git.git(f.repo, [
+    'config',
+    '--replace-all',
+    'remote.other.fetch',
+    '+refs/heads/develop:refs/remotes/cache/base',
+  ])
+  await assert.rejects(f.plan(rules, { develop: 'refs/remotes/cache/base' }), /选择/)
+  await f.git.git(f.repo, ['remote', 'remove', 'other'])
+  await f.git.git(f.repo, ['update-ref', 'refs/remotes/cache/base', f.develop])
+  p = await f.plan(rules, { develop: 'refs/remotes/cache/base' })
+  const result = await f.action({ action: 'gitflow-init', planId: p.id })
+  assert.equal(result.outcome, 'succeeded', result.error)
+  assert.equal(
+    (await f.git.git(f.repo, ['rev-parse', '--symbolic-full-name', 'develop@{upstream}'])).trim(),
+    'refs/remotes/cache/base',
+  )
+})
+
 test('GitFlow start retains the created branch without overwriting an ignored local file', async (t) => {
   const f = await setup(t)
   await f.initialize()

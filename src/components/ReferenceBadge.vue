@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { CommitReference, ReferenceGroup } from '../referenceLabels'
+import type { CommitReference, ReferenceGroup, ReferenceLabelStyle } from '../referenceLabels'
 import Icon from './Icon.vue'
 const props = defineProps<{
   group: ReferenceGroup
@@ -8,6 +8,7 @@ const props = defineProps<{
   actionLabel: string
   busy?: boolean
   presentation?: boolean
+  appearance?: ReferenceLabelStyle
 }>()
 const emit = defineEmits<{
   expand: [event: MouseEvent]
@@ -20,24 +21,31 @@ const remote = computed(() =>
   props.group.members.find((ref) => ref.kind === 'remote' && ref.key !== props.group.primary.key),
 )
 const icon = computed(() =>
-  props.group.primary.kind === 'local'
-    ? 'Laptop'
-    : props.group.primary.kind === 'remote'
-      ? 'Cloud'
-      : props.group.primary.kind === 'tag'
-        ? 'Tag'
-        : 'GitBranch',
+  props.appearance === 'idea'
+    ? 'Tag'
+    : props.group.primary.kind === 'local'
+      ? 'Laptop'
+      : props.group.primary.kind === 'remote'
+        ? 'Cloud'
+        : props.group.primary.kind === 'tag'
+          ? 'Tag'
+          : 'GitBranch',
 )
 </script>
 
 <template>
   <div
     class="reference-badge"
-    :class="{
-      'ref-tag': !presentation,
-      'ref-badge-sizing': presentation,
-      'current-ref': group.current,
-    }"
+    :class="[
+      `label-style-${appearance || 'current'}`,
+      {
+        'ref-tag': !presentation,
+        'ref-badge-sizing': presentation,
+        'current-ref': group.current,
+        'tag-ref': group.primary.kind === 'tag',
+      },
+    ]"
+    :data-label-kind="group.primary.kind"
     :data-reference-key="presentation ? undefined : group.key"
     :title="title"
     @contextmenu.prevent="!presentation && emit('menu', $event, group.primary)"
@@ -57,7 +65,7 @@ const icon = computed(() =>
     >
       <Icon
         v-if="group.current"
-        name="Check"
+        :name="appearance === 'idea' ? 'Tag' : 'Check'"
         :size="12"
         class="ref-current-mark"
       />
@@ -80,7 +88,7 @@ const icon = computed(() =>
       @keydown="!presentation && emit('keyboard', $event, remote)"
     >
       <Icon
-        name="Cloud"
+        :name="appearance === 'idea' ? 'Tag' : 'Cloud'"
         :size="12"
         class="ref-kind-icon"
         data-reference-kind="remote"

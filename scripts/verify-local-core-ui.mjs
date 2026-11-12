@@ -44,6 +44,10 @@ export async function verifyLocalCore(
     await directory.getByRole('button', { name: '选择父目录', exact: true }).click()
     await dialog.getByLabel('新仓库路径', { exact: true }).fill(repo)
     await dialog.getByRole('button', { name: '创建并打开', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: '信任此仓库？', exact: true })
+      .getByRole('button', { name: '信任并打开', exact: true })
+      .click()
     await expect(dialog).not.toBeVisible()
     await expect(page.locator('.repo-selector strong')).toHaveText('browser-project')
     for (const [key, value] of [
@@ -53,6 +57,17 @@ export async function verifyLocalCore(
       ['core.hooksPath', '.no-hooks'],
     ])
       await git.git(repo, ['config', key, value])
+    // Executable config changed through the fixture Git process: acknowledge
+    // it explicitly through the UI before resuming ordinary operations.
+    await page.keyboard.press('Control+o')
+    const reopen = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
+    await reopen.getByRole('textbox', { name: '仓库路径', exact: true }).fill(repo)
+    await reopen.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: '信任此仓库？', exact: true })
+      .getByRole('button', { name: '信任并打开', exact: true })
+      .click()
+    await expect(reopen).not.toBeVisible()
     await writeFile(path.join(repo, 'hello.txt'), 'Created through browser verification\n')
     await page
       .locator('.toolbar-actions')

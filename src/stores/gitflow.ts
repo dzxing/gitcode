@@ -76,6 +76,17 @@ export const useGitFlowStore = defineStore('gitflow', () => {
   let loadingDraft = false
   const state = computed(() => repo.repo.gitflow)
   const localBranches = computed(() => repo.repo.branches.filter((b) => b.kind === 'local'))
+  const remoteBases = computed(() => state.value?.remoteBases || [])
+  const remoteSourcesFor = (name: string) =>
+    remoteBases.value.filter((source) => source.remoteRef === `refs/heads/${name}`)
+  function suggestRemoteSources() {
+    if (panel.value !== 'settings') return
+    for (const name of missing.value) {
+      const sources = remoteSourcesFor(name)
+      if (!sourceChoices.value[name] && sources.length === 1)
+        sourceChoices.value[name] = sources[0].fullRef
+    }
+  }
   const candidates = computed(() =>
     localBranches.value.filter(
       (b) =>
@@ -94,6 +105,7 @@ export const useGitFlowStore = defineStore('gitflow', () => {
       (n) => !localBranches.value.some((b) => b.name === n),
     ),
   )
+  watch([missing, remoteBases, panel], suggestRemoteSources, { flush: 'sync' })
   const sameConfig = (a: GitFlowConfig, b?: GitFlowConfig) =>
     !!b && flowConfigKeys.every((key) => a[key] === b[key])
   const dirtyConfig = computed(() => !sameConfig(config.value, state.value?.config))
@@ -109,8 +121,10 @@ export const useGitFlowStore = defineStore('gitflow', () => {
       (!!plan.value &&
         (plan.value.references?.some(
           (ref) =>
-            !localBranches.value.some(
-              (b) => (b.fullRef || `refs/heads/${b.name}`) === ref.fullRef && b.hash === ref.oid,
+            !repo.repo.branches.some(
+              (b) =>
+                (b.fullRef || `refs/${b.kind === 'remote' ? 'remotes' : 'heads'}/${b.name}`) ===
+                  ref.fullRef && b.hash === ref.oid,
             ),
         ) ||
           plan.value.creates.some((item) =>
@@ -121,14 +135,16 @@ export const useGitFlowStore = defineStore('gitflow', () => {
     repo.isNewTab || !state.value
       ? '请先打开并读取本地仓库。'
       : !repo.connected
-        ? '本机核心未连接，请先连接并核对仓库状态。'
+        ? '本地 Git 服务未连接，请先连接并核对仓库状态。'
         : repo.runtime?.gitAvailable === false
           ? '本机 Git 不可用，请安装或升级 Git 后重新连接。'
           : repo.busy
             ? 'Git 操作正在执行，请等待完成。'
-            : repo.modal
-              ? '请先关闭当前弹窗。'
-              : '',
+            : repo.fetching
+              ? '远端分支正在获取，请等待完成后再操作。'
+              : repo.modal
+                ? '请先关闭当前弹窗。'
+                : '',
   )
   const readinessBlocked = computed(
     () =>
@@ -138,7 +154,7 @@ export const useGitFlowStore = defineStore('gitflow', () => {
       (!state.value?.configured
         ? '请先配置并保存 GitFlow 规则。'
         : !state.value.ready
-          ? `缺少基础分支：${state.value.missing.join('、') || '请检查规则'}。请前往设置补齐。`
+          ? `本地缺少基础分支：${state.value.missing.join('、') || '请检查规则'}。请获取远端状态，并前往设置补齐本地分支。`
           : ''),
   )
   // Entry gates deliberately exclude form fields and the worktree's dirty state.
@@ -191,10 +207,11 @@ export const useGitFlowStore = defineStore('gitflow', () => {
         const selected = sourceChoices.value[n]
         return (
           !Object.hasOwn(sourceChoices.value, n) ||
-          !localBranches.value.some((b) => (b.fullRef || `refs/heads/${b.name}`) === selected)
+          (!localBranches.value.some((b) => (b.fullRef || `refs/heads/${b.name}`) === selected) &&
+            !remoteSourcesFor(n).some((source) => source.fullRef === selected))
         )
       })
-        ? '请为缺失分支明确选择有效的本地起点。'
+        ? '请为缺失分支选择本地起点或远端同名分支；多个远端候选需明确选择。'
         : ''),
   )
   const confirmBlocked = computed(
@@ -409,11 +426,40 @@ export const useGitFlowStore = defineStore('gitflow', () => {
       return
     }
     panel.value = mode
+    if (mode === 'settings') suggestRemoteSources()
     if (mode === 'settings') {
       settingsTarget.value = target
       settingsFocusRequest.value++
     }
     if (mode !== 'settings') plan.value = null
+  }
+  function acknowledgeFinish(receipt: ActionResult) {
+    const snapshot = receipt.snapshot
+    if (
+      !snapshot ||
+      receipt.outcome !== 'succeeded' ||
+      receipt.refreshError ||
+      intent?.repo !== repo.repo.path ||
+      snapshot.path !== repo.repo.path ||
+      snapshot.head !== repo.repo.head ||
+      snapshot.branch !== repo.repo.branch ||
+      name.value.trim() ||
+      dirtyConfig.value ||
+      legacyConfig.value ||
+      configConflicts.value.length ||
+      requiresRecheck.value ||
+      snapshot.gitflow?.finish
+    )
+      return
+    // Only an acknowledged result of our own completed Finish renews an empty
+    // Start form. Navigation and external changes still require explicit reread.
+    result.value = null
+    resultAction.value = null
+    plan.value = null
+    error.value = ''
+    capture()
+    persist()
+    saveSession()
   }
   function openInitialization() {
     open('settings', undefined, 'initialization')
@@ -431,7 +477,7 @@ export const useGitFlowStore = defineStore('gitflow', () => {
     if (!repo.connected) {
       await repo.init()
       if (!repo.connected) {
-        error.value = '本机核心未连接，请检查连接后重试。'
+        error.value = '本地 Git 服务未连接，请检查连接后重试。'
         return
       }
     }
@@ -441,6 +487,20 @@ export const useGitFlowStore = defineStore('gitflow', () => {
       requiresRecheck.value = false
       restartNotice.value = false
     } else error.value = '未能重新读取仓库状态，请检查连接后再刷新。'
+  }
+  async function fetchRemoteBases() {
+    if (repo.busy || repo.fetching || repo.modal || !intent) return
+    const original = repo.captureOperation()
+    error.value = ''
+    plan.value = null
+    const success = await repo.run('fetch', {}, original)
+    if (repo.repo.path !== original.repo || repo.activeTabId !== original.tabId) return
+    if (!success) {
+      error.value = '未能完整获取远端分支，不能据此认定服务器不存在基础分支。请检查操作结果后重试。'
+      return
+    }
+    await recheck()
+    suggestRemoteSources()
   }
   async function previewInit() {
     if (previewBlocked.value || !intent) {
@@ -659,6 +719,8 @@ export const useGitFlowStore = defineStore('gitflow', () => {
     draftRestored,
     state,
     localBranches,
+    remoteSourcesFor,
+    fetchRemoteBases,
     candidates,
     sourceName,
     fullName,
@@ -677,6 +739,7 @@ export const useGitFlowStore = defineStore('gitflow', () => {
     startBlocked,
     open,
     openInitialization,
+    acknowledgeFinish,
     close,
     recheck,
     previewInit,

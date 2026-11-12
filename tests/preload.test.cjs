@@ -9,6 +9,7 @@ test('preload exposes named operations, never raw IPC or Node capabilities', asy
     calls = [],
     listeners = new Map()
   vm.runInNewContext(fs.readFileSync(require.resolve('../electron/preload.cjs'), 'utf8'), {
+    process: { platform: 'win32' },
     require: (name) => {
       assert.equal(name, 'electron')
       return {
@@ -33,6 +34,61 @@ test('preload exposes named operations, never raw IPC or Node capabilities', asy
   assert.equal(exposed.gitk.invoke, undefined)
   assert.equal(exposed.gitk.require, undefined)
   assert.equal(exposed.gitkWindow.require, undefined)
+  assert.equal(exposed.gitkWindow.platform, 'win32')
+  await exposed.gitk.chooseDirectory('/projects', 'parent')
+  assert.deepEqual(calls.pop(), ['gitk:choose-directory', '/projects', 'parent'])
+  await exposed.gitkApp.installedFonts()
+  assert.deepEqual(calls.pop(), ['gitk:app:fonts'])
+  assert.equal(exposed.gitkWindow.nativeControls, true)
+  await exposed.gitkApp.repositoryLocation('/repo', 'show-folder')
+  assert.deepEqual(calls.pop(), ['gitk:app:repository-location', '/repo', 'show-folder'])
+  await exposed.gitk.historyMetadata('/repo', 'a'.repeat(40))
+  assert.deepEqual(calls.pop(), ['gitk:history-metadata', '/repo', 'a'.repeat(40)])
+  await exposed.gitk.historyRead('/repo', { token: 'history', offset: 250 })
+  assert.deepEqual(calls.pop(), ['gitk:history-read', '/repo', { token: 'history', offset: 250 }])
+  await exposed.gitk.repositoryTrust('/repo')
+  assert.deepEqual(calls.pop(), ['gitk:repository-trust', '/repo'])
+  await exposed.gitk.approveRepositoryTrust('/repo', 'token')
+  assert.deepEqual(calls.pop(), ['gitk:repository-trust-approve', '/repo', 'token'])
+  await exposed.gitk.partialStageRead('/repo', { file: 'file.txt', source: 'unstaged' })
+  assert.deepEqual(calls.pop(), [
+    'gitk:partial-stage-read',
+    '/repo',
+    { file: 'file.txt', source: 'unstaged' },
+  ])
+  await exposed.gitk.fetchSettingsRead('/repo')
+  assert.deepEqual(calls.pop(), ['gitk:fetch-settings-read', '/repo'])
+  await exposed.gitk.recoveryRead('/repo')
+  assert.deepEqual(calls.pop(), ['gitk:recovery-read', '/repo'])
+  await exposed.gitk.repositoryChanges('/repo')
+  assert.deepEqual(calls.pop(), ['gitk:repository-changes', '/repo'])
+  await exposed.gitk.backgroundSnapshot('/repo', null)
+  assert.deepEqual(calls.pop(), ['gitk:background-snapshot', '/repo', null])
+  await exposed.gitkApp.startupPhase('ready')
+  assert.deepEqual(calls.pop(), ['gitk:app:startup-phase', 'ready'])
+  await exposed.gitkApp.flushDraftStorage()
+  assert.deepEqual(calls.pop(), ['gitk:app:flush-draft-storage'])
+  await exposed.gitk.activity()
+  assert.deepEqual(calls.pop(), ['gitk:activity'])
+  await exposed.gitk.activitySettings({ autoFetchInterval: 0, extended: false })
+  assert.deepEqual(calls.pop(), [
+    'gitk:activity-settings',
+    { autoFetchInterval: 0, extended: false },
+  ])
+  await exposed.gitk.operationLog({ scope: 'repository', repo: '/qa' })
+  assert.deepEqual(calls.pop(), ['gitk:operation-log', { scope: 'repository', repo: '/qa' }])
+  await exposed.gitk.clearOperationLog({ scope: 'application' })
+  assert.deepEqual(calls.pop(), ['gitk:operation-log-clear', { scope: 'application' }])
+  await exposed.gitk.automaticFetch('/qa')
+  assert.deepEqual(calls.pop(), ['gitk:auto-fetch', '/qa'])
+  await exposed.gitk.fetchStatus('/qa')
+  assert.deepEqual(calls.pop(), ['gitk:fetch-status', '/qa'])
+  await exposed.gitk.gitSettings({ mode: 'system' })
+  assert.deepEqual(calls.pop(), ['gitk:git-settings', { mode: 'system' }])
+  await exposed.gitk.refreshGitRuntime()
+  assert.deepEqual(calls.pop(), ['gitk:git-runtime-refresh'])
+  await exposed.gitk.chooseGit()
+  assert.deepEqual(calls.pop(), ['gitk:choose-git'])
   await exposed.gitk.snapshot('/repo')
   await exposed.gitk.action('/repo', { action: 'stage', paths: ['a'] })
   await exposed.gitk.listDirectory('/home')
@@ -40,6 +96,12 @@ test('preload exposes named operations, never raw IPC or Node capabilities', asy
     ['gitk:snapshot', '/repo'],
     ['gitk:action', '/repo', { action: 'stage', paths: ['a'] }],
     ['gitk:directory', '/home'],
+  ])
+  await exposed.gitk.rebaseMenuRead('/repo', { head: 'a'.repeat(40), oid: 'b'.repeat(40) })
+  assert.deepEqual(calls.at(-1), [
+    'gitk:rebase-menu-read',
+    '/repo',
+    { head: 'a'.repeat(40), oid: 'b'.repeat(40) },
   ])
   await exposed.gitk.navigationRead('/repo', {
     kind: 'info',
@@ -133,4 +195,30 @@ test('IPC rejects foreign windows, subframes and untrusted origins', () => {
     true,
   )
   assert.equal(allowedNavigation('file:///etc/passwd', { ...options, development: false }), false)
+})
+
+test('production file aliases resolve to the trusted entry without allowing other files or UNC hosts', (t) => {
+  const os = require('node:os'),
+    path = require('node:path'),
+    { pathToFileURL } = require('node:url')
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'gitcode-trusted-entry-'))
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const real = path.join(directory, 'real'),
+    alias = path.join(directory, 'alias')
+  fs.mkdirSync(real)
+  fs.writeFileSync(path.join(real, 'index.html'), 'trusted')
+  fs.writeFileSync(path.join(real, 'other.html'), 'untrusted')
+  fs.symlinkSync(real, alias, process.platform === 'win32' ? 'junction' : 'dir')
+  const options = {
+    development: false,
+    indexUrl: pathToFileURL(path.join(real, 'index.html')).href,
+  }
+  assert.equal(
+    allowedNavigation(pathToFileURL(path.join(alias, 'index.html')).href + '#route', options),
+    true,
+  )
+  assert.equal(allowedNavigation(pathToFileURL(path.join(real, 'other.html')).href, options), false)
+  assert.equal(allowedNavigation(options.indexUrl + '?page=other', options), false)
+  assert.equal(allowedNavigation('file://untrusted.example/share/index.html', options), false)
+  assert.equal(allowedNavigation('https://untrusted.example/index.html', options), false)
 })

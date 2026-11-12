@@ -34,5 +34,86 @@
     "weight": "100 900",
     "sha256": "a3041811a78c361b1de50f953c805e0244951c21c5bd412f7232ef0d899af0da",
     "bytes": 17772300
+  },
+  {
+    "family": "JetBrains Mono",
+    "file": "JetBrainsMono-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/jetbrainsmono/JetBrainsMono%5Bwght%5D.ttf",
+    "style": "normal",
+    "weight": "100 800",
+    "sha256": "48715a42ec242c21e9f02692891e147d022299a52e48d5e413e1a942193ffeda",
+    "bytes": 187208
+  },
+  {
+    "family": "JetBrains Mono",
+    "file": "JetBrainsMono-Italic-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/jetbrainsmono/JetBrainsMono-Italic%5Bwght%5D.ttf",
+    "style": "italic",
+    "weight": "100 800",
+    "sha256": "85ae2a5cd3f56baf1ce1c21a851322c58e3d8fbe8e8ad4a4d090a820dd7fe558",
+    "bytes": 191556
+  },
+  {
+    "family": "Fira Code",
+    "file": "FiraCode-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/firacode/FiraCode%5Bwght%5D.ttf",
+    "style": "normal",
+    "weight": "300 700",
+    "sha256": "9335b082b3c7850d98a64b584f3417f65355f3471278bb5eeb8c6c0e8657aeeb",
+    "bytes": 260364
+  },
+  {
+    "family": "Source Code Pro",
+    "file": "SourceCodePro-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/sourcecodepro/SourceCodePro%5Bwght%5D.ttf",
+    "style": "normal",
+    "weight": "200 900",
+    "sha256": "b400fc584e10aff25d0e775ce181b4fc1c5ea1b5dc37b81aeb2084375b945790",
+    "bytes": 212340
+  },
+  {
+    "family": "Source Code Pro",
+    "file": "SourceCodePro-Italic-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/sourcecodepro/SourceCodePro-Italic%5Bwght%5D.ttf",
+    "style": "italic",
+    "weight": "200 900",
+    "sha256": "6db77d25aa7b30eff449305b5c998e475694c74d398421127ea5a60f536413cd",
+    "bytes": 174852
+  },
+  {
+    "family": "Roboto",
+    "file": "Roboto-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/roboto/Roboto%5Bwdth%2Cwght%5D.ttf",
+    "style": "normal",
+    "weight": "100 900",
+    "sha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
+    "bytes": 488584
+  },
+  {
+    "family": "Roboto",
+    "file": "Roboto-Italic-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/roboto/Roboto-Italic%5Bwdth%2Cwght%5D.ttf",
+    "style": "italic",
+    "weight": "100 900",
+    "sha256": "9725a847af6b460ffca162ae66d20dad48b01876137947180b42d7dcd7887182",
+    "bytes": 530944
+  },
+  {
+    "family": "Noto Sans",
+    "file": "NotoSans-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf",
+    "style": "normal",
+    "weight": "100 900",
+    "sha256": "bfb7bb691513f12e734dc346c03a03f784912432d7e3fa8e56efcf906fe86b3d",
+    "bytes": 2049096
+  },
+  {
+    "family": "Noto Sans",
+    "file": "NotoSans-Italic-Variable.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/5bb28733cec313b63fbd415b574b5ae35c8aa8b8/ofl/notosans/NotoSans-Italic%5Bwdth%2Cwght%5D.ttf",
+    "style": "italic",
+    "weight": "100 900",
+    "sha256": "58e6e0ebd1931b29a365aa2d3e2ee9a9e831a3af7cf3ad1462d4e72154f0b291",
+    "bytes": 2322640
   }
 ]

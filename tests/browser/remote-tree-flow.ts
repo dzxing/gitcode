@@ -38,10 +38,7 @@ export async function verifyRemoteTree(page: Page) {
   async function reopen() {
     await page.reload()
     await page.keyboard.press('Control+o')
-    const dialog = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
-    await dialog.getByLabel('仓库路径', { exact: true }).fill('/test-fixtures/repository')
-    await dialog.getByRole('button', { name: '打开仓库', exact: true }).click()
-    await expect(dialog).not.toBeVisible()
+    await expect(page.locator('.history-panel')).toBeVisible()
   }
   snapshot.gitflow = {
     configured: true,
@@ -128,6 +125,10 @@ export async function verifyRemoteTree(page: Page) {
   })
   await dev10.hover()
   await dev10.getByRole('button', { name: '收藏 origin/feature/dev10', exact: true }).click()
+  await expect(dev10.locator('.branch-favorite svg')).toHaveAttribute(
+    'data-symbol',
+    'star_fill1_24px.svg',
+  )
   await expect(dev10).toHaveCount(1)
   const origin = section.locator('[data-remote-name="origin"]')
   expect(

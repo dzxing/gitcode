@@ -9,46 +9,9 @@ const destination = fileURLToPath(new URL('../public/fonts/', import.meta.url))
 const base = 'https://raw.githubusercontent.com/google/fonts/main/ofl/'
 const cascadiaRelease =
   'https://github.com/microsoft/cascadia-code/releases/download/v2407.24/CascadiaCode-2407.24.zip'
-const fonts = [
-  {
-    family: 'Cascadia Mono',
-    file: 'CascadiaMono.woff2',
-    entry: 'woff2/CascadiaMono.woff2',
-    license: 'cascadia-OFL.txt',
-    style: 'normal',
-    weight: '200 700',
-    format: 'woff2',
-  },
-  {
-    family: 'Cascadia Mono',
-    file: 'CascadiaMonoItalic.woff2',
-    entry: 'woff2/CascadiaMonoItalic.woff2',
-    license: 'cascadia-OFL.txt',
-    style: 'italic',
-    weight: '200 700',
-    format: 'woff2',
-  },
-  {
-    family: 'Inter',
-    directory: 'inter',
-    source: 'Inter[opsz,wght].ttf',
-    file: 'Inter-Variable.ttf',
-    license: 'inter-OFL.txt',
-    style: 'normal',
-    weight: '100 900',
-    format: 'truetype',
-  },
-  {
-    family: 'Noto Sans SC',
-    directory: 'notosanssc',
-    source: 'NotoSansSC[wght].ttf',
-    file: 'NotoSansSC-Variable.ttf',
-    license: 'notosanssc-OFL.txt',
-    style: 'normal',
-    weight: '100 900',
-    format: 'truetype',
-  },
-]
+const fonts = JSON.parse(
+  await readFile(new URL('../src/fontCatalog.json', import.meta.url), 'utf8'),
+)
 const staging = await mkdtemp(path.join(os.tmpdir(), 'gitcode-fonts-'))
 const manifest = []
 let previous = []
@@ -59,9 +22,25 @@ try {
 }
 let archivePromise
 async function download(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(180000) })
-  if (!response.ok) throw new Error(`${response.status} ${url}`)
-  return Buffer.from(await response.arrayBuffer())
+  const raw = new URL(url)
+  const github = raw.hostname === 'raw.githubusercontent.com'
+  let response
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(github ? 15000 : 180000) })
+    if (!response.ok) throw new Error(`${response.status} ${url}`)
+    return Buffer.from(await response.arrayBuffer())
+  } catch (error) {
+    if (!github) throw error
+    // The official contents API returns the same pinned resource through a separate endpoint.
+    const [owner, repository, revision, ...segments] = raw.pathname.slice(1).split('/')
+    const api = `https://api.github.com/repos/${owner}/${repository}/contents/${segments.join('/')}?ref=${revision}`
+    response = await fetch(api, {
+      headers: { Accept: 'application/vnd.github.raw+json' },
+      signal: AbortSignal.timeout(60000),
+    })
+    if (!response.ok) throw new Error(`${response.status} ${api}`)
+    return Buffer.from(await response.arrayBuffer())
+  }
 }
 
 // Read only named entries; no archive paths are written to the filesystem.
@@ -110,9 +89,12 @@ function cascadiaArchive() {
 }
 try {
   for (const font of fonts) {
+    const sourceBase = font.revision
+      ? `https://raw.githubusercontent.com/google/fonts/${font.revision}/ofl/`
+      : base
     const url = font.entry
       ? `${cascadiaRelease}#${font.entry}`
-      : `${base}${font.directory}/${encodeURIComponent(font.source)}`
+      : `${sourceBase}${font.directory}/${encodeURIComponent(font.source)}`
     let data, license
     const cached = previous.find((item) => item.file === font.file && item.source === url)
     if (cached) {
@@ -140,7 +122,7 @@ try {
         }
       } else {
         data = await download(url)
-        license = await download(`${base}${font.directory}/OFL.txt`)
+        license = await download(`${sourceBase}${font.directory}/OFL.txt`)
       }
     } else console.log(`复用已校验的 ${font.family} (${font.style})`)
     const signature = font.format === 'woff2' ? 0x774f4632 : 0x00010000
@@ -184,7 +166,7 @@ try {
     path.join(destination, 'ui-fonts.css'),
   )
   console.log(
-    'Cascadia Mono、后备字体及 OFL 授权已保存到 public/fonts，可离线使用。微软雅黑优先调用系统字体。',
+    `${new Set(fonts.map((font) => font.family)).size} 个字体家族及 OFL 授权已保存到 public/fonts，可离线使用。微软雅黑调用系统字体。`,
   )
 } catch (error) {
   console.error(

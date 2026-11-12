@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm, mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -53,6 +54,7 @@ export async function verifyMenuEntry(page, { url, screenshotDirectory } = {}) {
     const open = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await open.getByLabel('仓库路径', { exact: true }).fill(repo)
     await open.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(open).not.toBeVisible()
     let menu = await branchMenu('main')
     await expect(menu.getByRole('menuitem', { name: '切换到 main', exact: true })).toHaveCount(0)
@@ -64,7 +66,7 @@ export async function verifyMenuEntry(page, { url, screenshotDirectory } = {}) {
     await menu.getByRole('menuitem', { name: '拉取', exact: true }).click()
     const pull = page.getByRole('dialog', { name: '拉取远程分支', exact: true })
     await expect(pull.getByRole('alert')).toContainText('请先切换到 feature/topic')
-    await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeDisabled()
+    await expect(pull.getByRole('button', { name: '拉取', exact: true })).toBeDisabled()
     await capture('pull-noncurrent-explained')
     await pull.getByRole('button', { name: '取消', exact: true }).click()
     // Missing tracking enters the upstream chooser before a pull can be planned.
@@ -99,7 +101,7 @@ export async function verifyMenuEntry(page, { url, screenshotDirectory } = {}) {
     menu = await branchMenu('main')
     await expect(menu.getByRole('menuitem', { name: '拉取', exact: true })).toBeEnabled()
     await menu.getByRole('menuitem', { name: '拉取', exact: true }).click()
-    await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeEnabled()
+    await expect(pull.getByRole('button', { name: '拉取', exact: true })).toBeEnabled()
     await pull.getByRole('button', { name: '取消', exact: true }).click()
     await page.locator('.stash-sidebar-entry').click({ button: 'right' })
     menu = page.getByRole('menu')

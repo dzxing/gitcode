@@ -26,12 +26,17 @@ watch(
   <dialog
     ref="dialog"
     class="dialog navigation-dialog"
-    :class="{ 'navigation-comparison': navigation.comparing }"
+    :class="{
+      'navigation-comparison': navigation.comparing,
+      'prompt-bar': !navigation.comparing,
+      'dialog-confirmation': navigation.mode === 'delete-remote-branch',
+    }"
     aria-labelledby="navigation-title"
     @cancel.prevent="navigation.close"
     @click="$event.target === dialog && navigation.close()"
   >
     <form
+      autocomplete="off"
       v-if="navigation.target"
       class="dialog-content"
       @submit.prevent="navigation.execute"
@@ -66,13 +71,14 @@ watch(
               : '将来源提交合入当前分支。发生冲突时进入冲突处理，产生合并提交前可检查结果。'
           }}
         </p>
-        <p>要求工作区干净；不会自动贮藏、切换来源分支或推送。</p>
+        <p>本地修改会自动贮藏，成功后恢复；发生冲突或中断时保留恢复记录。不会自动推送。</p>
       </template>
       <template
         v-if="navigation.mode === 'create-tag' || navigation.mode === 'create-annotated-tag'"
       >
         <label for="navigation-tag-name">标签名称</label
         ><input
+          autocomplete="off"
           id="navigation-tag-name"
           v-model="navigation.name"
           class="form-input"
@@ -81,9 +87,18 @@ watch(
           placeholder="v1.0.0"
           spellcheck="false"
         />
-        <template v-if="navigation.mode === 'create-annotated-tag'"
+        <label v-if="navigation.mode === 'create-tag'"
+          ><input
+            v-model="navigation.tagAnnotated"
+            type="checkbox"
+            :disabled="navigation.writing || repo.busy"
+          />
+          创建附注标签</label
+        >
+        <template v-if="navigation.annotated"
           ><label for="navigation-tag-message">标签说明</label
           ><textarea
+            autocomplete="off"
             id="navigation-tag-message"
             v-model="navigation.message"
             class="form-input"
@@ -94,7 +109,7 @@ watch(
         </template>
         <p>
           在上方提交创建{{
-            navigation.mode === 'create-annotated-tag' ? '附注' : '轻量'
+            navigation.annotated ? '附注' : '轻量'
           }}标签，仅保存在本地，不覆盖已有标签。
         </p>
       </template>
@@ -209,7 +224,7 @@ watch(
             !!navigation.blocked ||
             ((navigation.mode === 'create-tag' || navigation.mode === 'create-annotated-tag') &&
               !navigation.name.trim()) ||
-            (navigation.mode === 'create-annotated-tag' && !navigation.message.trim())
+            (navigation.annotated && !navigation.message.trim())
           "
         >
           {{
@@ -240,7 +255,7 @@ watch(
   overflow-wrap: anywhere;
 }
 .navigation-target code {
-  font: 11px var(--mono);
+  font: var(--ui-font-help)/1.5 var(--mono);
   color: var(--muted);
 }
 .navigation-check {
@@ -266,7 +281,7 @@ watch(
   padding: 7px 10px;
   text-align: left;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--dialog-font-body);
 }
 .navigation-compare-grid nav span {
   overflow-wrap: anywhere;
@@ -281,17 +296,25 @@ watch(
 .navigation-compare-diff {
   overflow: auto;
   padding: 10px;
-  font-size: 11px;
+  font-size: var(--ui-font-help);
 }
 .navigation-compare-diff pre {
   margin: 0;
-  font: 11px/1.6 var(--mono);
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
   white-space: pre;
+}
+.navigation-compare-diff code {
+  font: inherit;
 }
 .added {
   color: var(--git-added);
 }
 .removed {
   color: var(--git-deleted);
+}
+#navigation-tag-message {
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
 }
 </style>

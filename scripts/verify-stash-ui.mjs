@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -45,7 +46,7 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
         ? page.keyboard.press('Control+Enter')
         : toolbar
           ? page.getByRole('button', { name: '贮藏当前修改', exact: true }).click()
-          : form.getByRole('button', { name: /贮藏并收起修改/ }).click(),
+          : form.getByRole('button', { name: /贮藏/ }).click(),
     )
     assert.equal(result.outcome, 'succeeded', JSON.stringify(result))
     await noDialog()
@@ -107,15 +108,16 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
     await write('新增 文件[1].txt', 'untracked new\n')
     await write('keep.ignored', 'ignored remains\n')
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText('Git 服务已连接')
     await page.keyboard.press('Control+o')
     await page.getByLabel('仓库路径', { exact: true }).fill(repo)
     await page
       .getByRole('dialog', { name: '打开本地仓库', exact: true })
       .getByRole('button', { name: '打开仓库', exact: true })
       .click()
+    await confirmFixtureTrust(page)
     await expect(page.getByRole('dialog', { name: '打开本地仓库', exact: true })).not.toBeVisible()
-    await expect(page.locator('.status-path')).toHaveAttribute('title', repo)
+    await expect(page.locator('.status-path')).toHaveText(repo)
     await page.locator('.commit-select').first().click()
     await expect(page.getByRole('button', { name: '贮藏当前修改', exact: true })).toBeDisabled()
     await expect(page.getByRole('button', { name: '贮藏当前修改', exact: true })).toHaveAttribute(
@@ -262,7 +264,7 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
     await confirmation.getByRole('button', { name: '取消', exact: true }).click()
     assert.equal((await git.stash.list(repo)).entries.length, 2)
     await noDialog()
-    await panel().getByRole('button', { name: '删除这条贮藏…', exact: true }).click()
+    await panel().getByRole('button', { name: '删除贮藏…', exact: true }).click()
     const dropped = await action(() =>
       confirmation.getByRole('button', { name: '删除贮藏', exact: true }).click(),
     )
@@ -299,7 +301,7 @@ export async function verifyStash(page, { url, screenshotDirectory } = {}) {
     assert.equal(conflict.snapshot.stashes.length, 1)
     assert.equal(conflict.snapshot.head, target)
     assert.ok(conflict.snapshot.unstaged.some((f) => f.status === 'U'))
-    const conflicts = page.getByRole('dialog', { name: '解决恢复冲突', exact: true })
+    const conflicts = page.getByRole('region', { name: '解决恢复冲突', exact: true })
     await expect(conflicts).toBeVisible()
     await expect(conflicts).toContainText('贮藏记录保留')
     await capture('conflict-retains-stash')

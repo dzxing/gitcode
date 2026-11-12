@@ -92,7 +92,7 @@ const finish = useGitFlowFinishStore(),
   border-bottom: 1px solid var(--line);
   background: var(--surface-raised);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   flex-shrink: 0;
 }
 .flow-finish-progress-head {
@@ -110,7 +110,7 @@ const finish = useGitFlowFinishStore(),
   min-width: 0;
 }
 .flow-finish-progress button {
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   min-height: 26px;
 }
 .flow-finish-progress details {

@@ -50,6 +50,10 @@ async function fixture(page, mode, work) {
     const dialog = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await dialog.getByLabel('仓库路径', { exact: true }).fill(repo)
     await dialog.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await page
+      .getByRole('dialog', { name: '信任此仓库？', exact: true })
+      .getByRole('button', { name: '信任并打开', exact: true })
+      .click()
     await expect(dialog).not.toBeVisible()
     const menu = async (section = 'local', name = 'topic') => {
       await page
@@ -104,7 +108,7 @@ test('navigation merge conflicts enter the existing resolution dialog and abort 
     )
     expect(result.outcome).toBe('partial')
     await expect(dialog).not.toBeVisible()
-    const conflict = page.getByRole('dialog').filter({ hasText: 'base.txt' })
+    const conflict = page.getByRole('region', { name: '解决冲突', exact: true })
     await expect(conflict).toBeVisible()
     expect(await git.head(repo)).toBe(head)
     await conflict.getByRole('button', { name: '中止合并', exact: true }).click()

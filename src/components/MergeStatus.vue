@@ -73,7 +73,7 @@ const merge = useMergeStore(),
   border-bottom: 1px solid var(--line);
   background: var(--surface-raised);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--ui-font-help);
 }
 .merge-status > svg,
 .merge-status > strong {
@@ -82,6 +82,6 @@ const merge = useMergeStore(),
 .merge-status > button {
   margin-left: auto;
   min-height: 26px;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
 }
 </style>

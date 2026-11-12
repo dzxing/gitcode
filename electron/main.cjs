@@ -1,23 +1,41 @@
 'use strict'
+const appStartedAt = Date.now()
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  dialog,
+  shell,
+  clipboard,
+  Menu,
+  nativeTheme,
+  screen,
+} = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
-const { GitService } = require('./git.cjs')
+const { GitService, execute } = require('./git.cjs')
+const gitRuntime = require('./git-runtime.cjs')
 const { isCommand, editCommands, sanitizeState, buildMenuTemplate } = require('./menus.cjs')
 const { ContextMenus } = require('./context-menu.cjs')
 const { CloseCoordinator } = require('./close-coordinator.cjs')
+const { ApplicationLifecycle } = require('./lifecycle.cjs')
 const { allowedNavigation, assertSender } = require('./security.cjs')
+const { WindowState } = require('./window-state.cjs')
+const { WindowAppearance, windowColors } = require('./window-appearance.cjs')
+const { WindowRecovery } = require('./window-recovery.cjs')
+const { repositoryLocation } = require('./repository-location.cjs')
+const { installedFonts } = require('./fonts.cjs')
 
-const root = path.resolve(__dirname, '..')
+const root = fs.realpathSync(path.resolve(__dirname, '..'))
 const development =
   !app.isPackaged &&
   (process.env.GITCODE_DEV_URL || process.env.GITK_DEV_URL) === 'http://localhost:43187'
 const indexUrl = pathToFileURL(path.join(root, 'dist', 'index.html')).href
-const git = new GitService()
 const contextMenus = new ContextMenus(Menu)
 let mainWindow = null
+let windowAppearance = null
 let quitting = false
 const closing = new CloseCoordinator({
   send: (id) => {
@@ -38,7 +56,10 @@ const closing = new CloseCoordinator({
   },
   finish: async () => {
     quitting = true
+    const record = git.journal.start('application-exit', '')
     await git.shutdown()
+    git.journal.finish(record, { output: '已完成 Git 任务收尾并等待活动日志写入。' })
+    await git.journal.writes
     app.quit()
   },
 })
@@ -67,6 +88,16 @@ if (!fs.existsSync(path.join(appData, 'GitCode'))) {
     app.setPath('sessionData', previousProfile)
   }
 }
+const gitSettingsFile = path.join(app.getPath('userData'), 'git-runtime.json')
+const git = new GitService({
+  enforceRepositoryTrust: true,
+  dataDirectory: app.getPath('userData'),
+  resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+  selection: gitRuntime.readPreference(gitSettingsFile),
+})
+let selectingGit = false
+const lifecycle = new ApplicationLifecycle(git.journal, Date.now, appStartedAt)
+
 if (process.platform === 'win32') app.setAppUserModelId('dev.gitcode.workbench')
 if ((process.env.GITCODE_SOFTWARE_RENDERING || process.env.GITK_SOFTWARE_RENDERING) === '1') {
   app.disableHardwareAcceleration()
@@ -85,6 +116,18 @@ function handle(name, work) {
 }
 
 function registerHandlers() {
+  handle('app:fonts', () => installedFonts())
+  handle('partial-stage-read', (repo, request) =>
+    git.job(async (signal) =>
+      git.partialStage.read(await git.repository(repo, signal), request, signal),
+    ),
+  )
+  handle('recovery-read', (repo) =>
+    git.job(async (signal) => git.recovery.read(await git.repository(repo, signal), signal)),
+  )
+  handle('repository-changes', (repo) => git.repositoryWatch.status(repo))
+  handle('background-snapshot', (repo, request) => git.repositoryWatch.read(repo, request))
+  handle('app:startup-phase', (phase) => lifecycle.stage(phase))
   handle('context-menu:popup', (request) => contextMenus.popup(mainWindow, request))
   handle('context-menu:close', (requestId) => {
     if (!Number.isSafeInteger(requestId) || requestId < 1) throw new Error('无效的菜单请求。')
@@ -92,6 +135,8 @@ function registerHandlers() {
   })
   handle('app:menu-state', (value) => {
     const state = sanitizeState(value)
+    if (nativeTheme.themeSource !== state.theme) nativeTheme.themeSource = state.theme
+    windowAppearance?.apply(state.palette)
     if (process.platform === 'darwin')
       Menu.setApplicationMenu(
         Menu.buildFromTemplate(buildMenuTemplate(state, sendCommand, 'darwin')),
@@ -105,13 +150,67 @@ function registerHandlers() {
   handle('app:close-ack', (id) => closing.acknowledge(id))
   handle('app:close-approve', (id) => closing.approve(id))
   handle('app:close-cancel', (id) => closing.cancel(id))
+  handle('app:flush-draft-storage', () => mainWindow.webContents.session.flushStorageData())
   handle('app:info', () => ({
     name: 'GitCode',
     version: app.getVersion(),
     electron: process.versions.electron,
     platform: process.platform,
   }))
+  handle('operation-log', (request) => git.journal.read(request))
+  handle('operation-log-clear', (request) => git.journal.clear(request))
+  handle('repository-trust', (repo) => git.job((signal) => git.trust.inspect(repo, signal)))
+  handle('repository-trust-approve', (repo, token) =>
+    git.job((signal) => git.trust.approve(repo, token, signal)),
+  )
+  handle('activity-settings', (value) => git.journal.preferences(value))
+  handle('auto-fetch', (repo) => git.automaticFetch(repo))
+  handle('fetch-status', (repo) => {
+    if (typeof repo !== 'string' || repo.length > 32768) throw new Error('无效的仓库路径。')
+    return git.journal.status(repo)
+  })
+  handle('activity', () => git.activity)
   handle('runtime', () => git.runtime())
+  handle('git-runtime-refresh', async () => ({
+    selection: gitRuntime.readPreference(gitSettingsFile),
+    runtime: await git.retryRuntime(),
+  }))
+  handle('git-settings', async (value) => {
+    if (value === undefined)
+      return { selection: gitRuntime.readPreference(gitSettingsFile), runtime: await git.runtime() }
+    if (git.current) throw new Error('请等待当前 Git 操作完成后修改运行环境。')
+    const selection = gitRuntime.preference(value)
+    const env = { ...process.env }
+    delete env.GITCODE_GIT_PATH
+    delete env.GITK_GIT_PATH
+    const found = await gitRuntime.discover(execute, {
+      resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
+      selection,
+      env,
+    })
+    if (!found.path) throw new Error(found.error)
+    await fs.promises.mkdir(path.dirname(gitSettingsFile), { recursive: true })
+    const temporary = `${gitSettingsFile}.tmp`
+    await fs.promises.writeFile(temporary, JSON.stringify(selection), { mode: 0o600 })
+    await fs.promises.rename(temporary, gitSettingsFile)
+    return { selection, runtime: await git.runtime(), restartRequired: true }
+  })
+  handle('choose-git', async () => {
+    if (selectingGit) return null
+    selectingGit = true
+    try {
+      const selected = await dialog.showOpenDialog(mainWindow, {
+        title: '选择 Git 可执行文件',
+        properties: ['openFile'],
+        ...(process.platform === 'win32'
+          ? { filters: [{ name: 'Git', extensions: ['exe'] }] }
+          : {}),
+      })
+      return selected.canceled ? null : selected.filePaths[0] || null
+    } finally {
+      selectingGit = false
+    }
+  })
   handle('gitflow-plan', (repo, request) =>
     git.job(async (signal) => git.flow.plan(await git.repository(repo, signal), request, signal)),
   )
@@ -120,9 +219,18 @@ function registerHandlers() {
       git.selectedCommitPlan(await git.repository(repo, signal), request, signal),
     ),
   )
+  handle('fetch-settings-read', (repo) =>
+    git.job(async (signal) => git.fetchSettings.read(await git.repository(repo, signal), signal)),
+  )
   handle('sync-plan', (repo, kind, expected) =>
     git.job(async (signal) =>
       git.syncPlan(await git.repository(repo, signal), kind, expected, signal),
+    ),
+  )
+  handle('rebase-menu-read', (repo, request) =>
+    git.job(
+      async (signal) => git.rebase.menu(await git.repository(repo, signal), request, signal),
+      { background: true },
     ),
   )
   handle('navigation-read', (repo, request) =>
@@ -130,12 +238,41 @@ function registerHandlers() {
       git.navigation.read(await git.repository(repo, signal), request, signal),
     ),
   )
+  handle('commit-operation-read', (repo, request) =>
+    git.job(async (signal) =>
+      git.commitOperations.read(await git.repository(repo, signal), request, signal),
+    ),
+  )
+  handle('open-commit', async (repo, request, remote) => {
+    const result = await git.job(async (signal) =>
+      git.commitOperations.read(
+        await git.repository(repo, signal),
+        { ...request, kind: 'hosting' },
+        signal,
+      ),
+    )
+    const entry = result.urls?.find((link) => link.name === remote)
+    if (!entry) throw Error('托管地址已变化，请重新读取。')
+    await shell.openExternal(entry.url)
+  })
   handle('merge-read', (repo, file) =>
     git.job(async (signal) => git.merge.read(await git.repository(repo, signal), file, signal)),
   )
   handle('stash-read', (repo, oid, file) =>
     git.job(async (signal) =>
       git.stash.read(await git.repository(repo, signal), oid, file, signal),
+    ),
+  )
+  handle('history-metadata', (repo, sha) =>
+    git.job(
+      async (signal) => git.history.metadata(await git.repository(repo, signal), sha, signal),
+      { background: true },
+    ),
+  )
+  handle('history-read', (repo, request) =>
+    git.job(
+      async (signal) => git.history.read(await git.repository(repo, signal), request, signal),
+      { background: true },
     ),
   )
   handle('snapshot', (repo) =>
@@ -157,8 +294,13 @@ function registerHandlers() {
   handle('create', (request) => git.job((signal) => git.create(request, signal)))
   handle('cancel', () => git.cancel())
   handle('directory', (value) => git.listDirectory(value))
-  handle('choose-directory', async (initialPath) => {
-    const options = { title: '选择仓库或父目录', properties: ['openDirectory'] }
+  handle('choose-directory', async (initialPath, purpose = 'repository') => {
+    if (!['repository', 'parent'].includes(purpose)) throw Error('无效的目录选择用途。')
+    const options = {
+      title: purpose === 'parent' ? '选择仓库位置' : '打开 Git 仓库',
+      buttonLabel: purpose === 'parent' ? '选择文件夹' : '打开',
+      properties: ['openDirectory'],
+    }
     if (typeof initialPath === 'string' && path.isAbsolute(initialPath))
       options.defaultPath = initialPath
     else if (git.lastDirectory) options.defaultPath = git.lastDirectory
@@ -178,6 +320,9 @@ function registerHandlers() {
     await shell.openExternal(url)
   })
   handle('window:minimize', () => mainWindow.minimize())
+  handle('app:repository-location', (repo, action) =>
+    repositoryLocation(git, shell, clipboard, repo, action),
+  )
   handle('window:maximize', () =>
     mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize(),
   )
@@ -190,15 +335,30 @@ function registerHandlers() {
 }
 
 function createWindow() {
+  const initialColors = windowColors('dark')
+  const windowState = new WindowState(
+    path.join(app.getPath('userData'), 'window-state.json'),
+    screen,
+  )
+  const restoreMaximized = windowState.saved?.maximized === true
+  const initialWindowBounds = windowState.options()
   mainWindow = new BrowserWindow({
     title: 'GitCode',
-    width: 1440,
-    height: 960,
-    minWidth: 900,
-    minHeight: 640,
-    backgroundColor: '#1e2025',
+    ...initialWindowBounds,
+    backgroundColor: initialColors.background,
     show: false,
-    frame: process.platform === 'darwin',
+    frame: process.platform !== 'linux',
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden',
+          titleBarOverlay: {
+            color: initialColors.color,
+            symbolColor: initialColors.symbolColor,
+            // Keep the titlebar's bottom 1px border below the native caption overlay.
+            height: 37,
+          },
+        }
+      : {}),
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 12 } }
       : {}),
@@ -217,6 +377,23 @@ function createWindow() {
       spellcheck: false,
     },
   })
+  windowAppearance = new WindowAppearance(mainWindow)
+  const loadRenderer = () =>
+    development
+      ? mainWindow.loadURL('http://localhost:43187')
+      : mainWindow.loadFile(path.join(root, 'dist', 'index.html'))
+  const recovery = new WindowRecovery({
+    window: mainWindow,
+    dialog,
+    reload: loadRenderer,
+    openLogs: () => shell.openPath(app.getPath('userData')),
+    isClosing: () => quitting,
+    record: (kind, detail) => {
+      const entry = git.journal.start('application-interface', '')
+      git.journal.finish(entry, { outcome: 'failed', error: `界面异常：${kind}`, output: detail })
+    },
+  })
+  const windowLayout = windowState.track(mainWindow)
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   mainWindow.webContents.on('will-navigate', (event, value) => {
     if (!allowedNavigation(value, { development, indexUrl })) event.preventDefault()
@@ -230,6 +407,7 @@ function createWindow() {
     callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [csp] } })
   })
   const state = () => {
+    windowAppearance.apply()
     if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed())
       mainWindow.webContents.send('gitk:window-state', {
         maximized: mainWindow.isMaximized(),
@@ -247,17 +425,28 @@ function createWindow() {
     'blur',
   ])
     mainWindow.on(event, state)
-  mainWindow.webContents.on('render-process-gone', () => {
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
     contextMenus.close()
     closing.rendererGone()
+    void recovery.recover('crash', `原因：${details.reason}；退出码：${details.exitCode}`)
+  })
+  mainWindow.on('unresponsive', () => {
+    void recovery.recover('unresponsive')
   })
   mainWindow.webContents.on('did-start-loading', () => contextMenus.close())
   mainWindow.on('closed', () => contextMenus.close())
-  mainWindow.once('ready-to-show', () => mainWindow.show())
+  mainWindow.once('ready-to-show', () => {
+    if (restoreMaximized) {
+      windowLayout.restore(initialWindowBounds)
+      mainWindow.maximize()
+    }
+    mainWindow.show()
+    if (!restoreMaximized) windowLayout.restore(initialWindowBounds)
+  })
   mainWindow.webContents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
-    if (isMainFrame) {
+    if (isMainFrame && code !== -3) {
       console.error(`[GitCode] 页面加载失败 (${code}): ${description} ${url}`)
-      mainWindow.show()
+      void recovery.recover('load', `错误代码：${code}；${description}`)
     }
   })
   mainWindow.on('close', (event) => {
@@ -265,12 +454,10 @@ function createWindow() {
     event.preventDefault()
     closing.request()
   })
-  if (development)
-    mainWindow.loadURL('http://localhost:43187').catch((error) => console.error(error.message))
-  else
-    mainWindow
-      .loadFile(path.join(root, 'dist', 'index.html'))
-      .catch((error) => console.error(error.message))
+  loadRenderer().catch((error) => {
+    console.error(error.message)
+    if (error.code !== 'ERR_ABORTED') void recovery.recover('load', error.message)
+  })
 }
 
 const singleInstance = app.requestSingleInstanceLock()
@@ -291,8 +478,8 @@ else {
   app
     .whenReady()
     .then(() => {
-      // The renderer currently uses a dark theme; native menus should match it.
-      nativeTheme.themeSource = 'dark'
+      // Read the OS preference before the renderer restores its saved theme.
+      nativeTheme.themeSource = 'system'
       Menu.setApplicationMenu(
         process.platform === 'darwin'
           ? Menu.buildFromTemplate(
@@ -306,6 +493,7 @@ else {
       )
       registerHandlers()
       createWindow()
+      lifecycle.mark('主窗口已创建')
     })
     .catch((error) => {
       console.error(error)

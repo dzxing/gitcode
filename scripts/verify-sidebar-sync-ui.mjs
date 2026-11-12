@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import { expect } from '@playwright/test'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -19,6 +20,7 @@ const branches = [
 }))
 const snapshot = {
   path: '/sidebar-sync-check',
+  remotes: ['origin'],
   name: 'Sidebar sync',
   head: hash,
   branch: 'main',
@@ -77,6 +79,7 @@ export async function verifySidebarSync(page, { url, screenshotDirectory } = {})
         gitPath: 'test',
         gitError: '',
       }),
+      repositoryTrust: async (path) => ({ path, gitDir: path + '/.git', trusted: true, token: '' }),
       snapshot: async () => structuredClone(snapshot),
       commit: async () => ({ files: [], body: '' }),
       diff: async () => ({ diff: '', truncated: false }),
@@ -99,6 +102,7 @@ export async function verifySidebarSync(page, { url, screenshotDirectory } = {})
   const open = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
   await open.getByRole('textbox', { name: '仓库路径', exact: true }).fill(snapshot.path)
   await open.getByRole('button', { name: '打开仓库', exact: true }).click()
+  await confirmFixtureTrust(page)
   await expect(open).not.toBeVisible()
   const row = (section, name) =>
     page.locator(`[data-sidebar-section="${section}"] [data-branch-name="${name}"]`)
@@ -154,7 +158,7 @@ export async function verifySidebarSync(page, { url, screenshotDirectory } = {})
     }
   }
   await row('local', 'feature/unpublished').click({ button: 'right' })
-  const push = page.getByRole('menuitem', { name: '推送', exact: true })
+  const push = page.getByRole('menuitem', { name: /^推送/ })
   await expect(push).toBeEnabled()
   await push.click()
   const dialog = page.getByRole('dialog', { name: '推送指定分支', exact: true })

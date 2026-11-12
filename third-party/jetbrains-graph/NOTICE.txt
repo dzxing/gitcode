@@ -1,0 +1,32 @@
+This product includes portions adapted from IntelliJ IDEA:
+Copyright 2000-2025 JetBrains s.r.o. and contributors.
+https://www.jetbrains.com/idea/
+Licensed under the Apache License, Version 2.0 (LICENSE.txt).
+
+Upstream: JetBrains/intellij-community, tag idea/262.10968.63
+Commit: 8062c061ff33e22041d9f1844db5b8b8a6b5e4d7
+Sources:
+platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/permanent/GraphLayoutBuilder.kt
+platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/GraphElementComparatorByLayoutIndex.java
+platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/print/PrintElementGeneratorImpl.kt
+plugins/git4idea/backend/src/log/GitRefManager.kt
+platform/vcs-log/impl/src/com/intellij/vcs/log/paint/SimpleGraphCellPainter.kt
+platform/vcs-log/impl/src/com/intellij/vcs/log/ui/render/GraphCommitCellUtil.kt
+platform/vcs-log/impl/src/com/intellij/vcs/log/ui/highlighters/MergeCommitsHighlighter.java
+
+platform/vcs-log/graph/src/com/intellij/vcs/log/graph/impl/facade/VisibleGraphImpl.kt
+platform/vcs-log/impl/src/com/intellij/vcs/log/ui/table/GraphCommitCellController.java
+platform/vcs-log/graph/src/com/intellij/vcs/log/graph/utils/LinearGraphUtils.java
+
+GitCode modifications: TypeScript adaptation in src/ideaGraphLayout.ts,
+explicit partial-history boundaries, iterative traversal, SVG paths,
+and lower-priority auxiliary stash nodes. Reference name ordering uses
+Intl.Collator numeric comparison rather than IntelliJ NaturalComparator.
+GitCode retains its existing color palette and independent worktree row.
+Commit text uses per-row graph extents with a six-lane recommended baseline cap.
+Merge text highlighting retains GitCode theme colors. Arrow ornaments use the
+compact 22px reference scale independently of GitCode's 30px rows and thick lines.
+Branch traversal heads exclude non-head tags. Fragment identities are retained
+from the loaded unfiltered graph; hidden ancestry is projected to dotted edges.
+Unknown-parent edges use neighboring-row special stubs and contribute to the
+arrow-aware recommended width. Native print-layout fixtures exercise these rules.

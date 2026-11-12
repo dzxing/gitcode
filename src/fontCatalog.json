@@ -1,0 +1,139 @@
+[
+  {
+    "family": "Cascadia Mono",
+    "file": "CascadiaMono.woff2",
+    "entry": "woff2/CascadiaMono.woff2",
+    "license": "cascadia-OFL.txt",
+    "style": "normal",
+    "weight": "200 700",
+    "format": "woff2"
+  },
+  {
+    "family": "Cascadia Mono",
+    "file": "CascadiaMonoItalic.woff2",
+    "entry": "woff2/CascadiaMonoItalic.woff2",
+    "license": "cascadia-OFL.txt",
+    "style": "italic",
+    "weight": "200 700",
+    "format": "woff2"
+  },
+  {
+    "family": "Inter",
+    "directory": "inter",
+    "source": "Inter[opsz,wght].ttf",
+    "file": "Inter-Variable.ttf",
+    "license": "inter-OFL.txt",
+    "style": "normal",
+    "weight": "100 900",
+    "format": "truetype"
+  },
+  {
+    "family": "Noto Sans SC",
+    "directory": "notosanssc",
+    "source": "NotoSansSC[wght].ttf",
+    "file": "NotoSansSC-Variable.ttf",
+    "license": "notosanssc-OFL.txt",
+    "style": "normal",
+    "weight": "100 900",
+    "format": "truetype"
+  },
+  {
+    "family": "JetBrains Mono",
+    "directory": "jetbrainsmono",
+    "source": "JetBrainsMono[wght].ttf",
+    "file": "JetBrainsMono-Variable.ttf",
+    "license": "jetbrainsmono-OFL.txt",
+    "style": "normal",
+    "weight": "100 800",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  },
+  {
+    "family": "JetBrains Mono",
+    "directory": "jetbrainsmono",
+    "source": "JetBrainsMono-Italic[wght].ttf",
+    "file": "JetBrainsMono-Italic-Variable.ttf",
+    "license": "jetbrainsmono-OFL.txt",
+    "style": "italic",
+    "weight": "100 800",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  },
+  {
+    "family": "Fira Code",
+    "directory": "firacode",
+    "source": "FiraCode[wght].ttf",
+    "file": "FiraCode-Variable.ttf",
+    "license": "firacode-OFL.txt",
+    "style": "normal",
+    "weight": "300 700",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  },
+  {
+    "family": "Source Code Pro",
+    "directory": "sourcecodepro",
+    "source": "SourceCodePro[wght].ttf",
+    "file": "SourceCodePro-Variable.ttf",
+    "license": "sourcecodepro-OFL.txt",
+    "style": "normal",
+    "weight": "200 900",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  },
+  {
+    "family": "Source Code Pro",
+    "directory": "sourcecodepro",
+    "source": "SourceCodePro-Italic[wght].ttf",
+    "file": "SourceCodePro-Italic-Variable.ttf",
+    "license": "sourcecodepro-OFL.txt",
+    "style": "italic",
+    "weight": "200 900",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  },
+  {
+    "family": "Roboto",
+    "directory": "roboto",
+    "source": "Roboto[wdth,wght].ttf",
+    "file": "Roboto-Variable.ttf",
+    "license": "roboto-OFL.txt",
+    "style": "normal",
+    "weight": "100 900",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  },
+  {
+    "family": "Roboto",
+    "directory": "roboto",
+    "source": "Roboto-Italic[wdth,wght].ttf",
+    "file": "Roboto-Italic-Variable.ttf",
+    "license": "roboto-OFL.txt",
+    "style": "italic",
+    "weight": "100 900",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  },
+  {
+    "family": "Noto Sans",
+    "directory": "notosans",
+    "source": "NotoSans[wdth,wght].ttf",
+    "file": "NotoSans-Variable.ttf",
+    "license": "notosans-OFL.txt",
+    "style": "normal",
+    "weight": "100 900",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  },
+  {
+    "family": "Noto Sans",
+    "directory": "notosans",
+    "source": "NotoSans-Italic[wdth,wght].ttf",
+    "file": "NotoSans-Italic-Variable.ttf",
+    "license": "notosans-OFL.txt",
+    "style": "italic",
+    "weight": "100 900",
+    "format": "truetype",
+    "revision": "5bb28733cec313b63fbd415b574b5ae35c8aa8b8"
+  }
+]

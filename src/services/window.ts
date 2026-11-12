@@ -1,6 +1,8 @@
 type Unlisten = () => void
 
 export interface NativeWindow {
+  readonly platform?: string
+  readonly nativeControls?: boolean
   minimize(): Promise<void>
   toggleMaximize(): Promise<void>
   close(): Promise<void>

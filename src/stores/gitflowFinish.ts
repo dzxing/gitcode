@@ -2,6 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useRepositoryStore } from './repository'
 import { useMergeStore } from './merge'
+import { useGitFlowStore } from './gitflow'
 import type { GitFlowType } from '../types'
 export const finishLabels = { feature: '完成功能分支', release: '完成发布', hotfix: '完成热修复' }
 export const useGitFlowFinishStore = defineStore('gitflow-finish', () => {
@@ -121,6 +122,8 @@ export const useGitFlowFinishStore = defineStore('gitflow-finish', () => {
       captured,
     )
     if (origin !== repo.activeTabId) return
+    if (ok && !progress.value && repo.lastActionResult)
+      useGitFlowStore().acknowledgeFinish(repo.lastActionResult)
     if (progress.value) {
       repo.modal = null
       repo.gitflowPanel = null
@@ -138,6 +141,8 @@ export const useGitFlowFinishStore = defineStore('gitflow-finish', () => {
       finishSignature: progress.value.signature,
     })
     repo.gitflowPanel = null
+    if (ok && !progress.value && repo.lastActionResult)
+      useGitFlowStore().acknowledgeFinish(repo.lastActionResult)
     if (repo.repo.merge) useMergeStore().open()
     if (!ok) error.value = repo.lastActionResult?.error || ''
   }

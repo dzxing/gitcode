@@ -5,20 +5,35 @@ const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
 const { TextDecoder } = require('node:util')
-const { createHash } = require('node:crypto')
+const { createHash, randomUUID } = require('node:crypto')
+const { progressParser } = require('./progress.cjs')
 const { SyncOperations } = require('./sync.cjs')
+const { FetchSettings } = require('./fetch-settings.cjs')
 const { GitFlowOperations } = require('./gitflow.cjs')
 const { SelectedCommitOperations } = require('./selected-commit.cjs')
 const { StashOperations } = require('./stash.cjs')
 const { NavigationOperations } = require('./navigation.cjs')
 const { MergeOperations } = require('./merge.cjs')
 const { RebaseOperations } = require('./rebase.cjs')
+const { CommitOperations } = require('./commit-operations.cjs')
 const { CheckoutOperations } = require('./checkout.cjs')
 const { GitFlowFinishOperations } = require('./gitflow-finish.cjs')
 const { AutoStashOperations } = require('./auto-stash.cjs')
+const gitRuntime = require('./git-runtime.cjs')
+const { OperationLog } = require('./operation-log.cjs')
+const { autoFetch } = require('./auto-fetch.cjs')
+const { RepositoryWatch } = require('./repository-watch.cjs')
+const { RecoveryOperations } = require('./recovery.cjs')
+const { PartialStageOperations } = require('./partial-stage.cjs')
+const { diagnoseCommand, presentCommandFailure } = require('./command-diagnostics.cjs')
+
+const { RepositoryTrust, TRUST_READ } = require('./repository-trust.cjs')
+
+const { HistoryOperations } = require('./history.cjs')
 
 const MAX_OUTPUT = 32 * 1024 * 1024
 const MAX_DIFF = 300_000
+const READ_PREEMPTED = Symbol('background read yielded to foreground')
 const CANCELLED = 'Git 操作已取消。取消不等于回滚，请刷新检查仓库状态。'
 const decoder = new TextDecoder('utf-8', { fatal: true })
 
@@ -104,7 +119,7 @@ function killTree(child) {
 function execute(
   executable,
   args,
-  { cwd, timeout = 30_000, signal, env = process.env, input } = {},
+  { cwd, timeout = 30_000, signal, env = process.env, input, onStderr, onPrepared } = {},
 ) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error(CANCELLED))
@@ -124,17 +139,30 @@ function execute(
     }
     const stdout = [],
       stderr = []
+    const preparedController = new AbortController()
     if (input !== undefined) {
       child.stdin.on('error', () => {})
-      child.stdin.end(input)
+      if (onPrepared) child.stdin.write(input)
+      else child.stdin.end(input)
     }
     let outBytes = 0,
       errBytes = 0,
-      failure = null
+      failure = null,
+      prepared = false,
+      commitSent = false,
+      killTimer,
+      preparationTask = null,
+      protocol = ''
     function stop(message) {
       if (failure) return
       failure = new Error(message)
-      killTree(child)
+      preparedController.abort(failure)
+      if (onPrepared && !commitSent && !child.stdin.destroyed) {
+        // Let Git abort its prepared transaction and release its own lock files.
+        // A stuck reference-transaction hook still has a bounded cancellation.
+        child.stdin.end('abort\n')
+        killTimer = setTimeout(() => killTree(child), 1500)
+      } else killTree(child)
     }
     const onAbort = () => stop(CANCELLED)
     signal?.addEventListener('abort', onAbort, { once: true })
@@ -147,29 +175,71 @@ function execute(
       outBytes += chunk.length
       if (outBytes <= MAX_OUTPUT) stdout.push(chunk)
       else stop('Git 输出超过 32 MiB，请缩小操作范围。')
+      if (onPrepared && !prepared && !failure) {
+        protocol = (protocol + chunk.toString('utf8')).slice(-4096)
+        if (/(?:^|\n)prepare: ok\r?\n/.test(protocol)) {
+          prepared = true
+          preparationTask = Promise.resolve()
+            .then(() => onPrepared(preparedController.signal))
+            .then(
+              () => {
+                if (!failure && child.exitCode === null) {
+                  commitSent = true
+                  child.stdin.end('commit\n')
+                }
+              },
+              (error) => {
+                if (!failure) failure = error instanceof Error ? error : new Error(String(error))
+                preparedController.abort(failure)
+                child.stdin.end('abort\n')
+              },
+            )
+        }
+      }
     })
     child.stderr.on('data', (chunk) => {
+      onStderr?.(chunk)
       errBytes += chunk.length
       if (errBytes <= MAX_OUTPUT) stderr.push(chunk)
       else stop('Git 错误输出超过 32 MiB。')
     })
     const cleanup = () => {
       clearTimeout(timer)
+      clearTimeout(killTimer)
       signal?.removeEventListener('abort', onAbort)
     }
     child.once('error', (error) => {
       cleanup()
+      preparedController.abort(error)
       reject(new Error(`无法启动 Git：${error.message}`))
     })
-    child.once('close', (code, termination) => {
+    child.once('close', async (code, termination) => {
       cleanup()
-      if (failure) return reject(failure)
+      if (!commitSent) preparedController.abort(new Error('Git 引用事务已结束。'))
+      if (preparationTask) {
+        try {
+          await preparationTask
+        } catch (error) {
+          failure ||= error instanceof Error ? error : new Error(String(error))
+        }
+      }
+      if (failure) {
+        failure.gitResult = {
+          code,
+          termination,
+          stdout: Buffer.concat(stdout).toString('utf8'),
+          stderr: Buffer.concat(stderr).toString('utf8'),
+        }
+        return reject(failure)
+      }
       let out
       try {
         out = decoder.decode(Buffer.concat(stdout))
       } catch {
         return reject(new Error('仓库包含无法用 UTF-8 表示的内容或路径，当前版本无法安全处理。'))
       }
+      if (onPrepared && code === 0 && !/(?:^|\n)commit: ok\r?\n/.test(out))
+        return reject(new Error('引用事务未确认提交，请核对仓库状态。'))
       resolve({ code, termination, stdout: out, stderr: Buffer.concat(stderr).toString('utf8') })
     })
   })
@@ -202,7 +272,21 @@ function parseStatus(raw) {
 }
 
 class GitService {
-  constructor() {
+  constructor(runtimeOptions = {}) {
+    // Internal fixture helpers may use GitService directly. Both application
+    // transports enforce trust; the renderer cannot change these options.
+    this.runtimeOptions = runtimeOptions
+    this.trust = new RepositoryTrust(this, { directory: runtimeOptions.dataDirectory })
+    this.history = new HistoryOperations(this)
+    this.journal =
+      runtimeOptions.journal || new OperationLog({ directory: runtimeOptions.dataDirectory })
+    this.activeLog = null
+    this.pendingJobs = 0
+    this.background = false
+    this.backgroundSsh = null
+    this.activity = null
+    this.gitSource = ''
+    this.gitError = ''
     this.gitPath = null
     this.gitVersion = ''
     this.discovery = null
@@ -211,64 +295,32 @@ class GitService {
     this.generation = 0
     this.closing = false
     this.lastDirectory = null
+    this.repositoryLocations = new Map()
     this.sync = new SyncOperations(this, validRemote)
+    this.fetchSettings = new FetchSettings(this)
     this.flow = new GitFlowOperations(this)
     this.selectedCommit = new SelectedCommitOperations(this, { filePath, string })
     this.stash = new StashOperations(this, { filePath, string })
     this.autoStash = new AutoStashOperations(this)
     this.merge = new MergeOperations(this, { filePath, string })
     this.rebase = new RebaseOperations(this)
+    this.commitOperations = new CommitOperations(this)
     this.flowFinish = new GitFlowFinishOperations(this)
     this.checkout = new CheckoutOperations(this)
     this.navigation = new NavigationOperations(this, { string, revision, filePath, validRemote })
+    this.repositoryWatch = new RepositoryWatch(this)
+    this.recovery = new RecoveryOperations(this)
+    this.partialStage = new PartialStageOperations(this, { filePath })
   }
 
   async discover() {
     if (this.discovery) return this.discovery
     this.discovery = (async () => {
-      const candidates =
-        process.env.GITCODE_GIT_PATH || process.env.GITK_GIT_PATH
-          ? [process.env.GITCODE_GIT_PATH || process.env.GITK_GIT_PATH]
-          : [process.platform === 'win32' ? 'git.exe' : 'git']
-      if (
-        !(process.env.GITCODE_GIT_PATH || process.env.GITK_GIT_PATH) &&
-        process.platform === 'win32'
-      ) {
-        for (const key of ['ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA'])
-          if (process.env[key]) {
-            candidates.push(
-              path.join(process.env[key], 'Git', 'cmd', 'git.exe'),
-              path.join(process.env[key], 'Programs', 'Git', 'cmd', 'git.exe'),
-            )
-          }
-      }
-      if (
-        !(process.env.GITCODE_GIT_PATH || process.env.GITK_GIT_PATH) &&
-        process.platform === 'darwin'
-      )
-        candidates.push('/opt/homebrew/bin/git', '/usr/local/bin/git', '/usr/bin/git')
-      for (const executable of candidates) {
-        try {
-          const result = await execute(executable, ['--version'], { timeout: 3000 })
-          if (
-            result.code === 0 &&
-            /^git version /.test(result.stdout) &&
-            (() => {
-              const match = result.stdout.match(/git version (\d+)\.(\d+)/)
-              return (
-                match &&
-                (Number(match[1]) > 2 || (Number(match[1]) === 2 && Number(match[2]) >= 46))
-              )
-            })()
-          ) {
-            this.gitPath = executable
-            this.gitVersion = result.stdout.trim()
-            break
-          }
-        } catch {
-          /* Try the next known installation. */
-        }
-      }
+      const found = await gitRuntime.discover(execute, this.runtimeOptions)
+      this.gitPath = found.path || null
+      this.gitVersion = found.version || ''
+      this.gitSource = found.source || ''
+      this.gitError = found.error || ''
     })()
     return this.discovery
   }
@@ -285,28 +337,78 @@ class GitService {
       gitAvailable: !!this.gitPath,
       gitVersion: this.gitVersion,
       gitPath: this.gitPath || '',
-      gitError: this.gitPath
-        ? ''
-        : '未找到 Git 2.46 或更高版本。请升级 Git 后重新启动 GitCode，或设置 GITCODE_GIT_PATH 为 Git 可执行文件路径。',
+      gitSource: this.gitSource,
+      gitError: this.gitError,
     }
+  }
+
+  async retryRuntime() {
+    // Re-detect a failed startup probe after Git/tools have been installed.
+    // A valid active executable is never switched beneath pending operations.
+    if (this.closing) throw new Error('应用正在退出，无法重新检测 Git。')
+    if (this.gitPath) return this.runtime()
+    if (this.current || this.pendingJobs) throw new Error('请等待当前 Git 操作完成后重新检测。')
+    const pending = this.discover()
+    const discovery = this.discovery
+    await pending
+    if (!this.gitPath && this.discovery === discovery) {
+      if (this.current || this.pendingJobs) throw new Error('请等待当前 Git 操作完成后重新检测。')
+      this.discovery = null
+    }
+    return this.runtime()
   }
 
   // Capturing an epoch at enqueue time cancels both active and previously
   // queued operations. Requests made after cancellation may run normally.
-  job(work) {
+  job(work, { background = false, preemptible = false } = {}) {
+    if (!background && this.currentPreemptible) this.current?.abort(READ_PREEMPTED)
+    if (!background)
+      for (const lease of this.journal.leases.values()) {
+        lease.interrupted = true
+        lease.controller?.abort()
+      }
+    this.pendingJobs++
     const queuedAt = this.generation
     const pending = this.tail.then(async () => {
       if (this.closing || queuedAt !== this.generation) throw new Error(CANCELLED)
       const controller = new AbortController()
       this.current = controller
+      this.background = background
+      this.currentPreemptible = background && preemptible
+      this.activity = null
       try {
-        return await work(controller.signal)
+        const value = await work(controller.signal)
+        if (controller.signal.reason === READ_PREEMPTED) throw READ_PREEMPTED
+        return value
+      } catch (error) {
+        if (controller.signal.reason === READ_PREEMPTED)
+          throw Object.assign(new Error('后台读取已让位于前台操作。'), { code: 'READ_PREEMPTED' })
+        throw error
       } finally {
-        if (this.current === controller) this.current = null
+        if (this.current === controller) {
+          this.current = null
+          this.background = false
+          this.currentPreemptible = false
+          if (this.activity) this.activity = { ...this.activity, state: 'finished' }
+        }
       }
     })
-    this.tail = pending.catch(() => {})
-    return pending
+    const tracked = pending.finally(() => {
+      this.pendingJobs--
+    })
+    this.tail = tracked.catch(() => {})
+    return tracked
+  }
+
+  startActivity(operation, repo) {
+    this.activity = {
+      id: this.activeLog?.id || randomUUID(),
+      operation,
+      repo,
+      phase: '正在执行',
+      percent: null,
+      state: 'running',
+    }
   }
 
   cancel() {
@@ -315,8 +417,10 @@ class GitService {
   }
   async shutdown() {
     this.closing = true
+    this.repositoryWatch.close()
     this.cancel()
     await this.tail
+    await this.journal.writes
   }
 
   async git(
@@ -328,19 +432,34 @@ class GitService {
       signal,
       allowedCodes = [0],
       input,
+      onPrepared,
       indexFile,
       hooksPath,
       locale,
       rebasePlan,
+      skipEditor = false,
+      diagnose = false,
+      [TRUST_READ]: trustRead = false,
+      creatingRepository = false,
+      returnCode = false,
     } = {},
   ) {
+    if (this.runtimeOptions.enforceRepositoryTrust && !trustRead && !creatingRepository)
+      await this.trust.assert(repo, signal)
     await this.discover()
     if (!this.gitPath) throw new Error((await this.runtime()).gitError)
     const env = {
-      ...process.env,
+      ...gitRuntime.environmentForGit(process.env, this.gitPath, this.gitSource),
       GIT_TERMINAL_PROMPT: '0',
       GIT_OPTIONAL_LOCKS: '0',
       GIT_NO_LAZY_FETCH: '1',
+    }
+    if (this.background) {
+      env.GCM_INTERACTIVE = 'Never'
+      env.GIT_ASKPASS = 'gitcode-no-interactive-credentials'
+      env.SSH_ASKPASS = 'gitcode-no-interactive-credentials'
+      env.SSH_ASKPASS_REQUIRE = 'never'
+      if (this.backgroundSsh) env.GIT_SSH_COMMAND = this.backgroundSsh
     }
     for (const key of [
       'GIT_DIR',
@@ -350,13 +469,16 @@ class GitService {
       'GIT_OBJECT_DIRECTORY',
       'GIT_ALTERNATE_OBJECT_DIRECTORIES',
       'GIT_NAMESPACE',
+      'GIT_CONFIG',
       'GIT_CONFIG_COUNT',
       'GIT_CONFIG_PARAMETERS',
     ])
       delete env[key]
     for (const key of Object.keys(env)) if (/^GIT_CONFIG_(KEY|VALUE)_/.test(key)) delete env[key]
+    if (creatingRepository) env.GIT_CEILING_DIRECTORIES = path.dirname(repo)
     if (locale) env.LC_ALL = locale
     if (indexFile) env.GIT_INDEX_FILE = indexFile
+    if (skipEditor) env.GIT_EDITOR = 'true'
     if (rebasePlan !== undefined) {
       const quote = (value) => "'" + value.replace(/\\/g, '/').replace(/'/g, "'\\''") + "'"
       const helper = path.join(
@@ -367,45 +489,146 @@ class GitService {
       env.GIT_EDITOR = `${command} message`
       env.GIT_SEQUENCE_EDITOR = `${command} sequence`
       env.GITCODE_REBASE_PLAN = rebasePlan || ''
+      env.GITCODE_REBASE_GIT = this.gitPath
       env.ELECTRON_RUN_AS_NODE = '1'
     }
-    const result = await execute(
-      this.gitPath,
-      [
-        '--no-pager',
-        '--literal-pathspecs',
-        '-c',
-        'core.quotePath=false',
-        '-c',
-        'color.ui=false',
-        '-c',
-        'core.fsmonitor=false',
-        '-c',
-        'protocol.ext.allow=never',
-        ...(hooksPath ? ['-c', `core.hooksPath=${hooksPath}`] : []),
-        ...args,
-      ],
-      { cwd: repo, timeout, signal, env, input },
-    )
+    const reportProgress = progressParser((value) => {
+      if (this.activity?.state === 'running') this.activity = { ...this.activity, ...value }
+    })
+    const commandStarted = Date.now()
+    const run = (commandEnv) =>
+      execute(
+        this.gitPath,
+        [
+          '--no-pager',
+          '--literal-pathspecs',
+          '-c',
+          'core.quotePath=false',
+          '-c',
+          'color.ui=false',
+          '-c',
+          'core.fsmonitor=false',
+          '-c',
+          'protocol.ext.allow=never',
+          ...(process.platform === 'win32' ? ['-c', 'core.longpaths=true'] : []),
+          ...(hooksPath ? ['-c', `core.hooksPath=${hooksPath}`] : []),
+          ...args,
+        ],
+        {
+          cwd: repo,
+          timeout,
+          signal,
+          env: commandEnv,
+          input,
+          onStderr: reportProgress,
+          onPrepared,
+        },
+      )
+    const result = diagnose
+      ? await diagnoseCommand(env, run, (diagnostic) =>
+          this.journal.diagnostic(this.activeLog, diagnostic),
+        )
+      : await run(env)
+    if (!trustRead) this.journal.command(this.activeLog, args, result, Date.now() - commandStarted)
     if (!allowedCodes.includes(result.code)) {
       if (optional && result.code === 1) return ''
       throw new Error(
         this.safeError(result.stderr.trim() || result.stdout.trim() || 'Git 操作失败。'),
       )
     }
-    return result.stdout
+    return returnCode ? result : result.stdout
   }
 
   async repository(value, signal) {
     const candidate = absolutePath(value)
+    const cached =
+      this.runtimeOptions.enforceRepositoryTrust && this.repositoryLocations.get(candidate)
+    if (cached) {
+      // Revalidate identity and effective config, including external includes.
+      // Only the immutable location result is reused, never trust consent.
+      const info = await this.trust.assert(candidate, signal)
+      if (
+        info.key === cached.key &&
+        info.path === cached.root &&
+        this.gitPath === cached.gitPath &&
+        this.gitVersion === cached.gitVersion
+      )
+        return cached.root
+      this.repositoryLocations.delete(candidate)
+    }
     if (!(await fs.stat(candidate)).isDirectory()) throw new Error('请选择本机仓库目录。')
     if (
       (await this.git(candidate, ['rev-parse', '--is-bare-repository'], { signal })).trim() ===
       'true'
     )
       throw new Error('暂不支持裸仓库，请打开带工作区的仓库。')
-    const root = await this.git(candidate, ['rev-parse', '--show-toplevel'], { signal })
-    return fs.realpath(root.replace(/[\r\n]+$/, ''))
+    const location = await this.git(candidate, ['rev-parse', '--show-toplevel'], { signal })
+    const root = await fs.realpath(location.replace(/[\r\n]+$/, ''))
+    if (this.runtimeOptions.enforceRepositoryTrust) {
+      const info = await this.trust.identity(candidate)
+      if (info.path === root) {
+        if (this.repositoryLocations.size >= 16)
+          this.repositoryLocations.delete(this.repositoryLocations.keys().next().value)
+        this.repositoryLocations.set(candidate, {
+          root,
+          key: info.key,
+          gitPath: this.gitPath,
+          gitVersion: this.gitVersion,
+        })
+      }
+    }
+    return root
+  }
+
+  async gitPaths(repo, names, signal) {
+    const raw = await this.git(
+      repo,
+      ['rev-parse', '--path-format=absolute', ...names.flatMap((name) => ['--git-path', name])],
+      { signal },
+    )
+    const values = raw.replace(/\r?\n$/, '').split(/\r?\n/)
+    if (values.length === names.length && values.every((value) => path.isAbsolute(value)))
+      return new Map(names.map((name, i) => [name, values[i]]))
+    // A directory name can contain a newline. Preserve that unusual case by
+    // resolving each path separately rather than guessing field boundaries.
+    const result = new Map()
+    for (const name of names)
+      result.set(
+        name,
+        path.resolve(
+          repo,
+          (await this.git(repo, ['rev-parse', '--git-path', name], { signal })).replace(
+            /\r?\n$/,
+            '',
+          ),
+        ),
+      )
+    return result
+  }
+
+  async historyGraphBasis(repo, signal, locations, replacements) {
+    locations ||= await this.gitPaths(repo, ['shallow', 'info/grafts'], signal)
+    if (replacements === undefined)
+      replacements = (
+        await this.git(
+          repo,
+          ['for-each-ref', '--sort=refname', '--format=%(refname)%00%(objectname)', 'refs/replace'],
+          { signal },
+        )
+      ).replace(/\r?\n$/, '')
+    const read = async (name) =>
+      fs.readFile(locations.get(name)).catch((error) => {
+        if (error.code === 'ENOENT') return Buffer.alloc(0)
+        throw error
+      })
+    const [shallow, grafts] = await Promise.all([read('shallow'), read('info/grafts')])
+    return createHash('sha256')
+      .update(replacements)
+      .update('\0')
+      .update(shallow)
+      .update('\0')
+      .update(grafts)
+      .digest('hex')
   }
 
   safeError(error) {
@@ -415,12 +638,15 @@ class GitService {
   }
 
   async currentBranch(repo, signal) {
-    return (
-      await this.git(repo, ['symbolic-ref', '--short', '-q', 'HEAD'], {
+    const ref = (
+      await this.git(repo, ['symbolic-ref', '-q', 'HEAD'], {
         allowedCodes: [0, 1],
         signal,
       })
     ).trim()
+    if (!ref) return ''
+    if (!ref.startsWith('refs/heads/')) throw new Error('HEAD 未指向有效的本地分支。')
+    return ref.slice('refs/heads/'.length)
   }
 
   async head(repo, signal) {
@@ -444,15 +670,42 @@ class GitService {
     return head
   }
 
-  async noInProgress(repo, signal) {
-    for (const name of [
+  async headContext(repo, signal) {
+    const value = await this.git(
+      repo,
+      ['rev-parse', 'HEAD^{commit}', '--symbolic-full-name', 'HEAD'],
+      { signal, allowedCodes: [0, 128], returnCode: true },
+    )
+    const fields = value.stdout.trim().split(/\r?\n/)
+    if (
+      value.code === 0 &&
+      fields.length === 2 &&
+      /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(fields[0]) &&
+      (fields[1] === 'HEAD' || fields[1].startsWith('refs/heads/'))
+    )
+      return {
+        head: fields[0],
+        branch: fields[1] === 'HEAD' ? '' : fields[1].replace(/^refs\/heads\//, ''),
+      }
+    // Preserve unborn/broken-HEAD handling instead of treating a failed parse as empty.
+    return { head: await this.head(repo, signal), branch: await this.currentBranch(repo, signal) }
+  }
+
+  async noInProgress(repo, signal, locations) {
+    const names = [
       'MERGE_HEAD',
       'CHERRY_PICK_HEAD',
       'REVERT_HEAD',
+      'sequencer',
       'rebase-merge',
       'rebase-apply',
-    ]) {
-      const location = (await this.git(repo, ['rev-parse', '--git-path', name], { signal })).trim()
+    ]
+    locations ||= await this.gitPaths(repo, names, signal)
+    const missingLocations = names.filter((name) => !locations.has(name))
+    if (missingLocations.length)
+      locations = new Map([...locations, ...(await this.gitPaths(repo, missingLocations, signal))])
+    for (const name of names) {
+      const location = locations.get(name)
       if (
         await fs.stat(path.resolve(repo, location)).catch((error) => {
           if (error.code === 'ENOENT') return null
@@ -486,27 +739,54 @@ class GitService {
 
   async status(repo, signal) {
     return parseStatus(
-      await this.git(repo, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { signal }),
+      await this.git(
+        repo,
+        ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--renames'],
+        { signal },
+      ),
     )
   }
 
   async snapshot(repo, signal) {
-    const head = await this.head(repo, signal)
-    const branch = await this.currentBranch(repo, signal)
+    const locations = await this.gitPaths(
+      repo,
+      [
+        'MERGE_HEAD',
+        'CHERRY_PICK_HEAD',
+        'REVERT_HEAD',
+        'rebase-merge',
+        'rebase-apply',
+        'gitcode-rebase.json',
+        'gitcode-flow-finish.json',
+        'config',
+        'config.worktree',
+        'shallow',
+        'info/grafts',
+      ],
+      signal,
+    )
+    const { head, branch } = await this.headContext(repo, signal)
     const rawRefs = await this.git(
       repo,
       [
         'for-each-ref',
+        '--sort=refname',
         '--format=%(refname)%00%(objectname)%00%(HEAD)%00%(upstream:short)%00%(upstream:track)%00%(*objectname)%00%(symref)',
         'refs/heads',
         'refs/remotes',
         'refs/tags',
+        'refs/replace',
       ],
       { signal },
     )
-    const branches = rawRefs
-      .split(/\r?\n/)
-      .filter(Boolean)
+    const lines = rawRefs.split(/\r?\n/).filter(Boolean)
+    const replacements = lines
+      .filter((line) => line.startsWith('refs/replace/'))
+      .map((line) => line.split('\0').slice(0, 2).join('\0'))
+      .join('\n')
+    const graphBasis = await this.historyGraphBasis(repo, signal, locations, replacements)
+    const branches = lines
+      .filter((line) => !line.startsWith('refs/replace/'))
       .map((line) => {
         const fields = line.split('\0')
         if (fields.length !== 7) throw new Error('Git 引用输出不完整。')
@@ -537,79 +817,22 @@ class GitService {
         if (local) local.worktreePath = worktreePath
       }
     }
-    const commits = []
-    if (head || branches.length) {
-      const fields = (
-        await this.git(
-          repo,
-          [
-            'log',
-            '--exclude=refs/gitcode/*',
-            '--exclude=refs/gitk/*',
-            '--exclude=refs/stash',
-            '--all',
-            ...(head ? ['HEAD'] : []),
-            '--date-order',
-            '-n',
-            '250',
-            '-z',
-            '--format=%H%x00%P%x00%s%x00%an%x00%ae%x00%aI%x00%D',
-          ],
-          { signal },
-        )
-      ).split('\0')
-      for (let i = 0; i + 6 < fields.length; i += 7) {
-        const [hash, parents, subject, author, email, date, refs] = fields.slice(i, i + 7)
-        commits.push({
-          hash,
-          parents: parents.split(' ').filter(Boolean),
-          subject,
-          author,
-          email,
-          date,
-          refs: branches
-            .filter((b) => b.commitHash === hash)
-            .map((b) =>
-              b.kind === 'tag'
-                ? `tag: ${b.name}`
-                : b.current && hash === head
-                  ? `HEAD -> ${b.name}`
-                  : b.name,
-            ),
-        })
-      }
-    }
+    const history = await this.history.initial(repo, branches, head, signal, graphBasis)
     const state = await this.status(repo, signal)
-    const total = Number(
-      (
-        await this.git(
-          repo,
-          [
-            'rev-list',
-            '--exclude=refs/gitcode/*',
-            '--exclude=refs/gitk/*',
-            '--exclude=refs/stash',
-            '--all',
-            ...(head ? ['HEAD'] : []),
-            '--count',
-          ],
-          { signal },
-        )
-      ).trim(),
-    )
-    const gitflow = await this.flow.state(repo, branches, signal)
+    const gitflow = await this.flow.state(repo, branches, signal, locations)
     const stash = await this.stash.list(repo, signal)
-    const merge = await this.merge.state(repo, signal)
+    const merge = await this.merge.state(repo, signal, locations)
     return {
       path: repo,
       name: path.basename(repo) || 'repository',
       branch: branch || 'detached HEAD',
       head,
-      commits,
+      commits: history.commits,
+      history: history.history,
       remotes: (await this.git(repo, ['remote'], { signal })).trim().split('\n').filter(Boolean),
       branches,
       ...state,
-      total,
+      total: history.total,
       gitflow,
       merge,
       stashes: stash.entries,
@@ -663,11 +886,15 @@ class GitService {
     const args = ['diff', '--no-ext-diff', '--no-textconv', '--no-color']
     let state,
       paths = [file]
-    if (staged === 'working') {
+    if (!commit) {
       state = await this.status(repo, signal)
-      const renamed = [...state.staged, ...state.unstaged].find(
-        (entry) => entry.path === file && entry.oldPath,
-      )
+      const candidates =
+        staged === 'working'
+          ? [...state.staged, ...state.unstaged]
+          : staged
+            ? state.staged
+            : state.unstaged
+      const renamed = candidates.find((entry) => entry.path === file && entry.oldPath)
       if (renamed) paths = [renamed.oldPath, file]
       args.push('--find-renames')
     }
@@ -720,7 +947,28 @@ class GitService {
     files.forEach((file) => {
       if (paths.includes(file.path) && file.oldPath) expanded.add(file.oldPath)
     })
+    // Literal pathspecs still recurse into directories. Git also cannot keep
+    // both a file and its children in one index: require the complete selection
+    // for a file/directory transition instead of silently changing extra files.
+    for (const file of files) {
+      if (expanded.has(file.path)) continue
+      const related = [...expanded].find(
+        (selected) => file.path.startsWith(selected + '/') || selected.startsWith(file.path + '/'),
+      )
+      if (related)
+        throw new Error(
+          `路径 ${related} 与 ${file.path} 存在文件/目录关联。请一并选择关联文件后${unstage ? '取消暂存' : '暂存'}，未修改暂存内容。`,
+        )
+    }
     const head = unstage && (await this.head(repo, signal))
+    // Once every related change is explicitly selected, pass the parent once.
+    // `restore --staged parent child` fails when child did not exist in HEAD.
+    const operands = [...expanded].filter((file) => {
+      const parts = file.split('/')
+      return !parts
+        .slice(0, -1)
+        .some((_part, index) => expanded.has(parts.slice(0, index + 1).join('/')))
+    })
     return this.git(
       repo,
       [
@@ -728,7 +976,7 @@ class GitService {
         '--pathspec-from-file=-',
         '--pathspec-file-nul',
       ],
-      { signal, input: [...expanded].join('\0') + '\0' },
+      { signal, input: operands.join('\0') + '\0' },
     )
   }
 
@@ -742,8 +990,7 @@ class GitService {
   async checkContext(repo, request, signal) {
     if (request.expectedHead !== undefined) {
       if (request.expectedHead !== '') revision(request.expectedHead)
-      const head = await this.head(repo, signal)
-      const branch = await this.currentBranch(repo, signal)
+      const { head, branch } = await this.headContext(repo, signal)
       if (head !== request.expectedHead || (branch || 'detached HEAD') !== request.expectedBranch)
         throw new Error('当前分支或 HEAD 已变化，请刷新后重新操作。')
     }
@@ -785,14 +1032,67 @@ class GitService {
       : paths[0] === paths[1]
   }
 
+  automaticFetch(repo) {
+    return autoFetch(this, repo)
+  }
+
+  async recordOperation(operation, repo, work, target = '') {
+    const record = this.journal.start(operation, repo, { target })
+    this.activeLog = record
+    try {
+      const result = await work()
+      this.journal.finish(record, result)
+      if (operation === 'fetch') this.journal.updateFetch(repo, result)
+      return { ...result, logId: record.id }
+    } catch (error) {
+      this.journal.finish(record, {}, error)
+      throw error
+    } finally {
+      this.activeLog = null
+    }
+  }
+
   async action(repo, request, signal) {
+    return this.recordOperation(
+      request?.action || 'git',
+      repo,
+      () => this.trackedAction(repo, request, signal),
+      request?.name || request?.branch || request?.ref || request?.sourceRef || '',
+    )
+  }
+
+  async trackedAction(repo, request, signal) {
+    this.startActivity(request?.action || 'git', repo)
+    const commitAction = ['commit', 'commit-selected'].includes(request?.action)
+    // Commit refreshes index stat caches even when a hook rejects it. Compare
+    // staged entries rather than the index file's bytes for commit outcomes.
+    const indexState = async (readSignal) =>
+      commitAction
+        ? createHash('sha256')
+            .update(
+              await this.git(
+                repo,
+                [
+                  'diff',
+                  '--cached',
+                  '--raw',
+                  '-z',
+                  '--no-abbrev',
+                  '--no-renames',
+                  '--no-ext-diff',
+                  '--no-textconv',
+                ],
+                { signal: readSignal },
+              ),
+            )
+            .digest('hex')
+        : this.indexFingerprint(repo, readSignal)
     let result, failure, before
     try {
       if (request?.action && !['fetch', 'pull', 'push'].includes(request.action))
         before = {
-          head: await this.head(repo, signal),
-          branch: await this.currentBranch(repo, signal),
-          index: await this.indexFingerprint(repo, signal),
+          ...(await this.headContext(repo, signal)),
+          index: await indexState(signal),
         }
       result = await this.performAction(repo, request, signal)
     } catch (error) {
@@ -804,31 +1104,77 @@ class GitService {
       }
     }
     const recovery = AbortSignal.timeout(20000)
-    let snapshot = null
+    let snapshot = null,
+      worktree = null
+    if (this.activity) this.activity = { ...this.activity, phase: '刷新仓库状态', percent: null }
     try {
-      snapshot = await this.snapshot(repo, recovery)
+      if (
+        !failure &&
+        result.outcome === 'succeeded' &&
+        request.refresh === 'worktree' &&
+        ['stage', 'unstage'].includes(request.action)
+      ) {
+        let cleanOperation = false
+        try {
+          await this.noInProgress(repo, recovery)
+          cleanOperation = true
+        } catch {
+          /* Full refresh retains conflict / interrupted-operation details. */
+        }
+        if (cleanOperation) {
+          const state = await this.status(repo, recovery)
+          const context = await this.headContext(repo, recovery)
+          if (
+            context.head === request.expectedHead &&
+            (context.branch || 'detached HEAD') === request.expectedBranch
+          )
+            worktree = {
+              path: repo,
+              head: context.head,
+              branch: context.branch || 'detached HEAD',
+              ...state,
+            }
+        }
+      }
+      if (!worktree) snapshot = await this.snapshot(repo, recovery)
     } catch (error) {
       result.refreshError = this.safeError(error)
     }
     if (failure && before) {
       try {
+        const afterHead = snapshot ? snapshot.head : await this.head(repo, recovery)
         if (
-          (snapshot ? snapshot.head : await this.head(repo, recovery)) !== before.head ||
+          afterHead !== before.head ||
           (snapshot
             ? snapshot.branch === 'detached HEAD'
               ? ''
               : snapshot.branch
             : await this.currentBranch(repo, recovery)) !== before.branch ||
-          (await this.indexFingerprint(repo, recovery)) !== before.index
+          (await indexState(recovery)) !== before.index
         ) {
           result.outcome = 'partial'
-          result.warning = `${request.action === 'commit' ? '提交命令' : 'Git 操作'}未正常结束，但检测到 HEAD、分支或暂存区变化。结果待核实，请检查状态，不要重复执行。`
+          result.warning =
+            request.action === 'commit'
+              ? afterHead !== before.head
+                ? '提交命令未正常结束，但 HEAD 已变化，仓库可能已产生新提交。请核对提交树，不要重复提交。'
+                : '提交未生成，但分支或暂存内容已变化。请核对差异和暂存内容，不要直接重复提交。'
+              : 'Git 操作未正常结束，但检测到 HEAD、分支或暂存区变化。结果待核实，请检查状态，不要重复执行。'
         }
       } catch {
         result.warning = 'Git 操作结果无法确认，请检查仓库状态，不要重复执行。'
       }
     }
-    return { ...result, output: this.safeError(result.output || ''), snapshot }
+    const hooks = this.activeLog?.commandDiagnostic?.hooks || []
+    const presentation = presentCommandFailure(request?.action, result, hooks)
+    if (presentation.error && result.error)
+      result.details = [result.details, this.safeError(result.error)].filter(Boolean).join('\n')
+    Object.assign(result, presentation)
+    return {
+      ...result,
+      output: this.safeError(result.output || ''),
+      snapshot,
+      ...(worktree ? { worktree } : {}),
+    }
   }
 
   async performAction(repo, request, signal) {
@@ -859,6 +1205,17 @@ class GitService {
     )
       throw new Error('缺少仓库上下文，请刷新后重新操作。')
     await this.checkContext(repo, request, signal)
+    if (['commit-operation', 'commit-sequence', 'checkout-revision'].includes(request.action)) {
+      if (typeof request.expectedHead !== 'string' || typeof request.expectedBranch !== 'string')
+        throw Error('缺少提交操作上下文。')
+      return this.commitOperations.execute(repo, request, signal)
+    }
+    if (request.action === 'partial-stage') return this.partialStage.execute(repo, request, signal)
+    if (['recovery-undo', 'recovery-restore'].includes(request.action)) {
+      if (typeof request.expectedHead !== 'string' || typeof request.expectedBranch !== 'string')
+        throw Error('缺少恢复操作上下文。')
+      return this.recovery.execute(repo, request, signal)
+    }
     if (
       ['rebase-start', 'rebase-continue', 'rebase-skip', 'rebase-abort'].includes(request.action)
     ) {
@@ -932,7 +1289,9 @@ class GitService {
     if (request.action === 'checkout-remote') return this.checkout.remote(repo, request, signal)
     if (request.action === 'checkout-remote-confirm')
       return this.checkout.confirmRemote(repo, request, signal)
-    if (['fetch', 'pull', 'push'].includes(request.action))
+    if (['set-fetch-scope', 'unshallow'].includes(request.action))
+      return this.fetchSettings.execute(repo, request, signal)
+    if (['fetch', 'pull', 'push', 'pull-and-push'].includes(request.action))
       return this.sync.execute(repo, request, signal)
     if (['stash-create', 'stash-apply', 'stash-pop', 'stash-drop'].includes(request.action))
       return this.stash.execute(repo, request, signal)
@@ -948,7 +1307,11 @@ class GitService {
         const message = string(request.message, '提交说明', { max: 20_000 }).trim()
         if (!message || !(await this.status(repo, signal)).staged.length)
           throw new Error('请填写说明，并先暂存需要提交的文件。')
-        output = await this.git(repo, ['commit', '-m', message], { timeout: 300_000, signal })
+        output = await this.git(repo, ['commit', '-m', message], {
+          timeout: 300_000,
+          signal,
+          diagnose: true,
+        })
         break
       }
       case 'branch':
@@ -1056,6 +1419,7 @@ class GitService {
         } else {
           if (request.force !== undefined && typeof request.force !== 'boolean')
             throw new Error('无效的强制删除选项。')
+          await this.recovery.checkpoint(repo, name, request.expectedOid, signal)
           try {
             output = await this.git(
               repo,
@@ -1084,6 +1448,18 @@ class GitService {
   }
 
   async create(request, signal) {
+    return this.recordOperation(
+      request?.kind === 'clone' ? 'clone' : 'init',
+      request?.path || '',
+      () => this.trackedCreate(request, signal),
+    )
+  }
+
+  async trackedCreate(request, signal) {
+    this.startActivity(
+      request?.kind === 'clone' ? 'clone' : 'init',
+      typeof request?.path === 'string' ? request.path : '',
+    )
     if (!request || !['clone', 'init'].includes(request.kind))
       throw new Error('请选择创建或克隆仓库。')
     const requested = absolutePath(request.path)
@@ -1105,27 +1481,34 @@ class GitService {
     await fs.mkdir(target) // Exclusive, never reinitialize an existing directory.
     try {
       if (request.kind === 'init')
-        await this.git(parent, ['init', '--initial-branch=main', '--', target], { signal })
+        await this.git(target, ['init', '--initial-branch=main', '--', target], {
+          signal,
+          creatingRepository: true,
+        })
       else
         await this.git(
-          parent,
+          target,
           [
             '-c',
             'protocol.ext.allow=never',
             'clone',
+            '--progress',
             '--no-recurse-submodules',
             '--no-local',
             '--',
             url,
             target,
           ],
-          { timeout: 300_000, signal },
+          { timeout: 300_000, signal, locale: 'C', creatingRepository: true },
         )
     } catch (error) {
       throw new Error(
         `${this.safeError(error)}\n目标目录 ${target} 可能留有部分内容；请检查，不会自动删除或覆盖。`,
       )
     }
+    if (this.runtimeOptions.enforceRepositoryTrust)
+      return { snapshot: null, path: target, requiresTrust: true }
+    if (this.activity) this.activity = { ...this.activity, phase: '读取新仓库状态', percent: null }
     try {
       return {
         snapshot: await this.snapshot(

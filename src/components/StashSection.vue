@@ -81,7 +81,7 @@ const store = useRepositoryStore(),
   margin: 0 8px;
   padding: 4px 6px 4px 24px;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   border-radius: 3px;
 }
 .stash-sidebar-entry.selected {
@@ -107,7 +107,7 @@ const store = useRepositoryStore(),
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   color: var(--muted);
 }
 </style>

@@ -8,6 +8,8 @@ import WorktreeChanges from './WorktreeChanges.vue'
 import StashInspector from './StashInspector.vue'
 import StashCreateForm from './StashCreateForm.vue'
 import RebaseInspector from './RebaseInspector.vue'
+import MergeInspector from './MergeInspector.vue'
+import { useMergeStore } from '../stores/merge'
 import { useStashStore } from '../stores/stash'
 import { useRebaseStore } from '../stores/rebase'
 import { useStagingStore } from '../stores/staging'
@@ -23,6 +25,7 @@ watch(
 const showDescription = computed(() => descriptionExpanded.value || !!description.value)
 const stash = useStashStore()
 const rebase = useRebaseStore()
+const merge = useMergeStore()
 const staging = useStagingStore()
 const scopeHint = computed(
   () =>
@@ -81,6 +84,7 @@ defineExpose({ submit })
 <template>
   <aside class="inspector">
     <RebaseInspector v-if="store.repo.merge?.rebase" />
+    <MergeInspector v-else-if="merge.panelVisible" />
     <StashInspector v-else-if="store.selectedStash" />
     <template v-else-if="store.selectedCommit">
       <header class="panel-header">
@@ -195,7 +199,9 @@ defineExpose({ submit })
         <div class="inspector-header-actions">
           <button
             class="icon-button"
-            :class="{ spin: store.busy }"
+            :class="{
+              spin: store.busy && ['commit', 'commit-selected'].includes(store.activeOperation),
+            }"
             :disabled="store.busy"
             aria-label="刷新文件状态"
             title="刷新文件状态"
@@ -237,6 +243,7 @@ defineExpose({ submit })
         id="worktree-stash-form"
       />
       <form
+        autocomplete="off"
         v-else
         id="worktree-commit-form"
         class="commit-form"
@@ -247,6 +254,7 @@ defineExpose({ submit })
           :class="{ 'description-collapsed': !showDescription }"
         >
           <input
+            autocomplete="off"
             v-model="title"
             placeholder="用一句话描述这次更改…"
             aria-label="提交说明"
@@ -266,6 +274,7 @@ defineExpose({ submit })
               :class="{ 'is-open': showDescription }"
             /></button
           ><textarea
+            autocomplete="off"
             v-show="showDescription"
             id="commit-description"
             v-model="description"
@@ -298,7 +307,11 @@ defineExpose({ submit })
           :title="commitBlocked || `提交全部已暂存内容到 ${store.repo.branch}`"
         >
           <Icon
-            :name="store.busy ? 'LoaderCircle' : 'Check'"
+            :name="
+              store.busy && ['commit', 'commit-selected'].includes(store.activeOperation)
+                ? 'LoaderCircle'
+                : 'Check'
+            "
             :class="{ spin: store.busy }"
             :size="16"
           /><span>提交 {{ store.repo.staged.length }} 个文件</span><kbd>Ctrl ↵</kbd>
@@ -329,7 +342,7 @@ defineExpose({ submit })
   width: 100%;
   padding: 4px 11px 7px;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--ui-font-size);
 }
 .description-toggle svg {
   transition: transform 120ms ease;
@@ -350,7 +363,7 @@ defineExpose({ submit })
 }
 .inspector .commit-hint {
   margin: 7px 0;
-  font-size: 10px;
+  font-size: var(--ui-font-help);
 }
 
 .worktree-compose-tabs {
@@ -364,7 +377,7 @@ defineExpose({ submit })
 .worktree-compose-tabs button {
   min-height: 27px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   border-radius: 3px;
   color: var(--text-secondary);
 }

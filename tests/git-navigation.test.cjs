@@ -391,3 +391,83 @@ test('unrelated histories are not automatically merged and never change the work
   assert.equal(result.snapshot.merge, null)
   assert.equal(await fs.readFile(repo + '/base.txt', 'utf8'), 'base\n')
 })
+
+test('rebase menu reads history without fingerprinting worktree; invocation still validates it', async (t) => {
+  const { repo, git, topic, write, commit, request, base } = await fixture(t)
+  const target = await topic()
+  await write('main.txt', 'parallel\n')
+  await commit('local work')
+  await write('dirty.txt', 'uncommitted\n')
+  const before = (await git.git(repo, ['status', '--porcelain=v1'])).trim()
+  const selected = await request('refs/heads/topic', { kind: 'rebase' })
+  git.checkout.fingerprint = async () => {
+    throw new Error('Full worktree check reached')
+  }
+  const menu = await git.rebase.menu(repo, {
+    head: selected.expectedHead,
+    oid: selected.expectedOid,
+  })
+  assert.deepEqual(menu, { canInteractive: true })
+  await assert.rejects(git.rebase.menu(repo, { head: '--all', oid: target }), /无效/)
+  await assert.rejects(
+    git.rebase.menu(repo, { head: selected.expectedHead, oid: '-invalid' }),
+    /无效/,
+  )
+  await assert.rejects(
+    git.navigation.read(repo, { ...selected, kind: 'rebase' }),
+    /Full worktree check reached/,
+  )
+  await assert.rejects(git.navigation.read(repo, { ...selected, expectedOid: base }), /已变化/)
+  await assert.rejects(git.navigation.read(repo, { ...selected, expectedHead: target }), /变化/)
+  assert.equal((await git.git(repo, ['status', '--porcelain=v1'])).trim(), before)
+})
+
+test('rebase menu hides empty, merge and unrelated ranges but allows linear commits after a shared merge', async (t) => {
+  const { repo, git, topic, write, commit, request, base } = await fixture(t)
+  const target = await topic()
+  const read = async (ref) => {
+    const selected = await request(ref)
+    return (await git.rebase.menu(repo, { head: selected.expectedHead, oid: selected.expectedOid }))
+      .canInteractive
+  }
+  assert.equal(await read('refs/heads/main'), false)
+  assert.equal(await read('refs/heads/topic'), false)
+  await write('main.txt', 'parallel\n')
+  await commit('local work')
+  assert.equal(await read('refs/heads/topic'), true)
+  await git.git(repo, ['merge', '--no-ff', 'topic', '-m', 'merge'])
+  assert.equal(await read('refs/heads/topic'), false)
+  await git.git(repo, ['branch', 'shared-merge'])
+  await write('next.txt', 'linear after merge\n')
+  await commit('linear')
+  assert.equal(await read('refs/heads/shared-merge'), true)
+  const tree = (await git.git(repo, ['rev-parse', `${base}^{tree}`])).trim()
+  const unrelated = (await git.git(repo, ['commit-tree', tree, '-m', 'unrelated root'])).trim()
+  await git.git(repo, ['update-ref', 'refs/heads/unrelated', unrelated])
+  assert.equal(await read('refs/heads/unrelated'), false)
+  assert.equal((await git.git(repo, ['rev-parse', 'topic'])).trim(), target)
+})
+
+test('rebase menu bounds history reads and hides over-limit replay ranges', async () => {
+  const { RebaseOperations } = require('../electron/rebase.cjs')
+  let command
+  const rebase = new RebaseOperations({
+    git: async (_repo, args) => {
+      command = args
+      return Array.from(
+        { length: 201 },
+        (_, i) => `${i.toString(16).padStart(40, '0')} ${'a'.repeat(40)}`,
+      ).join('\n')
+    },
+  })
+  assert.deepEqual(
+    await rebase.menu('/fixture', {
+      head: 'b'.repeat(40),
+      oid: 'c'.repeat(40),
+      branch: 'main',
+      related: true,
+    }),
+    { canInteractive: false },
+  )
+  assert.ok(command.includes('--max-count=201'))
+})

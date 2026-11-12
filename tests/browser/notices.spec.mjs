@@ -40,7 +40,7 @@ test('notices align the first line and close control without width jumps or Insp
       return [...stack.querySelectorAll('.toast')].map((e) => {
         const r = e.getBoundingClientRect(),
           icon = e.querySelector(':scope > svg').getBoundingClientRect()
-        const text = e.querySelector(':scope > span'),
+        const text = e.querySelector(':scope > .toast-content'),
           textBox = text.getBoundingClientRect(),
           style = getComputedStyle(text)
         const close = e.querySelector('button').getBoundingClientRect()

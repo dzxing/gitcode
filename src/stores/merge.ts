@@ -13,17 +13,18 @@ interface Session {
   error: string
   resolved: string[]
   operation: string
+  panelOpen: boolean
 }
 export const useMergeStore = defineStore('merge', () => {
   const repo = useRepositoryStore(),
     sessions = reactive<Record<string, Session>>({}),
     loading = ref(false),
-    abortSignature = ref('')
+    abortSignature = ref(''),
+    panelRequest = ref(0)
   const key = computed(() => `${repo.activeTabId}\0${repo.repo.path}`)
-  const session = computed(
-    () =>
-      sessions[key.value] ??
-      (sessions[key.value] = {
+  const session = computed(() => {
+    if (!sessions[key.value])
+      sessions[key.value] = {
         file: null,
         state: null,
         draft: '',
@@ -32,14 +33,26 @@ export const useMergeStore = defineStore('merge', () => {
         error: '',
         resolved: [],
         operation: '',
-      }),
-  )
+        panelOpen: false,
+      }
+    return sessions[key.value]
+  })
   const state = computed(() => repo.repo.merge),
     dirty = computed(
       () => !!session.value.file && session.value.draft !== (session.value.file.working || ''),
     )
   const stale = computed(
     () => !!session.value.file && session.value.state?.signature !== state.value?.signature,
+  )
+  const panelVisible = computed(
+    () =>
+      !!state.value &&
+      !state.value.rebase &&
+      !state.value.unsupported &&
+      session.value.panelOpen &&
+      !session.value.editor &&
+      !repo.selectedCommit &&
+      !repo.selectedStash,
   )
   let readVersion = 0,
     announced = ''
@@ -54,7 +67,13 @@ export const useMergeStore = defineStore('merge', () => {
     { deep: true },
   )
   watch(
-    [key, () => state.value?.incoming, () => state.value?.files.length, () => repo.busy],
+    [
+      key,
+      () => state.value?.head,
+      () => state.value?.incoming,
+      () => state.value?.files.length,
+      () => repo.busy,
+    ],
     () => {
       if (repo.busy || repo.isNewTab) return
       const operation = state.value ? `${state.value.head}\0${state.value.incoming}` : ''
@@ -72,6 +91,7 @@ export const useMergeStore = defineStore('merge', () => {
         state.value &&
         (state.value.active || state.value.files.length) &&
         !state.value.unsupported &&
+        !repo.externalUpdate &&
         id !== announced
       ) {
         announced = id
@@ -79,7 +99,7 @@ export const useMergeStore = defineStore('merge', () => {
       }
       if (!state.value) {
         announced = ''
-        if (repo.modal === 'merge-conflicts') repo.modal = null
+        session.value.panelOpen = false
         if (!dirty.value) {
           session.value.editor = false
           session.value.file = null
@@ -103,30 +123,30 @@ export const useMergeStore = defineStore('merge', () => {
   function open() {
     if (repo.busy) return
     if (!state.value) {
-      repo.modal = null
       session.value.editor = !!session.value.file
       return
     }
     repo.clearSelection()
     if (state.value?.rebase) {
-      if (repo.modal === 'merge-conflicts') repo.modal = null
       abortSignature.value = ''
       return
     }
     if (!session.value.message && state.value?.active) session.value.message = state.value.message
-    repo.modal = 'merge-conflicts'
+    if (repo.modal === 'pull' || repo.modal === 'push') repo.modal = null
+    session.value.panelOpen = true
+    panelRequest.value++
     abortSignature.value = ''
   }
   function close() {
     if (repo.busy) return
-    repo.modal = null
+    session.value.panelOpen = false
     abortSignature.value = ''
   }
-  async function openFile(file: string, discard = false) {
+  async function openFile(file: string, discard = false, showEditor = true) {
     if (repo.busy || loading.value) return
     const s = session.value
     if (s.file?.path === file && !discard) {
-      s.editor = true
+      s.editor = showEditor
       repo.modal = null
       return
     }
@@ -146,7 +166,7 @@ export const useMergeStore = defineStore('merge', () => {
       s.file = result.file
       s.state = result.state
       s.draft = result.file.working || ''
-      s.editor = true
+      s.editor = showEditor
       repo.clearSelection()
       repo.modal = null
     } catch (error) {
@@ -192,9 +212,10 @@ export const useMergeStore = defineStore('merge', () => {
       return
     }
     const origin = key.value
-    const ok = await repo.run('merge-finish', {
+    const ok = await repo.run(state.value.sequence ? 'commit-sequence' : 'merge-finish', {
       mergeSignature: state.value.signature,
       message: session.value.message,
+      command: 'continue',
     })
     if (origin === key.value && !ok)
       session.value.error =
@@ -211,7 +232,11 @@ export const useMergeStore = defineStore('merge', () => {
   async function abort() {
     if (!abortSignature.value || repo.busy) return
     const origin = key.value
-    const ok = await repo.run('merge-abort', { mergeSignature: abortSignature.value })
+    const ok = await repo.run(state.value?.sequence ? 'commit-sequence' : 'merge-abort', {
+      mergeSignature: abortSignature.value,
+      command: 'abort',
+      confirm: true,
+    })
     if (origin === key.value) {
       abortSignature.value = ''
       if (!ok) session.value.error = repo.lastActionResult?.error || '中止未完成，请检查仓库。'
@@ -223,6 +248,14 @@ export const useMergeStore = defineStore('merge', () => {
     if (state.value) open()
     else repo.modal = null
   }
+  async function skip() {
+    if (!state.value?.sequence || repo.busy || dirty.value) return
+    await repo.run('commit-sequence', {
+      mergeSignature: state.value.signature,
+      command: 'skip',
+      confirm: true,
+    })
+  }
   function discard() {
     session.value.file = null
     session.value.draft = ''
@@ -230,6 +263,8 @@ export const useMergeStore = defineStore('merge', () => {
     session.value.error = ''
   }
   return {
+    panelVisible,
+    panelRequest,
     state,
     session,
     loading,
@@ -243,6 +278,7 @@ export const useMergeStore = defineStore('merge', () => {
     finish,
     requestAbort,
     abort,
+    skip,
     dismissEditor,
     discard,
   }

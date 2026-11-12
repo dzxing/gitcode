@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm, chmod, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -49,6 +50,7 @@ export async function verifyWorktreeSelection(
       .getByRole('dialog', { name: '打开本地仓库', exact: true })
       .getByRole('button', { name: '打开仓库', exact: true })
       .click()
+    await confirmFixtureTrust(page)
     await expect(page.locator('.status-path')).toHaveAttribute('title', target)
     await expect(page.locator('.worktree-changes')).toBeVisible()
   }

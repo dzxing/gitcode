@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -63,6 +64,7 @@ export async function verifyGitKrakenParity(page, { url, screenshotDirectory } =
     await page.keyboard.press('Control+o')
     await page.getByLabel('仓库路径', { exact: true }).fill(repo)
     await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await page
       .locator('.toolbar-actions')
       .getByRole('button', { name: '拉取', exact: true })
@@ -70,15 +72,15 @@ export async function verifyGitKrakenParity(page, { url, screenshotDirectory } =
     const upstream = page.getByRole('dialog', { name: '设置上游分支', exact: true })
     await expect(upstream).toBeVisible()
     await upstream.getByLabel('远程分支', { exact: true }).selectOption('refs/remotes/origin/main')
-    await upstream.getByRole('button', { name: '设置并继续拉取', exact: true }).click()
-    const pull = page.getByRole('dialog', { name: '拉取远程分支', exact: true })
-    await expect(
-      pull.getByRole('button', { name: '尽可能快进（否则合并）', exact: true }),
-    ).toHaveAttribute('aria-pressed', 'true')
-    await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeEnabled()
-    const pulled = await action(() =>
-      pull.getByRole('button', { name: '确认拉取', exact: true }).click(),
+    const pullResponse = page.waitForResponse(
+      (r) =>
+        r.url().endsWith('/__gitcode/rpc') &&
+        r.request().postDataJSON()?.method === 'action' &&
+        r.request().postDataJSON()?.args?.[1]?.action === 'pull',
     )
+    await upstream.getByRole('button', { name: '设置并继续拉取', exact: true }).click()
+    const pulled = (await (await pullResponse).json()).result
+    actions.push(pulled.outcome)
     assert.equal(pulled.outcome, 'succeeded', JSON.stringify(pulled))
     assert.equal(await git.head(repo), incoming)
     assert.equal(await readFile(path.join(repo, 'draft.txt'), 'utf8'), 'local draft\n')

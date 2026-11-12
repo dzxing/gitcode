@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -63,6 +64,7 @@ export async function verifyReferenceCheckout(
     await page.keyboard.press('Control+o')
     await page.getByLabel('仓库路径', { exact: true }).fill(repo)
     await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     for (const ref of ['origin/remote-only', 'tag: visual-tag']) {
       await page.getByRole('button', { name: `查看引用 ${ref}`, exact: true }).click()
       const refs = page.getByRole('dialog', { name: '提交引用', exact: true })

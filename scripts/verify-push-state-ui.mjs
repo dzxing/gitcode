@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -43,7 +44,15 @@ export async function verifyPushStates(page, { url, screenshotDirectory } = {}) 
     const open = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await open.getByLabel('仓库路径', { exact: true }).fill(repo)
     await open.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(open).not.toBeVisible()
+    const reconfirm = async () => {
+      await page.keyboard.press('Control+o')
+      await open.getByRole('textbox', { name: '仓库路径', exact: true }).fill(repo)
+      await open.getByRole('button', { name: '打开仓库', exact: true }).click()
+      await confirmFixtureTrust(page)
+      await expect(open).not.toBeVisible()
+    }
     const show = async () =>
       page.locator('.toolbar-actions').getByRole('button', { name: '推送', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '推送指定分支', exact: true })
@@ -55,6 +64,7 @@ export async function verifyPushStates(page, { url, screenshotDirectory } = {}) 
     await cancel()
     // An unavailable push endpoint must never become a "create branch" state.
     await git.git(repo, ['remote', 'set-url', '--push', 'origin', root + '/unavailable.git'])
+    await reconfirm()
     await show()
     await expect(dialog.getByRole('status')).toContainText('未能确认远端状态')
     await expect(dialog.getByRole('button', { name: '推送并关联', exact: true })).toBeDisabled()
@@ -62,6 +72,7 @@ export async function verifyPushStates(page, { url, screenshotDirectory } = {}) 
     await capture('check-failed')
     await cancel()
     await git.git(repo, ['remote', 'set-url', '--push', 'origin', bare])
+    await reconfirm()
     // Changing the destination invalidates the old check immediately. Enter checks it.
     await show()
     await expect(dialog.getByRole('button', { name: '推送并关联', exact: true })).toBeEnabled()

@@ -38,14 +38,74 @@ function classify(config, name) {
     types.find((type) => name.startsWith(config[type]) && name.length > config[type].length) || null
   )
 }
+function matchRef(pattern, ref) {
+  if (!pattern.includes('*')) return pattern === ref ? '' : null
+  if ((pattern.match(/\*/g) || []).length !== 1) return null
+  const [prefix, suffix] = pattern.split('*')
+  return ref.startsWith(prefix) &&
+    ref.endsWith(suffix) &&
+    ref.length >= prefix.length + suffix.length
+    ? ref.slice(prefix.length, suffix ? -suffix.length : undefined)
+    : null
+}
+
+// Resolve tracking refs through fetch refspecs, rather than guessing at slashes
+// in remote names. Exclude symbolic refs and ambiguous/negative mappings.
+function remoteBases(values, branches) {
+  const result = []
+  const mappings = [...values].filter(
+    ([key]) => key.startsWith('remote.') && key.endsWith('.fetch'),
+  )
+  for (const branch of branches) {
+    if (branch.kind !== 'remote' || branch.symbolicTarget) continue
+    const fullRef = branch.fullRef || `refs/remotes/${branch.name}`
+    if (!fullRef.startsWith('refs/remotes/')) continue
+    const matches = new Map()
+    for (const [key, specs] of mappings) {
+      const remote = key.slice(7, -6)
+      for (const spec of specs) {
+        if (typeof spec !== 'string' || spec.startsWith('^')) continue
+        const [from, to, extra] = spec.replace(/^\+/, '').split(':')
+        if (
+          extra !== undefined ||
+          !from?.startsWith('refs/heads/') ||
+          !to?.startsWith('refs/remotes/')
+        )
+          continue
+        const middle = matchRef(to, fullRef)
+        if (
+          middle === null ||
+          from.includes('*') !== to.includes('*') ||
+          (from.match(/\*/g) || []).length > 1
+        )
+          continue
+        const remoteRef = from.replace('*', middle)
+        if (specs.some((s) => s.startsWith('^') && matchRef(s.slice(1), remoteRef) !== null))
+          continue
+        matches.set(`${remote}\0${remoteRef}`, {
+          fullRef,
+          oid: branch.hash,
+          name: branch.name,
+          remote,
+          remoteRef,
+        })
+      }
+    }
+    if (matches.size === 1) result.push([...matches.values()][0])
+  }
+  return result
+}
 class GitFlowOperations {
   constructor(git) {
     this.git = git
     this.plans = new Map()
+    this.validatedStateConfigs = new Set()
   }
-  async configuration(repo, signal) {
-    const common = (await this.git.git(repo, ['rev-parse', '--git-common-dir'], { signal })).trim()
-    const file = path.resolve(repo, common, 'config')
+  async configuration(repo, signal, locations) {
+    const common = locations?.has('config')
+      ? null
+      : (await this.git.git(repo, ['rev-parse', '--git-common-dir'], { signal })).trim()
+    const file = locations?.get('config') || path.resolve(repo, common, 'config')
     const bytes = await fs.readFile(file)
     const raw = await this.git.git(repo, ['config', '--null', '--list', '--includes'], { signal })
     const local = await this.git.git(
@@ -67,12 +127,14 @@ class GitFlowOperations {
       // Worktree scalar overrides legitimately appear after the common config.
       // Keep duplicate detection within the effective worktree scope, rather
       // than treating normal inherited overrides as conflicting multi-values.
-      const worktreeFile = path.resolve(
-        repo,
-        (
-          await this.git.git(repo, ['rev-parse', '--git-path', 'config.worktree'], { signal })
-        ).trim(),
-      )
+      const worktreeFile =
+        locations?.get('config.worktree') ||
+        path.resolve(
+          repo,
+          (
+            await this.git.git(repo, ['rev-parse', '--git-path', 'config.worktree'], { signal })
+          ).trim(),
+        )
       const exists = await fs.stat(worktreeFile).catch((error) => {
         if (error.code === 'ENOENT') return null
         throw error
@@ -157,8 +219,8 @@ class GitFlowOperations {
       )
     return config
   }
-  async state(repo, branches, signal) {
-    const data = await this.configuration(repo, signal)
+  async state(repo, branches, signal, locations) {
+    const data = await this.configuration(repo, signal, locations)
     const defaults = {
       production:
         branches.some((b) => b.kind === 'local' && b.name === 'master') &&
@@ -178,7 +240,13 @@ class GitFlowOperations {
     try {
       if (Object.values(keys).some((key) => (data.values.get(key) || []).length > 1))
         throw new Error('GitFlow 规则存在重复值，请整理仓库配置后刷新。')
-      await this.validate(repo, config, signal)
+      const validationKey = JSON.stringify([repo, this.git.gitPath, this.git.gitVersion, config])
+      if (!this.validatedStateConfigs.has(validationKey)) {
+        await this.validate(repo, config, signal)
+        if (this.validatedStateConfigs.size >= 32)
+          this.validatedStateConfigs.delete(this.validatedStateConfigs.values().next().value)
+        this.validatedStateConfigs.add(validationKey)
+      }
     } catch (failure) {
       error = failure.message
     }
@@ -187,19 +255,20 @@ class GitFlowOperations {
     )
     let operationError = ''
     try {
-      await this.git.noInProgress(repo, signal)
+      await this.git.noInProgress(repo, signal, locations)
     } catch (failure) {
       if (signal?.aborted) throw failure
       operationError = failure.message
     }
     return {
-      finish: await this.git.flowFinish.state(repo, signal),
+      finish: await this.git.flowFinish.state(repo, signal, locations),
       finishSupported: true,
       config,
       signature: data.signature,
       configured: data.complete,
       ready: data.complete && !error && !missing.length,
       missing,
+      remoteBases: remoteBases(data.values, branches),
       error,
       writeError: data.writeError,
       operationError,
@@ -224,7 +293,12 @@ class GitFlowOperations {
     const refs = (
       await this.git.git(
         repo,
-        ['for-each-ref', '--format=%(refname)%00%(objectname)', 'refs/heads'],
+        [
+          'for-each-ref',
+          '--format=%(refname)%00%(objectname)%00%(symref)',
+          'refs/heads',
+          'refs/remotes',
+        ],
         { signal },
       )
     )
@@ -232,9 +306,23 @@ class GitFlowOperations {
       .split('\n')
       .filter(Boolean)
       .map((line) => line.split('\0'))
-    const existing = new Map(refs),
+    const existing = new Map(
+        refs.filter(([ref]) => ref.startsWith('refs/heads/')).map(([ref, oid]) => [ref, oid]),
+      ),
       checks = new Map(),
       creates = []
+    const remoteSources = remoteBases(
+      data.values,
+      refs
+        .filter(([ref]) => ref.startsWith('refs/remotes/'))
+        .map(([fullRef, hash, symbolicTarget]) => ({
+          kind: 'remote',
+          fullRef,
+          hash,
+          symbolicTarget,
+          name: fullRef.slice('refs/remotes/'.length),
+        })),
+    )
     for (const name of [config.production, config.develop]) {
       const ref = `refs/heads/${name}`
       if (existing.has(ref)) {
@@ -248,10 +336,15 @@ class GitFlowOperations {
       )
         throw new Error(`基础分支 ${name} 与现有分支形成目录冲突，请修改规则。`)
       const sourceRef = request.sources?.[name]
-      if (typeof sourceRef !== 'string' || !existing.has(sourceRef))
-        throw new Error(`请为缺失的 ${name} 明确选择一个现有本地起点分支。`)
-      checks.set(sourceRef, existing.get(sourceRef))
-      creates.push({ name, sourceRef, oid: existing.get(sourceRef) })
+      const tracking = remoteSources.find(
+        (item) => item.fullRef === sourceRef && item.remoteRef === `refs/heads/${name}`,
+      )
+      if (typeof sourceRef !== 'string' || (!existing.has(sourceRef) && !tracking))
+        throw new Error(`请为缺失的 ${name} 明确选择现有本地起点，或可唯一定位的远端同名分支。`)
+      if (tracking) await this.verifyRemote(repo, tracking, signal)
+      const oid = tracking?.oid || existing.get(sourceRef)
+      checks.set(sourceRef, oid)
+      creates.push({ name, sourceRef, oid, ...(tracking ? { tracking } : {}) })
     }
     const id = randomUUID(),
       expiresAt = Date.now() + 300000
@@ -278,9 +371,29 @@ class GitFlowOperations {
       expiresAt,
     }
   }
+  async verifyRemote(repo, source, signal) {
+    await this.git.git(repo, ['check-ref-format', source.remoteRef], { signal })
+    const raw = await this.git.git(
+      repo,
+      ['ls-remote', '--exit-code', '--refs', '--', source.remote, source.remoteRef],
+      { signal, timeout: 30000, allowedCodes: [0, 2] },
+    )
+    const advertised = raw
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.split(/\s+/))
+      .filter(([, ref]) => ref === source.remoteRef)
+    if (!advertised.length)
+      throw new Error(
+        `远端 ${source.remote} 已不存在 ${source.remoteRef.slice('refs/heads/'.length)}，未创建本地分支。请选择本地起点重新预览，或先清理过期的远端跟踪引用。`,
+      )
+    if (advertised.length !== 1 || advertised[0][0] !== source.oid)
+      throw new Error(`远端 ${source.remote} 的基础分支已更新，请先获取远端分支后重新预览。`)
+  }
   // Lock the common config using Git's own lock-file convention. Build the full
   // replacement before touching refs; preserve unrelated settings and file mode.
-  async save(repo, data, config, beforeCommit, signal) {
+  async save(repo, data, config, beforeCommit, signal, tracking = []) {
     if (data.writeError) throw new Error(data.writeError)
     const lock = data.file + '.lock'
     let owned = false
@@ -302,6 +415,34 @@ class GitFlowOperations {
           ['config', '--file', lock, '--no-includes', '--replace-all', key, config[name]],
           { signal },
         )
+      for (const item of tracking) {
+        await this.git.git(
+          repo,
+          [
+            'config',
+            '--file',
+            lock,
+            '--no-includes',
+            '--replace-all',
+            `branch.${item.name}.remote`,
+            item.tracking.remote,
+          ],
+          { signal },
+        )
+        await this.git.git(
+          repo,
+          [
+            'config',
+            '--file',
+            lock,
+            '--no-includes',
+            '--replace-all',
+            `branch.${item.name}.merge`,
+            item.tracking.remoteRef,
+          ],
+          { signal },
+        )
+      }
       if (signal?.aborted) throw new Error('操作已取消，尚未保存配置。')
       // Update-ref is transactional, but refs and config are separate resources.
       // If the final rename fails, the caller reports the created refs explicitly.
@@ -326,6 +467,8 @@ class GitFlowOperations {
         throw new Error('初始化预览已失效，请重新预览。')
       const data = await this.guarded(repo, { ...plan }, signal)
       await this.git.noInProgress(repo, signal)
+      for (const item of plan.creates)
+        if (item.tracking) await this.verifyRemote(repo, item.tracking, signal)
       let touched = false
       try {
         await this.save(
@@ -352,6 +495,7 @@ class GitFlowOperations {
             )
           },
           signal,
+          plan.creates.filter((item) => item.tracking),
         )
       } catch (error) {
         if (touched)
@@ -365,7 +509,7 @@ class GitFlowOperations {
       }
       return {
         outcome: 'succeeded',
-        output: 'GitFlow 已初始化；已有分支保持原位置，未切换或推送。',
+        output: `GitFlow 已初始化；${plan.creates.some((item) => item.tracking) ? '已从所选远端恢复并关联本地分支；' : ''}已有分支保持原位置，未切换或推送。`,
       }
     }
     const data = await this.guarded(repo, request, signal)

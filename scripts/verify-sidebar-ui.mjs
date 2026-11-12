@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { expect } from '@playwright/test'
 
@@ -77,6 +78,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
         gitPath: 'UI fixture',
         gitError: '',
       }),
+      repositoryTrust: async (path) => ({ path, gitDir: path + '/.git', trusted: true, token: '' }),
       snapshot: async () => structuredClone(state),
       commit: async () => ({ body: 'UI verification fixture', files: [] }),
       diff: async () => ({ diff: '', truncated: false }),
@@ -117,6 +119,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
     const dialog = page.getByRole('dialog', { name: '打开本地仓库' })
     await dialog.getByLabel('仓库路径', { exact: true }).fill(fixture.path)
     await dialog.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(
       page.locator('[data-sidebar-section="gitflow"] [data-flow-group="feature"]'),
     ).toBeVisible()

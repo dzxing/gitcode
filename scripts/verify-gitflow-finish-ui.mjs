@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
@@ -64,6 +65,7 @@ export async function verifyGitFlowFinish(
     const dialog = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await dialog.getByRole('textbox', { name: '仓库路径', exact: true }).fill(repo)
     await dialog.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(dialog).not.toBeVisible()
   }
   const label = type === 'feature' ? '完成功能分支' : type === 'release' ? '完成发布' : '完成热修复'
@@ -94,7 +96,7 @@ export async function verifyGitFlowFinish(
     await git.git(repo, ['remote', 'add', 'origin', bare])
     await git.git(repo, ['push', 'origin', 'production', 'develop'])
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     await openRepo()
     await page.getByRole('button', { name: '打开 GitFlow 操作面板', exact: true }).click()
     const panel = page.locator('.gitflow-panel')
@@ -162,12 +164,12 @@ export async function verifyGitFlowFinish(
         await confirm
           .getByRole('textbox', { name: '版本标签说明', exact: true })
           .fill('New version without replacing existing tag')
-      } else await confirm.getByRole('button', { name: '重新读取', exact: true }).click()
+      } else await confirm.getByRole('button', { name: '重新检查', exact: true }).click()
       result = await action(() => confirm.getByRole('button', { name: label, exact: true }).click())
     }
     if (conflict) {
       assert.equal(result.outcome, 'partial', result.error)
-      const list = page.getByRole('dialog', { name: '解决冲突', exact: true })
+      const list = page.getByRole('region', { name: '解决冲突', exact: true })
       await expect(list).toBeVisible()
       await expect(
         page.getByRole('region', { name: 'GitFlow 执行进度', exact: true }),
@@ -193,9 +195,9 @@ export async function verifyGitFlowFinish(
         await capture('stopped-preserves-completed-work')
         return { type, stopped: true, sourceRetained: true, completedProductionPreserved: true }
       }
-      await list.locator('.conflict-file-name').dblclick()
+      await list.locator('.conflict-file-name').click()
       const editor = page.getByRole('region', { name: '冲突解决编辑器', exact: true })
-      await expect(editor).toBeVisible()
+      await expect(editor).toBeVisible({ timeout: 15000 })
       await expect(editor.locator('.merge-pane:last-child h3')).toContainText('production')
       await editor
         .getByRole('textbox', { name: '编辑合并结果', exact: true })
@@ -205,11 +207,14 @@ export async function verifyGitFlowFinish(
         editor.getByRole('button', { name: '保存并标记已解决', exact: true }).click(),
       )
       assert.equal(result.outcome, 'succeeded', result.error)
-      const ready = page.getByRole('dialog', { name: '检查合并结果', exact: true })
+      const ready = page.getByRole('region', { name: '检查合并结果', exact: true })
       await expect(ready).toBeVisible()
       await ready.getByRole('button', { name: '稍后处理', exact: true }).click()
       await page.reload()
-      await openRepo()
+      await expect(page.locator('.repo-selector')).toHaveAttribute('title', '打开本地仓库：' + repo)
+      await expect(
+        page.getByRole('dialog', { name: '信任此仓库？', exact: true }),
+      ).not.toBeVisible()
       const progress = page.getByRole('region', { name: 'GitFlow 执行进度', exact: true })
       await expect(progress).toBeVisible()
       await expect(ready).toBeVisible()

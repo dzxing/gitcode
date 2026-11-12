@@ -64,9 +64,9 @@ try {
       base = graph.nodes.find((n) => n.hash === 'tip')
     assert.ok(graph.nodes.some((n) => n.x > base.x))
     assert.equal(node.x, base.x)
-    assert.equal(graph.stashEdges[0].d, `M${node.x} ${node.y}V${base.y}`)
+    assert.equal(graph.stashEdges[0].d.replaceAll(' ', ''), `M${node.x}${node.y}V${base.y}`)
   })
-  await test('a recent stash reserves the left lane through a crowded history instead of being pushed right', () => {
+  await test('stash routes reach their base without taking ownership of ordinary history fragments', () => {
     const branches = [
       { ...commits[0], hash: 'a', parents: ['root'] },
       { ...commits[0], hash: 'b', parents: ['broot'] },
@@ -74,25 +74,28 @@ try {
       { ...commits[1], hash: 'broot', parents: ['root'] },
       { ...commits[1], hash: 'root' },
     ]
-    const graph = buildHistoryGraph(branches, [
-      stash('stash@{0}', 'stash', 'b', '2026-10-28T00:00:00Z'),
-    ])
-    const node = graph.stashNodes[0],
-      base = graph.nodes.find((n) => n.hash === 'b')
-    assert.equal(node.x, base.x)
-    assert.ok(node.x < Math.max(...graph.nodes.map((n) => n.x)))
-    const blocked = buildHistoryGraph(commits, [stash('stash@{0}', 'stash', 'old')])
-    assert.equal(blocked.stashNodes[0].x, 24)
-    assert.equal(blocked.nodes.find((n) => n.hash === 'old').x, 24)
-    assert.equal(blocked.nodes.find((n) => n.hash === 'new').x, 46)
-    const crowded = buildHistoryGraph(branches, [stash('stash@{0}', 'stash', 'root')])
-    assert.equal(crowded.stashNodes[0].x, 24)
-    assert.equal(crowded.nodes.find((n) => n.hash === 'root').x, 24)
-    assert.ok(crowded.nodes.filter((n) => n.hash !== 'root').every((n) => n.x > 24))
-    assert.equal(
-      crowded.stashEdges[0].d,
-      `M24 45V${crowded.nodes.find((n) => n.hash === 'root').y}`,
-    )
+    for (const baseHash of ['a', 'b', 'root']) {
+      const ordinary = buildHistoryGraph(branches, [])
+      const graph = buildHistoryGraph(branches, [stash('stash@{0}', 'stash', baseHash)])
+      const base = graph.nodes.find((node) => node.hash === baseHash)
+      const edge = graph.stashEdges[0]
+      assert.equal(edge.parentHash, baseHash)
+      assert.equal(edge.boundary, false)
+      let end = { x: 0, y: 0 }
+      for (const [, command, raw] of edge.d.matchAll(/([MLHVQ])([^MLHVQ]*)/g)) {
+        const values = raw.trim().split(/[ ,]+/).map(Number)
+        if (command === 'M' || command === 'L') end = { x: values[0], y: values[1] }
+        if (command === 'H') end.x = values[0]
+        if (command === 'V') end.y = values[0]
+        if (command === 'Q') end = { x: values.at(-2), y: values.at(-1) }
+      }
+      assert.deepEqual(end, { x: base.x, y: base.y })
+      assert.deepEqual(
+        graph.nodes.map((node) => node.color),
+        ordinary.nodes.map((node) => node.color),
+      )
+      assert.ok(graph.stashNodes[0].y < base.y)
+    }
   })
   await test('multiple stashes sharing a base reserve separate overlapping tracks', () => {
     const graph = buildHistoryGraph(commits, [

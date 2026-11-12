@@ -29,6 +29,12 @@ try {
     assert.equal(resolveBlock(text, 0, 'theirs'), 'remote\n')
     assert.equal(resolveBlock('plain\n', 0, 'both'), 'plain\n')
   })
+  await test('small custom marker blocks resolve exactly while Markdown underlines stay plain text', () => {
+    const text = '<<< HEAD\nlocal\n===\nincoming\n>>> other\n'
+    assert.equal(conflictBlocks(text, 3).length, 1)
+    assert.equal(resolveBlock(text, 0, 'ours', 3), 'local\n')
+    assert.equal(conflictBlocks('Heading\n=======\n').length, 0)
+  })
 } finally {
   await vite.close()
 }

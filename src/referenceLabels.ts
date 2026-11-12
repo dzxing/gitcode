@@ -1,5 +1,6 @@
 import type { Branch, Commit } from './types'
 import { branchReference } from './references'
+export type ReferenceLabelStyle = 'current' | 'gitkraken' | 'idea'
 
 export interface CommitReference {
   key: string

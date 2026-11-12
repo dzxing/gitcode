@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, readFile, rm, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -51,13 +52,14 @@ export async function verifyStashRepositoryScope(page, { url, screenshotDirector
     const sourceBase = await git.head(repo)
     await writeFile(repo + '/A.txt', 'cross-branch stash content\n')
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText('Git 服务已连接')
     await page.keyboard.press('Control+o')
     const open = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await open.getByRole('textbox', { name: '仓库路径', exact: true }).fill(repo)
     await open.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(open).not.toBeVisible()
-    await expect(page.locator('.status-path')).toHaveAttribute('title', repo)
+    await expect(page.locator('.status-path')).toHaveText(repo)
     await page.getByRole('tab', { name: '贮藏', exact: true }).click()
     await page
       .getByRole('form', { name: '贮藏当前修改', exact: true })

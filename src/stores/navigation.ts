@@ -24,6 +24,8 @@ export const useNavigationStore = defineStore('navigation', () => {
   const name = ref(''),
     message = ref(''),
     file = ref('')
+  const tagAnnotated = ref(false)
+  const annotated = computed(() => mode.value === 'create-annotated-tag' || tagAnnotated.value)
   const intent = ref<ReturnType<typeof repo.captureOperation> | null>(null)
   let version = 0
   const comparing = computed(() => mode.value.startsWith('compare-'))
@@ -111,6 +113,7 @@ export const useNavigationStore = defineStore('navigation', () => {
       return
     version++
     mode.value = nextMode
+    tagAnnotated.value = false
     target.value = { ...branch }
     intent.value = { ...origin }
     info.value = null
@@ -145,7 +148,7 @@ export const useNavigationStore = defineStore('navigation', () => {
           confirm: true,
           name: name.value.trim(),
           message: message.value,
-          annotated: mode.value === 'create-annotated-tag',
+          annotated: annotated.value,
           remoteSignature: info.value?.remote?.signature,
         },
         origin,
@@ -187,6 +190,8 @@ export const useNavigationStore = defineStore('navigation', () => {
     writing,
     name,
     message,
+    annotated,
+    tagAnnotated,
     file,
     stale,
     comparing,

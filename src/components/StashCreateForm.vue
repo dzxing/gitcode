@@ -7,12 +7,14 @@ const store = useRepositoryStore(),
 </script>
 <template>
   <form
+    autocomplete="off"
     class="stash-create-form"
     aria-label="贮藏当前修改"
     @submit.prevent="stash.create"
   >
     <label for="stash-name">贮藏名称 <small>可选，留空自动命名</small></label>
     <input
+      autocomplete="off"
       id="stash-name"
       v-model="stash.message"
       class="form-input"
@@ -50,10 +52,10 @@ const store = useRepositoryStore(),
       type="submit"
     >
       <Icon
-        :name="store.busy ? 'LoaderCircle' : 'Archive'"
-        :class="{ spin: store.busy }"
+        :name="store.busy && store.activeOperation === 'stash-create' ? 'LoaderCircle' : 'Archive'"
+        :class="{ spin: store.busy && store.activeOperation === 'stash-create' }"
         :size="15"
-      />贮藏并收起修改（{{ stash.count }}）
+      />贮藏（{{ stash.count }}）
     </button>
     <button
       v-if="store.busy && store.activeOperation === 'stash-create'"
@@ -62,15 +64,21 @@ const store = useRepositoryStore(),
       type="button"
       @click="store.cancelOperation()"
     >
-      {{ store.cancelling ? '正在取消并核对…' : '取消当前操作（不等于回滚）' }}
+      {{ store.cancelling ? '正在取消…' : '取消操作' }}
     </button>
+    <p
+      v-if="store.busy && store.activeOperation === 'stash-create'"
+      class="stash-hint"
+    >
+      已完成的操作不会自动撤销。
+    </p>
   </form>
 </template>
 <style scoped>
 .stash-create-form {
   padding: 0 15px 17px;
   background: var(--surface-tabs);
-  font-size: 11px;
+  font-size: var(--ui-font-size);
 }
 .stash-create-form > label:first-child {
   display: block;
@@ -78,7 +86,7 @@ const store = useRepositoryStore(),
 }
 .stash-create-form small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
 }
 .stash-checkbox {
   display: flex;
@@ -96,23 +104,27 @@ const store = useRepositoryStore(),
 .stash-scope,
 .stash-hint {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--ui-font-help);
   line-height: 1.7;
   margin: 10px 0;
 }
 .stash-error {
   color: var(--git-deleted);
-  font-size: 11px;
+  font-size: var(--ui-font-help);
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .stash-create-submit {
   width: 100%;
-  font-size: 11px;
+  font-size: var(--ui-font-size);
   min-height: 36px;
 }
 .stash-cancel {
   margin-top: 8px;
-  font-size: 10px;
+  font-size: var(--ui-font-size);
+}
+.stash-create-form input:not([type='checkbox']) {
+  font: var(--code-font-size)/var(--code-line-height) var(--font-code);
+  font-variant-ligatures: var(--code-ligatures);
 }
 </style>

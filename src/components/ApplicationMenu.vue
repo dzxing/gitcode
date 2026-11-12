@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { focusMenuItem } from '../menuFocus'
+import AppBrand from './AppBrand.vue'
 import { version as appVersion } from '../../package.json'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
+import { useGraphViewStore } from '../stores/graphView'
 import { useContextMenuStore } from '../stores/contextMenu'
 import {
   applicationBridge,
@@ -11,21 +14,35 @@ import {
 import { buildMenus, shortcutLabel, type MenuItem } from '../menu'
 import { pathName } from '../services/desktop'
 import Icon from './Icon.vue'
+import { useAppearanceStore } from '../stores/appearance'
+import { isThemePreference, themePresets } from '../themePresets'
+import PreferencesDialog from './PreferencesDialog.vue'
 
 const props = defineProps<{ platform: string }>()
 const emit = defineEmits<{ search: []; resetView: [] }>()
+const graphView = useGraphViewStore()
+const appearance = useAppearanceStore()
 const store = useRepositoryStore(),
   context = useContextMenuStore(),
   bridge = applicationBridge()
 const nativeMac = computed(() => !!bridge && props.platform === 'macos')
+const menuEnglishNames: Record<string, string> = {
+  file: 'File',
+  edit: 'Edit',
+  view: 'View',
+  repository: 'Repository',
+  help: 'Help',
+}
 const navigation = ref<HTMLElement>(),
   dropdown = ref<HTMLElement>()
 const active = ref<string | null>(null),
-  recentOpen = ref(false)
+  submenuOpen = ref<string | null>(null)
 const left = ref(0),
   top = ref(0),
-  recentLeft = ref(0),
-  recentTop = ref(0)
+  submenuLeft = ref(0),
+  submenuTop = ref(0)
+const settingsOpen = ref(false)
+const settingsSection = ref<'appearance' | 'repository' | 'git'>('appearance')
 const about = ref<HTMLDialogElement>(),
   quitDialog = ref<HTMLDialogElement>()
 const info = ref<{ name: string; version: string; electron: string; platform: string } | null>(null)
@@ -49,19 +66,38 @@ let selectionStart: number | null = null,
 let selectionRange: Range | null = null,
   lastFocus: HTMLElement | null = null
 let keyboardEntry = false
+let submenuHoverTimer: ReturnType<typeof setTimeout> | undefined
+let submenuPointerOrigin: { x: number; y: number } | null = null
+function cancelSubmenuHover() {
+  clearTimeout(submenuHoverTimer)
+  submenuHoverTimer = undefined
+}
 let observer: MutationObserver | undefined
 const unsubscribers: (() => void)[] = []
 let mounted = false,
   publishing = false,
   publishAgain = false
 const blocked = computed(
-  () => !!store.modal || store.rebasePlanning || layerOpen.value || quitId.value !== null,
+  () =>
+    store.starting ||
+    store.startupPhase === 'error' ||
+    !!store.modal ||
+    store.rebasePlanning ||
+    layerOpen.value ||
+    quitId.value !== null ||
+    settingsOpen.value,
 )
 const state = computed<ApplicationMenuState>(() => {
   const enabled: string[] = ['file.quit']
   if (!blocked.value) {
-    enabled.push('help.shortcuts', 'help.gitDocs', 'help.gitBook', 'help.about')
-    if (!store.busy) {
+    enabled.push('file.settings')
+    enabled.push(
+      'view.theme',
+      ...Object.keys(themePresets).map((id) => `view.theme.${id}`),
+      'view.theme.system',
+    )
+    enabled.push('view.activityLog', 'help.shortcuts', 'help.gitDocs', 'help.gitBook', 'help.about')
+    if (!store.busy && !store.choosingRepository) {
       enabled.push(
         'file.newTab',
         'file.open',
@@ -71,16 +107,33 @@ const state = computed<ApplicationMenuState>(() => {
         'view.resetLayout',
       )
       store.recent.forEach((_, i) => enabled.push(`file.recent.${i}`))
-      if (!store.isNewTab)
+      if (store.connected && !store.isNewTab && !store.fetchCancelling) {
         enabled.push(
-          'view.refresh',
-          'view.search',
-          'view.author',
-          'view.time',
-          'view.sha',
-          'view.resetColumns',
+          'repository.pull',
+          'repository.push',
+          'repository.recovery',
+          'repository.settings',
         )
+        if (!store.fetching) enabled.push('repository.fetch')
+      }
+      if (!store.isNewTab) enabled.push('view.refresh', 'view.search')
     }
+    if (!store.isNewTab)
+      enabled.push(
+        'view.author',
+        'view.time',
+        'view.sha',
+        'view.longEdges',
+        'view.mergeCommits',
+        'view.labelPosition',
+        'view.labelPosition.before',
+        'view.labelPosition.after',
+        'view.labelStyle',
+        'view.labelStyle.current',
+        'view.labelStyle.gitkraken',
+        'view.labelStyle.idea',
+        'view.resetColumns',
+      )
   }
   for (const key of Object.keys(editing.value) as EditCommand[])
     if (editing.value[key]) enabled.push(`edit.${key}`)
@@ -90,18 +143,32 @@ const state = computed<ApplicationMenuState>(() => {
     author: store.showAuthor,
     time: store.showTime,
     sha: store.showSha,
+    longEdges: graphView.showLongEdges,
+    mergeCommits: graphView.dimMergeCommits,
+    labelsAfterMessage: graphView.labelsAfterMessage,
+    labelStyle: graphView.labelStyle,
+    theme: appearance.themeSource,
+    themePreference: appearance.theme,
+    palette: appearance.palette,
+    resolvedTheme: appearance.resolvedTheme,
   }
 })
 const groups = computed(() => buildMenus(state.value))
 const group = computed(() => groups.value.find((item) => item.id === active.value))
+function hasMenuMarks(items: MenuItem[]) {
+  return items.some((item) => !item.separator && (item.checkbox || item.radio))
+}
+const groupHasMarks = computed(() => !!group.value && hasMenuMarks(group.value.items))
 function focusTop(id: string) {
   navigation.value
     ?.querySelector<HTMLButtonElement>(`[data-top-menu="${id}"]`)
     ?.focus({ preventScroll: true })
 }
 function close(restore = true) {
+  cancelSubmenuHover()
+  submenuPointerOrigin = null
   active.value = null
-  recentOpen.value = false
+  submenuOpen.value = null
   keyboardEntry = false
   if (restore && lastFocus?.isConnected) lastFocus.focus({ preventScroll: true })
 }
@@ -169,6 +236,7 @@ function restoreEditing() {
 }
 async function open(id: string, focus = true) {
   if (blocked.value) return
+  cancelSubmenuHover()
   if (!active.value && !keyboardEntry) {
     captureEditing()
     lastFocus = document.activeElement as HTMLElement
@@ -176,37 +244,77 @@ async function open(id: string, focus = true) {
   keyboardEntry = false
   context.close(false)
   active.value = id
-  recentOpen.value = false
+  submenuOpen.value = null
   await nextTick()
+  if (active.value !== id) return
   const button = navigation.value?.querySelector<HTMLElement>(`[data-top-menu="${id}"]`)
   if (!button || !dropdown.value) return
   const rect = button.getBoundingClientRect()
-  left.value = Math.max(6, Math.min(rect.left, window.innerWidth - dropdown.value.offsetWidth - 6))
+  left.value = Math.max(8, Math.min(rect.left, window.innerWidth - dropdown.value.offsetWidth - 8))
   top.value = Math.max(
-    6,
-    Math.min(rect.bottom + 3, window.innerHeight - dropdown.value.offsetHeight - 6),
+    8,
+    Math.min(rect.bottom + 3, window.innerHeight - dropdown.value.offsetHeight - 8),
   )
-  if (focus)
+  if (focus && !dropdown.value.contains(document.activeElement))
     dropdown.value
       .querySelector<HTMLButtonElement>('button:not(:disabled)')
       ?.focus({ preventScroll: true })
 }
-async function openRecent() {
-  recentOpen.value = true
+function closeSubmenu() {
+  cancelSubmenuHover()
+  submenuPointerOrigin = null
+  const id = submenuOpen.value
+  submenuOpen.value = null
+  if (id)
+    focusMenuItem(
+      dropdown.value?.querySelector<HTMLButtonElement>(`[data-submenu-trigger="${id}"]`),
+    )
+}
+let submenuAnchorTop = 0
+function menuScrolled() {
+  if (!submenuOpen.value) return
+  const button = dropdown.value?.querySelector<HTMLElement>(
+    `[data-submenu-trigger="${submenuOpen.value}"]`,
+  )
+  // A queued focus-scroll event must not close a submenu that was just opened.
+  if (!button || Math.abs(button.getBoundingClientRect().top - submenuAnchorTop) > 0.5) {
+    cancelSubmenuHover()
+    submenuOpen.value = null
+    submenuPointerOrigin = null
+  }
+}
+async function openSubmenu(id: string, focus = true) {
+  cancelSubmenuHover()
+  const item = group.value?.items.find((item) => item.id === id)
+  if (!item?.enabled || !item.children) return
+  submenuAnchorTop =
+    dropdown.value
+      ?.querySelector<HTMLElement>(`[data-submenu-trigger="${id}"]`)
+      ?.getBoundingClientRect().top || 0
+  submenuOpen.value = id
   await nextTick()
-  const button = dropdown.value?.querySelector<HTMLElement>('[data-recent-trigger]')
-  if (button) {
+  if (submenuOpen.value !== id) return
+  const button = dropdown.value?.querySelector<HTMLElement>(`[data-submenu-trigger="${id}"]`)
+  const submenu = dropdown.value?.querySelector<HTMLElement>('[data-submenu-menu]')
+  if (button && submenu) {
     const rect = button.getBoundingClientRect()
-    recentLeft.value =
-      rect.right + 260 < window.innerWidth ? rect.right + 3 : Math.max(6, rect.left - 260)
-    recentTop.value = Math.max(
-      6,
-      Math.min(rect.top, window.innerHeight - store.recent.length * 32 - 16),
+    submenuPointerOrigin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+    submenuAnchorTop = rect.top
+    const width = submenu.offsetWidth
+    submenuLeft.value =
+      rect.right + width + 3 <= window.innerWidth - 8
+        ? rect.right + 3
+        : Math.max(8, rect.left - width - 3)
+    submenuTop.value = Math.max(
+      8,
+      Math.min(rect.top, window.innerHeight - submenu.offsetHeight - 8),
     )
   }
-  dropdown.value
-    ?.querySelector<HTMLButtonElement>('[data-recent-menu] button:not(:disabled)')
-    ?.focus()
+  if (focus && !submenu?.contains(document.activeElement))
+    focusMenuItem(
+      submenu?.querySelector<HTMLButtonElement>('[role="menuitemradio"][aria-checked="true"]') ||
+        submenu?.querySelector<HTMLButtonElement>('button:not(:disabled)'),
+    )
 }
 async function run(id: string) {
   if (!state.value.enabled.includes(id)) return
@@ -231,23 +339,42 @@ async function run(id: string) {
       else document.execCommand(command === 'selectAll' ? 'selectAll' : command)
       captureEditing()
     } else if (id === 'file.newTab') store.newTab()
-    else if (id === 'file.open') store.modal = 'open'
+    else if (id === 'file.open') await store.requestOpen()
     else if (id === 'file.clone') store.modal = 'clone'
     else if (id === 'file.create') store.modal = 'create'
-    else if (id === 'file.closeTab') store.closeTab(store.activeTabId)
+    else if (id === 'file.settings' || id === 'repository.settings') {
+      settingsSection.value = id === 'repository.settings' ? 'repository' : 'appearance'
+      settingsOpen.value = true
+    } else if (id === 'file.closeTab') store.closeTab(store.activeTabId)
     else if (/^file\.recent\.[0-5]$/.test(id)) {
       const path = store.recent[Number(id.at(-1))]
       if (path) await store.open(path)
     } else if (id === 'file.quit') {
       if (bridge) await bridge.requestQuit()
-      else store.notify('请关闭当前浏览器标签页；本机核心会继续服务其他页面。')
+      else store.notify('请关闭当前浏览器标签页；本地 Git 服务会继续服务其他页面。')
     } else if (id === 'view.refresh') await store.refresh()
     else if (id === 'view.search') emit('search')
-    else if (id === 'view.author') store.showAuthor = !store.showAuthor
+    else if (id.startsWith('view.theme.')) {
+      const theme = id.slice('view.theme.'.length)
+      if (isThemePreference(theme)) appearance.setTheme(theme)
+    } else if (id === 'view.author') store.showAuthor = !store.showAuthor
     else if (id === 'view.time') store.showTime = !store.showTime
     else if (id === 'view.sha') store.showSha = !store.showSha
+    else if (id === 'view.longEdges') graphView.toggleLongEdges()
+    else if (id === 'view.mergeCommits') graphView.toggleMergeCommits()
+    else if (id === 'view.labelPosition.before' || id === 'view.labelPosition.after') {
+      if (graphView.labelsAfterMessage !== id.endsWith('.after'))
+        graphView.toggleLabelsAfterMessage()
+    } else if (id === 'view.labelStyle.current') graphView.setLabelStyle('current')
+    else if (id === 'view.labelStyle.gitkraken') graphView.setLabelStyle('gitkraken')
+    else if (id === 'view.labelStyle.idea') graphView.setLabelStyle('idea')
     else if (id === 'view.resetColumns') store.resetColumns()
     else if (id === 'view.resetLayout') emit('resetView')
+    else if (id === 'repository.fetch') await store.run('fetch')
+    else if (id === 'repository.pull') await store.sync('pull')
+    else if (id === 'repository.push') await store.sync('push')
+    else if (id === 'repository.recovery') store.modal = 'recovery'
+    else if (id === 'view.activityLog') store.openActivityLog()
     else if (id === 'help.shortcuts') store.modal = 'help'
     else if (id === 'help.gitDocs') await store.openResource('git-docs')
     else if (id === 'help.gitBook') await store.openResource('git-book')
@@ -257,8 +384,8 @@ async function run(id: string) {
         : {
             name: 'GitCode',
             version: appVersion,
-            electron: store.connected ? '浏览器 + 本机核心' : '浏览器界面体验',
-            platform: store.runtime?.platform || navigator.platform,
+            electron: store.connected ? '浏览器 + 本地 Git 服务' : '浏览器模式（未连接）',
+            platform: props.platform,
           }
       about.value?.showModal()
     }
@@ -271,7 +398,7 @@ async function receiveClose(id: number) {
   if (!(await bridge.acknowledgeClose(id))) return
   close(false)
   context.close(false)
-  if (!store.busy && !store.draftTabs.length) {
+  if (!store.isWorking && !store.draftTabs.length) {
     await bridge.approveClose(id)
     return
   }
@@ -294,12 +421,13 @@ async function finishQuit() {
   if (
     quitId.value === null ||
     approving.value ||
-    store.busy ||
+    store.isWorking ||
     (store.draftTabs.length && !discardDrafts.value)
   )
     return
   approving.value = true
   try {
+    if (discardDrafts.value) await store.discardCommitDrafts()
     if (!(await bridge?.approveClose(quitId.value)))
       throw new Error('退出请求已失效，请取消后重新退出。')
   } catch (error) {
@@ -310,17 +438,17 @@ async function finishQuit() {
 async function chooseQuit(mode: 'wait' | 'cancel') {
   if (store.draftTabs.length && !discardDrafts.value) return
   quitMode.value = mode
-  if (mode === 'cancel' && store.busy) await store.cancelOperation()
-  if (!store.busy) await finishQuit()
+  if (mode === 'cancel' && store.isWorking) await store.cancelOperation()
+  if (!store.isWorking) await finishQuit()
 }
 watch(
-  () => store.busy,
+  () => store.isWorking,
   (busy) => {
     if (!busy && quitMode.value) void finishQuit()
   },
 )
 watch(
-  () => [store.activeTabId, store.modal, context.target, store.busy],
+  () => [store.activeTabId, store.modal, context.target, store.isWorking],
   () => close(false),
 )
 watch(
@@ -366,6 +494,7 @@ function topKey(event: KeyboardEvent, id: string) {
 }
 function menuKey(event: KeyboardEvent) {
   if (!active.value) return
+  cancelSubmenuHover()
   if (
     ['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape', 'Tab'].includes(
       event.key,
@@ -375,25 +504,24 @@ function menuKey(event: KeyboardEvent) {
     event.stopImmediatePropagation()
   }
   if (event.key === 'Escape' || event.key === 'Tab') {
-    if (recentOpen.value) {
-      recentOpen.value = false
-      dropdown.value?.querySelector<HTMLButtonElement>('[data-recent-trigger]')?.focus()
+    if (submenuOpen.value) {
+      closeSubmenu()
     } else close()
     return
   }
   if (
     event.key === 'ArrowRight' &&
-    (document.activeElement as HTMLElement)?.hasAttribute('data-recent-trigger')
+    (document.activeElement as HTMLElement)?.hasAttribute('data-submenu-trigger')
   ) {
-    void openRecent()
+    void openSubmenu((document.activeElement as HTMLElement).dataset.submenuTrigger!)
     return
   }
-  if (event.key === 'ArrowLeft' && recentOpen.value) {
-    recentOpen.value = false
-    dropdown.value?.querySelector<HTMLButtonElement>('[data-recent-trigger]')?.focus()
+  if (event.key === 'ArrowLeft' && submenuOpen.value) {
+    closeSubmenu()
     return
   }
   if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    if (submenuOpen.value) return
     const index = groups.value.findIndex((g) => g.id === active.value)
     void open(
       groups.value[
@@ -402,17 +530,20 @@ function menuKey(event: KeyboardEvent) {
     )
     return
   }
+  const scope =
+    (document.activeElement as HTMLElement)?.closest<HTMLElement>('[data-submenu-menu]') ||
+    dropdown.value
   const buttons = [
-    ...(dropdown.value?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') || []),
+    ...(scope?.querySelectorAll<HTMLButtonElement>(':scope > button:not(:disabled)') || []),
   ]
   const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
-  if (event.key === 'Home') buttons[0]?.focus()
-  if (event.key === 'End') buttons.at(-1)?.focus()
-  if (event.key === 'ArrowDown') buttons[(index + 1) % buttons.length]?.focus()
-  if (event.key === 'ArrowUp') buttons[(index - 1 + buttons.length) % buttons.length]?.focus()
+  if (event.key === 'Home') focusMenuItem(buttons[0])
+  if (event.key === 'End') focusMenuItem(buttons.at(-1))
+  if (event.key === 'ArrowDown') focusMenuItem(buttons[(index + 1) % buttons.length])
+  if (event.key === 'ArrowUp') focusMenuItem(buttons[(index - 1 + buttons.length) % buttons.length])
 }
 function globalKey(event: KeyboardEvent) {
-  if (event.defaultPrevented) return
+  if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
   if (active.value) {
     menuKey(event)
     if (event.defaultPrevented) return
@@ -477,6 +608,7 @@ function globalKey(event: KeyboardEvent) {
     command =
       (
         {
+          ',': 'file.settings',
           o: 'file.open',
           w: 'file.closeTab',
           r: 'view.refresh',
@@ -501,8 +633,46 @@ function dismiss() {
   close()
 }
 function activate(item: MenuItem) {
-  if (item.children) void openRecent()
+  if (item.children) void openSubmenu(item.id)
   else void run(item.id)
+}
+function hoverItem(item: MenuItem, event: PointerEvent) {
+  // Layout changes can move a row under a stationary pointer during keyboard navigation.
+  if (!event.movementX && !event.movementY) return
+  cancelSubmenuHover()
+  if (submenuOpen.value === item.id) {
+    submenuPointerOrigin = { x: event.clientX, y: event.clientY }
+    return
+  }
+  const change = () => {
+    if (item.children && item.enabled) void openSubmenu(item.id, false)
+    else submenuOpen.value = null
+  }
+  const submenu = dropdown.value?.querySelector<HTMLElement>('[data-submenu-menu]')
+  const origin = submenuPointerOrigin
+  if (submenu && origin) {
+    const rect = submenu.getBoundingClientRect()
+    const right = rect.left >= origin.x
+    const edge = right ? rect.left : rect.right
+    const distance = edge - origin.x
+    const progress = (event.clientX - origin.x) / distance
+    // Keep the current submenu while crossing neighbouring rows toward it.
+    // A pause on a different row still switches the menu after a short delay.
+    if (
+      distance &&
+      progress >= 0 &&
+      progress <= 1 &&
+      (right ? event.movementX >= 0 : event.movementX <= 0)
+    ) {
+      const upper = origin.y + (rect.top - 8 - origin.y) * progress
+      const lower = origin.y + (rect.bottom + 8 - origin.y) * progress
+      if (event.clientY >= upper && event.clientY <= lower) {
+        submenuHoverTimer = setTimeout(change, 300)
+        return
+      }
+    }
+  }
+  change()
 }
 onMounted(() => {
   mounted = true
@@ -531,6 +701,7 @@ onMounted(() => {
   void publishState()
 })
 onUnmounted(() => {
+  cancelSubmenuHover()
   mounted = false
   observer?.disconnect()
   unsubscribers.forEach((fn) => fn())
@@ -542,9 +713,20 @@ onUnmounted(() => {
   window.removeEventListener('resize', dismiss)
   window.removeEventListener('blur', dismiss)
 })
+function openGitSettings() {
+  if (store.modal || settingsOpen.value || quitId.value !== null || layerOpen.value) return
+  settingsSection.value = 'git'
+  settingsOpen.value = true
+}
+defineExpose({ openGitSettings })
 </script>
 
 <template>
+  <PreferencesDialog
+    v-if="settingsOpen"
+    :initial-section="settingsSection"
+    @close="settingsOpen = false"
+  />
   <nav
     v-if="!nativeMac"
     ref="navigation"
@@ -561,7 +743,7 @@ onUnmounted(() => {
       role="menuitem"
       aria-haspopup="menu"
       :aria-expanded="active === entry.id"
-      :aria-label="`${entry.label} ${entry.id === 'file' ? 'File' : entry.id === 'edit' ? 'Edit' : entry.id === 'view' ? 'View' : 'Help'}`"
+      :aria-label="`${entry.label} ${menuEnglishNames[entry.id]}`"
       :title="`${entry.label} (Alt+${entry.accessKey.toUpperCase()})`"
       :class="{ expanded: active === entry.id }"
       @pointerdown.prevent
@@ -583,6 +765,7 @@ onUnmounted(() => {
       :style="{ left: `${left}px`, top: `${top}px` }"
       @pointerdown.prevent
       @keydown="menuKey"
+      @scroll="menuScrolled"
       @contextmenu.prevent
     >
       <template
@@ -597,17 +780,19 @@ onUnmounted(() => {
           :role="item.checkbox ? 'menuitemcheckbox' : 'menuitem'"
           :aria-checked="item.checkbox ? item.checked : undefined"
           :aria-haspopup="item.children ? 'menu' : undefined"
-          :aria-expanded="item.children ? recentOpen : undefined"
-          :data-recent-trigger="item.children ? '' : undefined"
+          :aria-expanded="item.children ? submenuOpen === item.id : undefined"
+          :data-submenu-trigger="item.children ? item.id : undefined"
           :disabled="!item.enabled"
           tabindex="-1"
           @click="activate(item)"
+          @pointermove="hoverItem(item, $event)"
         >
           <span class="application-item-label"
             ><span
+              v-if="groupHasMarks"
               class="menu-check"
               aria-hidden="true"
-              >{{ item.checked ? '✓' : '' }}</span
+              >{{ item.checked ? (item.radio ? '●' : '✓') : '' }}</span
             >{{ item.label }}</span
           ><kbd v-if="item.accelerator">{{
             shortcutLabel(item.accelerator, platform === 'macos')
@@ -619,24 +804,33 @@ onUnmounted(() => {
           />
         </button>
         <div
-          v-if="item.children && recentOpen"
+          v-if="item.children && submenuOpen === item.id"
           data-app-menu
-          data-recent-menu
+          data-submenu-menu
           class="context-menu application-submenu"
           role="menu"
-          aria-label="最近仓库"
-          :style="{ left: `${recentLeft}px`, top: `${recentTop}px` }"
+          :aria-label="item.label"
+          :style="{ left: `${submenuLeft}px`, top: `${submenuTop}px` }"
+          @pointerenter="cancelSubmenuHover"
         >
           <button
             v-for="recent in item.children"
             :key="recent.id"
-            role="menuitem"
+            :role="recent.radio ? 'menuitemradio' : 'menuitem'"
+            :aria-checked="recent.radio ? recent.checked : undefined"
             tabindex="-1"
             :disabled="!recent.enabled"
             :title="recent.label"
             @click="run(recent.id)"
           >
-            {{ recent.label }}
+            <span class="application-item-label"
+              ><span
+                v-if="hasMenuMarks(item.children)"
+                class="menu-check"
+                aria-hidden="true"
+                >{{ recent.checked ? (recent.radio ? '●' : '✓') : '' }}</span
+              >{{ recent.label }}</span
+            >
           </button>
         </div>
       </template>
@@ -658,8 +852,12 @@ onUnmounted(() => {
             :size="18"
           />
         </button>
+        <AppBrand
+          :size="48"
+          class="about-brand"
+        />
         <h2 id="about-title">关于 {{ info?.name || 'GitCode' }}</h2>
-        <p>本地 Git 工作台 · Electron + Vue</p>
+        <p>本地 Git 工作台</p>
         <dl>
           <dt>应用版本</dt>
           <dd>{{ info?.version }}</dd>
@@ -667,6 +865,12 @@ onUnmounted(() => {
           <dd>{{ store.runtime?.gitVersion || '尚未连接本机 Git' }}</dd>
           <dt>运行环境</dt>
           <dd>{{ info?.electron }} / {{ info?.platform }}</dd>
+          <template v-if="store.runtime">
+            <dt>Git 执行环境</dt>
+            <dd>
+              {{ store.runtime.environment === 'wsl' ? 'WSL / ' : '' }}{{ store.runtime.platform }}
+            </dd>
+          </template>
         </dl>
         <button
           class="secondary-button"
@@ -678,14 +882,14 @@ onUnmounted(() => {
     </dialog>
     <dialog
       ref="quitDialog"
-      class="dialog application-quit"
+      class="dialog dialog-confirmation application-quit"
       aria-labelledby="quit-title"
       @cancel.prevent="cancelQuit"
     >
       <div class="dialog-content">
         <h2 id="quit-title">退出 GitCode？</h2>
         <p v-if="approving">正在退出…</p>
-        <p v-if="store.busy">
+        <p v-if="store.isWorking">
           {{
             quitMode
               ? quitMode === 'wait'
@@ -696,7 +900,7 @@ onUnmounted(() => {
         </p>
         <p v-if="store.draftTabs.length">
           以下
-          {{ store.draftTabs.length }} 个标签有尚未保存的草稿（提交说明、变基编排或冲突处理结果）：
+          {{ store.draftTabs.length }} 个标签有尚未完成的草稿（提交说明、变基编排或冲突处理结果）：
         </p>
         <ul v-if="store.draftTabs.length">
           <li
@@ -735,7 +939,7 @@ onUnmounted(() => {
             {{ quitMode ? '取消退出' : '留在应用' }}</button
           ><template v-if="!quitMode"
             ><button
-              v-if="store.busy"
+              v-if="store.isWorking"
               class="secondary-button"
               :disabled="store.draftTabs.length > 0 && !discardDrafts"
               @click="chooseQuit('wait')"
@@ -746,7 +950,7 @@ onUnmounted(() => {
               :disabled="store.draftTabs.length > 0 && !discardDrafts"
               @click="chooseQuit('cancel')"
             >
-              {{ store.busy ? '取消操作并退出' : '退出 GitCode' }}
+              {{ store.isWorking ? '取消操作并退出' : '退出 GitCode' }}
             </button></template
           >
         </div>
@@ -754,3 +958,11 @@ onUnmounted(() => {
     </dialog>
   </Teleport>
 </template>
+
+<style scoped>
+.about-brand {
+  --brand-type-size: calc(28px + var(--ui-font-delta, 0px));
+  --brand-mark-gap: 12px;
+  margin: 2px 0 22px;
+}
+</style>

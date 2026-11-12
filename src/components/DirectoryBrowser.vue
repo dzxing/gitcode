@@ -49,7 +49,10 @@ async function navigate(path?: string) {
 
 async function systemPicker() {
   try {
-    const path = await desktop.chooseDirectory(listing.value?.path)
+    const path = await desktop.chooseDirectory(
+      listing.value?.path,
+      props.mode === 'parent' ? 'parent' : 'repository',
+    )
     if (path) emit('select', path)
   } catch (reason) {
     error.value = (reason as Error).message
@@ -107,11 +110,15 @@ onUnmounted(() => {
       >
         <Icon name="ArrowUp" />
       </button>
-      <form @submit.prevent="navigate(address)">
+      <form
+        autocomplete="off"
+        @submit.prevent="navigate(address)"
+      >
         <Icon
           name="FolderOpen"
           :size="15"
         /><input
+          autocomplete="off"
           v-model="address"
           aria-label="目录地址"
           placeholder="输入本机绝对路径，按 Enter 跳转"
@@ -170,6 +177,7 @@ onUnmounted(() => {
             ><Icon
               name="Search"
               :size="14" /><input
+              autocomplete="off"
               v-model="query"
               placeholder="筛选当前目录…"
               aria-label="筛选当前目录" /></label

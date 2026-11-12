@@ -45,6 +45,43 @@ async function connect(core) {
 }
 const rpc = (core, token, method, args = []) => request(core, 'rpc', { method, args }, { token })
 
+test('default browser core remembers repository trust after a new session and a full core restart', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-core-trust-'))
+  const repo = path.join(root, 'repo'),
+    dataDirectory = path.join(root, 'profile')
+  await fs.mkdir(repo)
+  const setup = new GitService()
+  await setup.git(repo, ['init', '-b', 'qa/base'])
+  let core = createLocalCore({ dataDirectory })
+  t.after(async () => {
+    await core.close()
+    await setup.shutdown()
+    await fs.rm(root, { recursive: true, force: true })
+  })
+  const first = await connect(core)
+  const challenge = await rpc(core, first, 'repository-trust', [repo])
+  assert.equal(challenge.body.result.trusted, false)
+  assert.notEqual((await rpc(core, first, 'fetch-settings-read', [repo])).status, 200)
+  const approval = await rpc(core, first, 'repository-trust-approve', [
+    repo,
+    challenge.body.result.token,
+  ])
+  assert.equal(approval.status, 200)
+  const second = await connect(core)
+  assert.equal((await rpc(core, second, 'repository-trust', [repo])).body.result.trusted, true)
+  await core.close()
+  core = createLocalCore({ dataDirectory })
+  const third = await connect(core)
+  assert.equal((await rpc(core, third, 'repository-trust', [repo])).body.result.trusted, true)
+  const fetchSettings = await rpc(core, third, 'fetch-settings-read', [repo])
+  assert.equal(fetchSettings.status, 200)
+  assert.equal(fetchSettings.body.result.shallow, false)
+  assert.deepEqual(fetchSettings.body.result.remotes, [])
+  const snapshot = await rpc(core, third, 'snapshot', [repo])
+  assert.equal(snapshot.status, 200)
+  assert.equal(snapshot.body.result.path, repo)
+})
+
 test('local core denies foreign origins, DNS-rebinding hosts, remote clients and unauthenticated RPC', async (t) => {
   let services = 0
   const core = createLocalCore({
@@ -111,6 +148,37 @@ test('local core enforces payload limits and named operations rather than arbitr
   assert.equal(runtime.body.result.transport, 'local')
   assert.equal(called, 1)
   assert.equal((await request(core, 'missing', {}, { token })).status, 404)
+})
+
+test('browser observation exposes only named revision and readonly snapshot requests', async (t) => {
+  const calls = []
+  const core = createLocalCore({
+    serviceFactory: () => ({
+      repositoryWatch: {
+        status: async (repo) => {
+          calls.push(['status', repo])
+          return { revision: 'qa:1', fallback: false, watched: 2 }
+        },
+        read: async (repo, request) => {
+          calls.push(['read', repo, request])
+          return { snapshot: null, deferred: 'busy' }
+        },
+      },
+      shutdown: async () => {},
+    }),
+  })
+  t.after(() => core.close())
+  const token = await connect(core)
+  assert.equal((await rpc(core, token, 'repository-changes', ['/qa'])).body.result.revision, 'qa:1')
+  assert.equal(
+    (await rpc(core, token, 'background-snapshot', ['/qa', null])).body.result.deferred,
+    'busy',
+  )
+  assert.deepEqual(calls, [
+    ['status', '/qa'],
+    ['read', '/qa', null],
+  ])
+  assert.equal((await rpc(core, token, 'background-snapshot', ['/qa'])).status, 400)
 })
 
 test('browser sessions isolate cancellation and close, and expire only when idle', async (t) => {
@@ -213,6 +281,10 @@ test('browser HTTP transport performs directory, Git, GitFlow and sync operation
   assert.equal(committed.outcome, 'succeeded', committed.error)
   const head = committed.snapshot.head
   assert.match(head, /^[a-f0-9]{40,64}$/)
+  const metadata = await call('history-metadata', [repo, head])
+  assert.equal(metadata.hash, head)
+  assert.equal(metadata.subject, 'Browser commit')
+  assert.ok(!Number.isNaN(Date.parse(metadata.date)))
   const details = await call('commit', [repo, head])
   assert.ok(details.files.some((file) => file.path === 'hello.txt'))
   assert.match((await call('diff', [repo, 'hello.txt', false, head])).diff, /hello browser/)
@@ -358,4 +430,123 @@ test('development restart drains an active operation and rejects new work withou
   assert.equal(shutdowns, 0)
   await core.close()
   assert.equal(shutdowns, 1)
+})
+
+test('activity RPC reads settings with JSON null, isolates logs, and clears only its scope', async (t) => {
+  const { OperationLog } = require('../electron/operation-log.cjs')
+  const journal = new OperationLog()
+  const core = createLocalCore({ serviceFactory: () => new GitService({ journal }) })
+  t.after(() => core.close())
+  const token = await connect(core)
+  const current = await rpc(core, token, 'activity-settings', [null])
+  assert.equal(current.status, 200)
+  assert.equal(current.body.result.autoFetchInterval, 1)
+  await rpc(core, token, 'activity-settings', [{ autoFetchInterval: 0, extended: false }])
+  const entry = journal.start('push', '/qa')
+  journal.finish(entry, { outcome: 'failed', error: 'QA rejection' })
+  const other = await rpc(core, token, 'operation-log', [{ scope: 'repository', repo: '/other' }])
+  assert.equal(other.body.result.records.length, 0)
+  const own = await rpc(core, token, 'operation-log', [
+    { scope: 'repository', repo: '/qa', id: entry.id },
+  ])
+  assert.equal(own.body.result.records[0].message, 'QA rejection')
+  await rpc(core, token, 'operation-log-clear', [{ scope: 'repository', repo: '/qa' }])
+  assert.equal(journal.records.filter((r) => r.repo === '/qa').length, 0)
+  assert.ok(journal.records.some((r) => r.operation === 'activity-settings'))
+  assert.equal((await rpc(core, token, 'fetch-status', ['/qa'])).status, 200)
+  assert.equal((await rpc(core, token, 'auto-fetch', ['/qa'])).body.result.skipped, true)
+})
+
+test('recovery is a named read endpoint with fixed arity and canonical repository validation', async (t) => {
+  const calls = []
+  const core = createLocalCore({
+    serviceFactory: () => ({
+      repository: async (repo) => {
+        calls.push(['repository', repo])
+        return '/canonical'
+      },
+      job: async (work) => work(),
+      recovery: {
+        read: async (repo) => {
+          calls.push(['recovery', repo])
+          return { id: 'plan', entries: [] }
+        },
+      },
+      shutdown: async () => {},
+    }),
+  })
+  t.after(() => core.close())
+  const token = await connect(core)
+  const response = await rpc(core, token, 'recovery-read', ['/repo'])
+  assert.equal(response.status, 200)
+  assert.equal(response.body.result.id, 'plan')
+  assert.deepEqual(calls, [
+    ['repository', '/repo'],
+    ['recovery', '/canonical'],
+  ])
+  assert.equal((await rpc(core, token, 'recovery-read', [])).status, 400)
+  assert.equal((await rpc(core, token, 'recovery-read', ['/repo', 'extra'])).status, 400)
+})
+
+test('partial staging read has fixed arity and receives canonical paths through the job queue', async (t) => {
+  const calls = [],
+    request = { file: 'file.txt', source: 'unstaged', expectedHead: '', expectedBranch: 'qa/test' }
+  const core = createLocalCore({
+    serviceFactory: () => ({
+      repository: async (repo) => {
+        calls.push(['repo', repo])
+        return '/canonical'
+      },
+      job: async (work) => work(),
+      partialStage: {
+        read: async (repo, value) => {
+          calls.push(['read', repo, value])
+          return { id: 'plan', hunks: [] }
+        },
+      },
+      shutdown: async () => {},
+    }),
+  })
+  t.after(() => core.close())
+  const token = await connect(core)
+  assert.equal(
+    (await rpc(core, token, 'partial-stage-read', ['/repo', request])).body.result.id,
+    'plan',
+  )
+  assert.deepEqual(calls, [
+    ['repo', '/repo'],
+    ['read', '/canonical', request],
+  ])
+  assert.equal((await rpc(core, token, 'partial-stage-read', ['/repo'])).status, 400)
+  assert.equal(
+    (await rpc(core, token, 'partial-stage-read', ['/repo', request, 'extra'])).status,
+    400,
+  )
+})
+
+test('menu history reads preserve an automatic-fetch lease; full action preflight retains foreground cancellation', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-menu-lease-'))
+  const git = new GitService({ dataDirectory: directory })
+  git.repository = async () => '/canonical'
+  git.rebase.menu = async () => ({ canInteractive: true })
+  git.navigation.read = async () => ({ fullRef: 'refs/heads/main' })
+  const core = createLocalCore({ serviceFactory: () => git })
+  t.after(async () => {
+    await core.close()
+    await fs.rm(directory, { recursive: true, force: true })
+  })
+  const token = await connect(core),
+    controller = new AbortController()
+  git.journal.leases.set('fixture-fetch', { controller, interrupted: false })
+  const menu = await rpc(core, token, 'rebase-menu-read', [
+    '/repo',
+    { head: 'a'.repeat(40), oid: 'b'.repeat(40) },
+  ])
+  assert.equal(menu.status, 200)
+  assert.deepEqual(menu.body.result, { canInteractive: true })
+  assert.equal((await rpc(core, token, 'rebase-menu-read', ['/repo'])).status, 400)
+  assert.equal(controller.signal.aborted, false)
+  const plan = await rpc(core, token, 'navigation-read', ['/repo', { kind: 'rebase' }])
+  assert.equal(plan.status, 200)
+  assert.equal(controller.signal.aborted, true)
 })

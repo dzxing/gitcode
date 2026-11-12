@@ -1,3 +1,4 @@
+import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -9,7 +10,14 @@ const { GitService } = createRequire(import.meta.url)('../electron/git.cjs')
 // Every remote and clone is disposable and local; never contact a user remote.
 export async function verifySyncDivergence(
   page,
-  { url, sameLine = false, screenshotDirectory, mergeAfter = false, abortMerge = false } = {},
+  {
+    url,
+    sameLine = false,
+    screenshotDirectory,
+    mergeAfter = false,
+    abortMerge = false,
+    recoverPush = false,
+  } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), 'gitcode-divergence-')),
     git = new GitService()
@@ -60,6 +68,7 @@ export async function verifySyncDivergence(
     assert.equal(payload.error, undefined)
     return payload.result
   }
+  let originalAutoFetchInterval
   try {
     await mkdir(local)
     await git.git(local, ['init', '-b', 'test/divergence'])
@@ -84,10 +93,21 @@ export async function verifySyncDivergence(
     await git.git(local, ['add', file])
     await page.goto(url)
     await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    // This scenario asserts stale tracking refs before an explicit Fetch. Disable the
+    // independent periodic reader through the real UI so it cannot invalidate the setup.
+    await page.getByRole('button', { name: '活动日志', exact: true }).click()
+    const activity = page.getByRole('dialog', { name: '活动日志', exact: true })
+    await activity.getByRole('button', { name: '自动获取与日志设置' }).click()
+    const intervalInput = activity.getByRole('spinbutton', { name: '自动获取间隔（分钟）' })
+    originalAutoFetchInterval = Number(await intervalInput.inputValue())
+    await intervalInput.fill('0')
+    await activity.getByRole('button', { name: '保存设置', exact: true }).click()
+    await activity.getByRole('button', { name: '关闭活动日志' }).click()
     await page.keyboard.press('Control+o')
     const open = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
     await open.getByRole('textbox', { name: '仓库路径', exact: true }).fill(local)
     await open.getByRole('button', { name: '打开仓库', exact: true }).click()
+    await confirmFixtureTrust(page)
     await expect(open).not.toBeVisible()
     await expect(page.locator('.status-path')).toHaveAttribute('title', local)
     await page
@@ -133,6 +153,61 @@ export async function verifySyncDivergence(
     await expect(push.getByRole('button', { name: '推送', exact: true })).toBeDisabled()
     await expect(push.getByRole('button', { name: '重试检查', exact: true })).toBeVisible()
     await capture('push-rejected')
+    if (recoverPush) {
+      const recovered = await action(() =>
+        push.getByRole('button', { name: '拉取并推送', exact: true }).click(),
+      )
+      await expect(push).not.toBeVisible()
+      if (sameLine) {
+        assert.equal(recovered.outcome, 'partial', JSON.stringify(recovered))
+        assert.equal(
+          (await git.git(bare, ['rev-parse', 'refs/heads/test/divergence'])).trim(),
+          remoteHead,
+        )
+        const panel = page.getByRole('region', { name: '解决冲突', exact: true })
+        await expect(panel).toBeVisible()
+        await expect(page.locator('dialog[open]')).toHaveCount(0)
+        await expect(panel.getByRole('button', { name: '完成合并', exact: true })).toBeDisabled()
+        await capture('recovery-paused-at-conflict')
+        await panel.locator('.conflict-file-name').click()
+        const editor = page.getByRole('region', { name: '冲突解决编辑器', exact: true })
+        await expect(editor).toBeVisible()
+        const box = await editor.boundingBox()
+        assert.ok(
+          box.width >= page.viewportSize().width - 4,
+          'Merge editor must occupy the full workbench',
+        )
+        await editor
+          .getByRole('textbox', { name: '编辑合并结果', exact: true })
+          .fill('local and remote resolved\n')
+        await capture('recovery-three-way-editor')
+        const resolved = await action(() =>
+          editor.getByRole('button', { name: '保存并标记已解决', exact: true }).click(),
+        )
+        assert.equal(resolved.outcome, 'succeeded', resolved.error)
+        const ready = page.getByRole('region', { name: '检查合并结果', exact: true })
+        await expect(ready).toBeVisible()
+        const completed = await action(() =>
+          ready.getByRole('button', { name: '完成合并', exact: true }).click(),
+        )
+        assert.equal(completed.outcome, 'succeeded', completed.error)
+        assert.equal(
+          (await git.git(bare, ['rev-parse', 'refs/heads/test/divergence'])).trim(),
+          remoteHead,
+          'Conflict completion must not resume an old push',
+        )
+        await capture('recovery-completed-local-only')
+        return { recoverPush: true, stoppedOnConflict: true, noImplicitPushAfterResolve: true }
+      }
+      assert.equal(recovered.outcome, 'succeeded', JSON.stringify(recovered))
+      assert.equal(
+        (await git.git(bare, ['rev-parse', 'refs/heads/test/divergence'])).trim(),
+        recovered.snapshot.head,
+      )
+      await expect(page.locator('dialog[open]')).toHaveCount(0)
+      await capture('recovery-merged-and-pushed')
+      return { recoverPush: true, mergedAndPushed: true }
+    }
     if (mergeAfter) {
       const fetched = await action(() =>
         push.getByRole('button', { name: '获取并检查', exact: true }).click(),
@@ -140,16 +215,14 @@ export async function verifySyncDivergence(
       assert.equal(fetched.outcome, 'succeeded', fetched.error)
     } else {
       await push.getByRole('button', { name: '取消', exact: true }).click()
-      await page
-        .locator('.toolbar-actions')
-        .getByRole('button', { name: '拉取', exact: true })
-        .click()
+      await page.getByLabel('同步选项', { exact: true }).click()
+      await page.getByRole('button', { name: '核对拉取目标…', exact: true }).click()
     }
     const pull = page.getByRole('dialog', { name: '拉取远程分支', exact: true })
     await pull.getByRole('button', { name: '仅快进', exact: true }).click()
-    await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeEnabled()
+    await expect(pull.getByRole('button', { name: '拉取', exact: true })).toBeEnabled()
     const pulled = await action(() =>
-      pull.getByRole('button', { name: '确认拉取', exact: true }).click(),
+      pull.getByRole('button', { name: '拉取', exact: true }).click(),
     )
     assert.equal(pulled.outcome, 'partial')
     assert.match(pulled.error, /fast-forward|快进/i)
@@ -199,11 +272,11 @@ export async function verifySyncDivergence(
     ).toHaveText('↓1')
     await capture('pull-stops-at-divergence')
     // Execution plans are single use. A retry must explicitly read a fresh plan.
-    await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeDisabled()
-    await pull.getByRole('button', { name: '重新读取目标', exact: true }).click()
-    await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeEnabled()
+    await expect(pull.getByRole('button', { name: '拉取', exact: true })).toBeDisabled()
+    await pull.getByRole('button', { name: '重试', exact: true }).click()
+    await expect(pull.getByRole('button', { name: '拉取', exact: true })).toBeEnabled()
     const retry = await action(() =>
-      pull.getByRole('button', { name: '确认拉取', exact: true }).click(),
+      pull.getByRole('button', { name: '拉取', exact: true }).click(),
     )
     assert.equal(retry.outcome, 'partial')
     assert.match(retry.error, /fast-forward|快进/i)
@@ -217,9 +290,9 @@ export async function verifySyncDivergence(
       await expect(
         pull.getByRole('button', { name: '尽可能快进（否则合并）', exact: true }),
       ).toHaveAttribute('aria-pressed', 'true')
-      await expect(pull.getByRole('button', { name: '确认拉取', exact: true })).toBeEnabled()
+      await expect(pull.getByRole('button', { name: '拉取', exact: true })).toBeEnabled()
       const integrated = await action(() =>
-        pull.getByRole('button', { name: '确认拉取', exact: true }).click(),
+        pull.getByRole('button', { name: '拉取', exact: true }).click(),
       )
       assert.equal(integrated.outcome, sameLine ? 'partial' : 'succeeded', integrated.error)
       if (!sameLine) {
@@ -233,14 +306,11 @@ export async function verifySyncDivergence(
           remoteHead,
         )
         await capture('clean-merge-auto-committed')
-        await page
-          .locator('.toolbar-actions')
-          .getByRole('button', { name: '推送', exact: true })
-          .click()
-        const pushAgain = page.getByRole('dialog', { name: '推送指定分支', exact: true })
-        await expect(pushAgain.getByRole('button', { name: '推送', exact: true })).toBeEnabled()
         const pushedMerge = await action(() =>
-          pushAgain.getByRole('button', { name: '推送', exact: true }).click(),
+          page
+            .locator('.toolbar-actions')
+            .getByRole('button', { name: '推送', exact: true })
+            .click(),
         )
         assert.equal(pushedMerge.outcome, 'succeeded', pushedMerge.error)
         assert.equal(
@@ -262,7 +332,7 @@ export async function verifySyncDivergence(
         }
       }
       const list = () =>
-        page.getByRole('dialog', { name: sameLine ? '解决冲突' : '检查合并结果', exact: true })
+        page.getByRole('region', { name: sameLine ? '解决冲突' : '检查合并结果', exact: true })
       await expect(list()).toBeVisible()
       assert.equal((await git.merge.state(local)).incoming, remoteHead)
       assert.equal(await git.head(local), localHead)
@@ -286,7 +356,7 @@ export async function verifySyncDivergence(
       } else {
         if (sameLine) {
           await expect(list().getByRole('button', { name: '完成合并', exact: true })).toBeDisabled()
-          await list().locator('.conflict-file-name').dblclick()
+          await list().locator('.conflict-file-name').click()
           const editor = page.getByRole('region', { name: '冲突解决编辑器', exact: true })
           await expect(editor).toBeVisible()
           await expect(
@@ -316,7 +386,7 @@ export async function verifySyncDivergence(
           await expect(closeDraft).toContainText('冲突处理草稿')
           await closeDraft.getByRole('button', { name: '保留标签', exact: true }).click()
           await page.getByRole('button', { name: '继续处理冲突', exact: true }).click()
-          await list().locator('.conflict-file-name').dblclick()
+          await list().locator('.conflict-file-name').click()
           await expect(draft).toHaveValue(
             'next local contribution\nremote contribution\ncustom resolution\n',
           )
@@ -326,18 +396,16 @@ export async function verifySyncDivergence(
           assert.equal(resolved.outcome, 'succeeded', resolved.error)
           assert.equal(resolved.snapshot.merge.files.length, 0)
         }
-        const ready = page.getByRole('dialog', { name: '检查合并结果', exact: true })
+        const ready = page.getByRole('region', { name: '检查合并结果', exact: true })
         await expect(ready).toBeVisible()
         await capture('all-files-resolved')
         await ready.getByRole('button', { name: '稍后处理', exact: true }).click()
         // A new renderer and HTTP session must recover Git's unfinished merge state.
         await page.reload()
-        await page.keyboard.press('Control+o')
-        const reopen = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
-        await reopen.getByRole('textbox', { name: '仓库路径', exact: true }).fill(local)
-        await reopen.getByRole('button', { name: '打开仓库', exact: true }).click()
-        await expect(reopen).not.toBeVisible()
         await expect(ready).toBeVisible()
+        await expect(
+          page.getByRole('dialog', { name: '信任此仓库？', exact: true }),
+        ).not.toBeVisible()
         await ready
           .getByRole('textbox', { name: '合并提交说明', exact: true })
           .fill('Merge remote updates after review')
@@ -365,14 +433,11 @@ export async function verifySyncDivergence(
           assert.equal(await readFile(local + '/remote.txt', 'utf8'), 'remote contribution\n')
           assert.equal(await readFile(path.join(local, file), 'utf8'), content)
         }
-        await page
-          .locator('.toolbar-actions')
-          .getByRole('button', { name: '推送', exact: true })
-          .click()
-        const pushAgain = page.getByRole('dialog', { name: '推送指定分支', exact: true })
-        await expect(pushAgain.getByRole('button', { name: '推送', exact: true })).toBeEnabled()
         const finalPush = await action(() =>
-          pushAgain.getByRole('button', { name: '推送', exact: true }).click(),
+          page
+            .locator('.toolbar-actions')
+            .getByRole('button', { name: '推送', exact: true })
+            .click(),
         )
         assert.equal(finalPush.outcome, 'succeeded', finalPush.error)
         assert.equal(
@@ -411,6 +476,14 @@ export async function verifySyncDivergence(
       mergeReport,
     }
   } finally {
+    if (originalAutoFetchInterval !== undefined)
+      await page
+        .evaluate(async (interval) => {
+          const { desktop } = await import('/src/services/desktop.ts')
+          const settings = await desktop.activitySettings()
+          if (settings) await desktop.activitySettings({ ...settings, autoFetchInterval: interval })
+        }, originalAutoFetchInterval)
+        .catch(() => {})
     await page.goto('about:blank').catch(() => {})
     await git.shutdown()
     await rm(root, { recursive: true, force: true, maxRetries: 3 })

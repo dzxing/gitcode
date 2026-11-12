@@ -11,7 +11,8 @@ class GitFlowFinishOperations {
   constructor(git) {
     this.git = git
   }
-  async location(repo, signal) {
+  async location(repo, signal, locations) {
+    if (locations?.has('gitcode-flow-finish.json')) return locations.get('gitcode-flow-finish.json')
     return path.resolve(
       repo,
       (
@@ -21,8 +22,8 @@ class GitFlowFinishOperations {
       ).trim(),
     )
   }
-  async read(repo, signal) {
-    const file = await this.location(repo, signal),
+  async read(repo, signal, locations) {
+    const file = await this.location(repo, signal, locations),
       stat = await fs.lstat(file).catch(absent)
     if (!stat) return null
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 65536)
@@ -88,9 +89,9 @@ class GitFlowFinishOperations {
     }
     return { file, value, signature: digest(raw) }
   }
-  async state(repo, signal) {
+  async state(repo, signal, locations) {
     try {
-      const r = await this.read(repo, signal)
+      const r = await this.read(repo, signal, locations)
       if (!r) return null
       const v = r.value
       return {
@@ -454,6 +455,7 @@ class GitFlowFinishOperations {
           if (await this.oid(repo, v.branch, signal)) {
             v.deleting = true
             await this.save(file, v)
+            await this.git.recovery.checkpoint(repo, v.branch, v.sourceOid, signal)
             await this.git.git(repo, ['update-ref', '-d', `refs/heads/${v.branch}`, v.sourceOid], {
               signal,
             })

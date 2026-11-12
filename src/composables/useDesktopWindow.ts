@@ -1,16 +1,17 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import { currentNativeWindow } from '../services/window'
+import { getUIPlatform } from '../services/platform'
 
 export function useDesktopWindow() {
   const store = useRepositoryStore()
   const native = currentNativeWindow()
-  const platform = computed(
-    () =>
-      store.runtime?.platform ||
-      (typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? 'macos' : ''),
+  const platform = computed(getUIPlatform)
+  const nativeWindow = computed(() => !!native)
+  const nativeControls = computed(() => native?.nativeControls === true)
+  const customFrame = computed(
+    () => !!native && !nativeControls.value && platform.value !== 'macos',
   )
-  const customFrame = computed(() => !!native && platform.value !== 'macos')
   const maximized = ref(false)
   const fullscreen = ref(false)
   const focused = ref(true)
@@ -71,6 +72,7 @@ export function useDesktopWindow() {
     void listen(
       native.onFocusChanged((event) => {
         focused.value = event.payload
+        if (event.payload) store.requestExternalRefresh()
       }),
     )
   })
@@ -80,5 +82,14 @@ export function useDesktopWindow() {
     unlisteners.forEach((unlisten) => unlisten())
   })
 
-  return { customFrame, platform, maximized, fullscreen, focused, action }
+  return {
+    customFrame,
+    nativeControls,
+    nativeWindow,
+    platform,
+    maximized,
+    fullscreen,
+    focused,
+    action,
+  }
 }

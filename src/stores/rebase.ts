@@ -103,7 +103,7 @@ export const useRebaseStore = defineStore('rebase', () => {
         expectedOid: branch.hash,
       })
       if (attempt !== version || stale.value) return
-      if (!value.rebase) throw new Error('本机核心尚未支持变基，请重启服务或桌面应用。')
+      if (!value.rebase) throw new Error('本地 Git 服务尚未支持变基，请重启服务或桌面应用。')
       if (interactive && !value.rebase.canInteractive) throw new Error(value.rebase.reason)
       plan.value = value.rebase
       reset()
