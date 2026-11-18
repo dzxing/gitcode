@@ -157,7 +157,7 @@ test('real same-name tabs keep separate filters through trust cancellation, lazy
       page
         .locator('.tab-select')
         .filter({ hasText: 'app' })
-        .and(page.locator(`[title="${repo}"]`))
+        .and(page.locator(`[data-repository-path="${repo}"]`))
     await tab(a.repo).click()
     await expect(page.locator('.filter-banner')).toContainText('qa/old')
     const beforeA = await preference(page, a.repo),

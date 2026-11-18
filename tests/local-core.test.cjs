@@ -6,6 +6,7 @@ const path = require('node:path')
 const os = require('node:os')
 const { createLocalCore } = require('../electron/local-core.cjs')
 const { GitService } = require('../electron/git.cjs')
+const { readPreference } = require('../electron/git-runtime.cjs')
 
 // Exercise the real HTTP middleware without binding a socket in the sandbox.
 function request(core, route, value = {}, options = {}) {
@@ -44,6 +45,114 @@ async function connect(core) {
   return result.body.token
 }
 const rpc = (core, token, method, args = []) => request(core, 'rpc', { method, args }, { token })
+
+test(
+  'concurrent browser Git settings saves do not share a temporary file',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-runtime-concurrent-'))
+    const files = [path.join(root, 'git-a'), path.join(root, 'git-b')]
+    for (const file of files)
+      await fs.writeFile(file, '#!/bin/sh\nprintf "git version 2.54.0\\n"\n', { mode: 0o755 })
+    const core = createLocalCore({
+      dataDirectory: root,
+      serviceFactory: () => new GitService({ dataDirectory: root, env: {} }),
+    })
+    t.after(async () => {
+      await core.close()
+      await fs.rm(root, { recursive: true, force: true })
+    })
+    const tokens = await Promise.all([connect(core), connect(core)])
+    const write = fs.writeFile
+    fs.writeFile = async (file, ...args) => {
+      const result = await write(file, ...args)
+      if (
+        String(file).startsWith(path.join(root, 'git-runtime.json')) &&
+        String(file).endsWith('.tmp')
+      )
+        await new Promise((resolve) => setTimeout(resolve, 100))
+      return result
+    }
+    try {
+      const results = await Promise.all(
+        tokens.map((token, index) =>
+          rpc(core, token, 'git-settings', [{ mode: 'custom', path: files[index] }]),
+        ),
+      )
+      for (const result of results) assert.equal(result.status, 200, result.body.error)
+      const saved = JSON.parse(await fs.readFile(path.join(root, 'git-runtime.json'), 'utf8'))
+      assert.ok(files.includes(saved.path))
+    } finally {
+      fs.writeFile = write
+    }
+  },
+)
+
+test('browser Git settings validate, apply and persist without Electron, while failed selections preserve state', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-browser-runtime-'))
+  const settingsFile = path.join(root, 'git-runtime.json')
+  const baseline = new GitService()
+  const runtime = await baseline.runtime()
+  assert.equal(runtime.gitAvailable, true, runtime.gitError)
+  let executable = runtime.gitPath
+  if (!path.isAbsolute(executable)) {
+    for (const directory of (process.env.PATH || '').split(path.delimiter)) {
+      const candidate = path.join(directory, executable)
+      if (
+        await fs.access(candidate).then(
+          () => true,
+          () => false,
+        )
+      ) {
+        executable = candidate
+        break
+      }
+    }
+  }
+  assert.equal(path.isAbsolute(executable), true)
+  const env = { ...process.env }
+  delete env.GITCODE_GIT_PATH
+  delete env.GITK_GIT_PATH
+  const factory = () =>
+    createLocalCore({
+      dataDirectory: root,
+      serviceFactory: () =>
+        new GitService({ dataDirectory: root, env, selection: readPreference(settingsFile) }),
+    })
+  let core = factory()
+  t.after(async () => {
+    await core.close()
+    await baseline.shutdown()
+    await fs.rm(root, { recursive: true, force: true })
+  })
+  const token = await connect(core)
+  const original = await rpc(core, token, 'git-settings', [null])
+  assert.equal(original.status, 200)
+  const invalid = await rpc(core, token, 'git-settings', [
+    { mode: 'custom', path: path.join(root, 'missing-git') },
+  ])
+  assert.equal(invalid.status, 400)
+  assert.equal(
+    await fs.access(settingsFile).then(
+      () => true,
+      () => false,
+    ),
+    false,
+  )
+  const applied = await rpc(core, token, 'git-settings', [{ mode: 'custom', path: executable }])
+  assert.equal(applied.status, 200, applied.body.error)
+  assert.equal(applied.body.result.runtime.gitAvailable, true)
+  assert.equal(applied.body.result.runtime.transport, 'local')
+  assert.equal(applied.body.result.runtime.gitPath, executable)
+  assert.equal(applied.body.result.restartRequired, undefined)
+  assert.equal((await rpc(core, token, 'git-runtime-refresh')).status, 200)
+  assert.equal((await rpc(core, token, 'git-settings')).status, 400)
+  await core.close()
+  core = factory()
+  const restored = await rpc(core, await connect(core), 'git-settings', [null])
+  assert.equal(restored.body.result.selection.path, executable)
+  assert.equal(restored.body.result.runtime.gitAvailable, true)
+})
 
 test('default browser core remembers repository trust after a new session and a full core restart', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-core-trust-'))

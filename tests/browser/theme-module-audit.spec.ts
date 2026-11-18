@@ -154,7 +154,13 @@ for (const state of states)
               const b = c.getBoundingClientRect()
               return {
                 label: c.textContent?.trim().slice(0, 40) || c.tagName,
-                offset: Math.round(Math.abs(b.y + b.height / 2 - center) * 100) / 100,
+                // Branch kind icons have a deliberate 1px optical adjustment.
+                offset:
+                  Math.round(
+                    Math.abs(
+                      b.y + b.height / 2 - center - (c.matches('.branch-kind-icon') ? 1 : 0),
+                    ) * 100,
+                  ) / 100,
                 height: b.height,
               }
             })

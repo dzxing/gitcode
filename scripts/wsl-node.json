@@ -1,0 +1,14 @@
+{
+  "version": "24.22.3",
+  "source": "https://nodejs.org/dist/v24.22.3/",
+  "assets": {
+    "x64": {
+      "name": "node-v24.22.3-linux-x64.tar.gz",
+      "sha256": "061ec3e3062115705b56b51fa9cc330ab50d34b6969387d4e4b1a50c6809acc2"
+    },
+    "arm64": {
+      "name": "node-v24.22.3-linux-arm64.tar.gz",
+      "sha256": "261af2af250dfd7e9f25cf151d1b2713a0adf8f10a9ad116c4947f68627affe8"
+    }
+  }
+}

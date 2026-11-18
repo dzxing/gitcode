@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
+import { useHistoryToolsStore } from '../stores/historyTools'
 import { version as appVersion } from '../../package.json'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
@@ -93,9 +95,6 @@ const flowFavorites = computed(() =>
       )
     : [],
 )
-const flowCount = computed(() =>
-  flowGroups.value.reduce((count, group) => count + group.branches.length, 0),
-)
 const flowSetupLabel = computed(() =>
   flow.state?.error
     ? '检查 GitFlow 规则'
@@ -145,7 +144,12 @@ const remoteGroups = computed(() =>
     filter.value,
   ),
 )
+function showWorktree() {
+  useHistoryToolsStore().active = ''
+  store.clearSelection()
+}
 function showHistory() {
+  useHistoryToolsStore().active = ''
   if (store.selectedCommit && !store.selectedStash) return
   store.query = ''
   store.clearBranchFilter()
@@ -174,7 +178,7 @@ function toggle(key: string) {
           <button
             class="icon-button"
             aria-label="仓库导航显示设置"
-            title="仓库导航显示设置"
+            :title="menu.hoverTitle('仓库导航显示设置')"
             aria-haspopup="menu"
             @click="menu.open($event, { kind: 'navigation' })"
           >
@@ -186,7 +190,7 @@ function toggle(key: string) {
           <button
             class="icon-button"
             :disabled="store.busy"
-            title="打开仓库"
+            :title="menu.hoverTitle('打开仓库')"
             aria-label="打开仓库"
             @click="store.requestOpen()"
           >
@@ -203,7 +207,7 @@ function toggle(key: string) {
       >
         <button
           :class="{ active: !store.selectedCommit && !store.selectedStash }"
-          @click="store.clearSelection()"
+          @click="showWorktree"
         >
           <Icon
             name="GitCommitHorizontal"
@@ -267,7 +271,6 @@ function toggle(key: string) {
               :aria-label="section.id === 'gitflow' ? '展开或折叠 GitFlow 分类' : undefined"
               :aria-controls="`sidebar-group-${section.id}`"
               :aria-expanded="!collapsed.has(section.id)"
-              title="展开或折叠；右键设置分支排序或调整分组顺序"
               @click="toggle(section.id)"
             >
               <Icon
@@ -278,24 +281,7 @@ function toggle(key: string) {
               /><Icon
                 :name="section.icon"
                 :size="14"
-              /><span class="section-title">{{ section.title }}</span
-              ><small
-                class="section-count"
-                :title="
-                  section.id === 'gitflow'
-                    ? flow.state?.ready
-                      ? '本地分类分支总数，与本地分支列表共享同一批分支'
-                      : flowSetupNote
-                    : '分组分支总数'
-                "
-                >{{
-                  section.id === 'gitflow'
-                    ? flow.state?.ready
-                      ? flowCount
-                      : '—'
-                    : section.branches.length
-                }}</small
-              >
+              /><span class="section-title">{{ section.title }}</span>
             </button>
             <button
               v-if="section.id === 'gitflow'"
@@ -304,7 +290,7 @@ function toggle(key: string) {
               aria-label="打开 GitFlow 操作面板"
               :aria-controls="flow.panel ? 'gitflow-panel' : undefined"
               :aria-expanded="!!flow.panel"
-              title="打开 GitFlow 操作面板"
+              :title="menu.hoverTitle('打开 GitFlow 操作面板')"
               @click="flow.open()"
             >
               操作
@@ -314,7 +300,7 @@ function toggle(key: string) {
               class="section-action icon-button"
               :disabled="store.busy"
               aria-label="新建分支"
-              title="新建分支"
+              :title="menu.hoverTitle('新建分支')"
               @click="store.modal = 'branch'"
             >
               <Icon
@@ -499,7 +485,7 @@ function toggle(key: string) {
             class="mini-brand"
             :show-mark="false"
           />
-          <span>v{{ appVersion }} <i>Preview</i></span>
+          <span>v{{ appVersion }}</span>
         </div>
       </div>
     </div>
@@ -516,7 +502,9 @@ function toggle(key: string) {
         aria-hidden="true"
       />
       <strong>{{ store.cancelling ? '正在取消并核对结果…' : '正在检出分支…' }}</strong>
-      <span :title="store.checkoutTarget">{{ store.checkoutTarget }}</span>
+      <span v-overflow-title="menu.hoverTitle(store.checkoutTarget)">{{
+        store.checkoutTarget
+      }}</span>
     </div>
   </aside>
 </template>

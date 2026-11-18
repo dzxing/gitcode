@@ -17,7 +17,19 @@ try {
 const root = fileURLToPath(new URL('../', import.meta.url))
 let directory
 try {
-  directory = await stageDesktopApp(root)
+  const targetArch = process.argv.includes('--arm64')
+    ? 'arm64'
+    : process.argv.includes('--x64')
+      ? 'x64'
+      : process.arch
+  const targetPlatform = process.argv.includes('--win')
+    ? 'win32'
+    : process.argv.includes('--mac')
+      ? 'darwin'
+      : process.argv.includes('--linux')
+        ? 'linux'
+        : process.platform
+  directory = await stageDesktopApp(root, { arch: targetArch, platform: targetPlatform })
   const { version } = JSON.parse(
     await readFile(new URL('../package.json', import.meta.url), 'utf8'),
   )

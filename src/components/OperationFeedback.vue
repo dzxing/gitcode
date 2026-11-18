@@ -23,7 +23,6 @@ const visible = computed(
     !store.modal &&
     ['clone', 'fetch', 'pull', 'push', 'pull-and-push', 'prepare-sync'].includes(operation.value),
 )
-const name = computed(() => origin.value.split(/[\\/]/).filter(Boolean).at(-1) || '')
 let timer: ReturnType<typeof setTimeout> | undefined
 let version = 0
 watch(
@@ -78,18 +77,10 @@ onUnmounted(() => {
       <Icon
         name="LoaderCircle"
         :size="16"
-        class="spin"
-      /><strong>{{ cancelling ? '正在取消并核对结果…' : `正在${label}…` }}</strong>
+        class="spin operation-feedback-icon"
+      />
+      <strong>{{ cancelling ? '正在取消并核对结果…' : `正在${label}…` }}</strong>
     </div>
-    <span
-      class="operation-feedback-repo"
-      :title="origin"
-      >{{ name }}</span
-    >
-    <span aria-live="off"
-      >{{ activity?.phase || '正在等待 Git 返回结果'
-      }}<template v-if="activity?.percent != null"> · {{ activity.percent }}%</template></span
-    >
     <progress
       v-if="activity?.percent != null"
       :value="activity.percent"
@@ -100,12 +91,20 @@ onUnmounted(() => {
       v-else
       aria-label="正在执行，尚无可用百分比"
     />
-    <button
-      class="text-button"
-      :disabled="cancelling"
-      @click="store.cancelOperation()"
-    >
-      {{ cancelling ? '已请求取消，等待操作结束' : '取消操作' }}
-    </button>
+    <div class="operation-feedback-footer">
+      <span
+        class="operation-feedback-phase"
+        aria-live="off"
+        >{{ activity?.phase || '正在等待 Git 返回结果'
+        }}<template v-if="activity?.percent != null"> · {{ activity.percent }}%</template></span
+      >
+      <button
+        class="secondary-button operation-feedback-cancel"
+        :disabled="cancelling"
+        @click="store.cancelOperation()"
+      >
+        {{ cancelling ? '正在取消…' : '取消操作' }}
+      </button>
+    </div>
   </aside>
 </template>

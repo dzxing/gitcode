@@ -1,3 +1,4 @@
+import type { GitConsoleRequest } from '../gitConsoleTypes'
 import type {
   DesktopBridge,
   GitAction,
@@ -12,9 +13,12 @@ import type {
   BackgroundReadRequest,
   PartialStageRequest,
   HistoryRequest,
+  HistoryToolRequest,
   CommitOperationRequest,
+  GitRuntimeSelection,
 } from '../types'
 import type { NativeWindow } from './window'
+import type { TerminalRequest } from '../terminalTypes'
 import { createLocalCoreClient } from './localCore'
 
 declare global {
@@ -69,6 +73,16 @@ async function invoke<T>(work: (bridge: DesktopBridge) => Promise<T>): Promise<T
 }
 
 export const desktop = {
+  gitConsole: (repo: string, request: GitConsoleRequest) =>
+    invoke((bridge) => {
+      if (!bridge.gitConsole) throw Error('请重启 GitCode 以加载 Git 控制台。')
+      return bridge.gitConsole(repo, request)
+    }),
+  terminal: (repo: string, request: TerminalRequest) =>
+    invoke((bridge) => {
+      if (!bridge.terminal) throw Error('请重启 GitCode 以加载终端功能。')
+      return bridge.terminal(repo, request)
+    }),
   fetchSettingsRead: (repo: string) =>
     invoke((bridge) => {
       if (!bridge.fetchSettingsRead) throw Error('请重启本地 Git 服务以加载仓库获取设置。')
@@ -95,6 +109,11 @@ export const desktop = {
       if (!bridge.historyMetadata)
         throw Error('当前 Git 服务不支持读取提交摘要，请更新并重启服务。')
       return bridge.historyMetadata(repo, sha)
+    }),
+  historyTools: (repo: string, request: HistoryToolRequest) =>
+    invoke((bridge) => {
+      if (!bridge.historyTools) throw Error('请重启本地 Git 服务以加载历史工具。')
+      return bridge.historyTools(repo, request)
     }),
   historyRead: (repo: string, request: HistoryRequest) =>
     invoke((bridge) => {
@@ -181,9 +200,23 @@ export const desktop = {
     },
   ) => invoke((bridge) => bridge.gitflowPlan(repo, request)),
   runtime: () => invoke((bridge) => bridge.runtime()),
+  gitSettings: (value?: GitRuntimeSelection) =>
+    invoke((bridge) => {
+      if (!bridge.gitSettings) throw Error('请重新连接本地服务以加载 Git 设置。')
+      return bridge.gitSettings(value)
+    }),
+  refreshGitRuntime: () =>
+    invoke((bridge) => {
+      if (!bridge.refreshGitRuntime) throw Error('请重新连接本地服务以重新检测 Git。')
+      return bridge.refreshGitRuntime()
+    }),
   syncPlan: (repo: string, kind: 'fetch' | 'pull' | 'push', expected: SyncContext) =>
     invoke((bridge) => bridge.syncPlan(repo, kind, expected)),
   snapshot: (repo: string) => invoke((bridge) => bridge.snapshot(repo)),
+  refreshReferences: (repo: string, signature: string) =>
+    bridge().refreshReferences
+      ? invoke((bridge) => bridge.refreshReferences!(repo, signature))
+      : null,
   commit: (repo: string, commit: string) => invoke((bridge) => bridge.commit(repo, commit)),
   diff: (repo: string, path: string, staged: boolean | 'working', commit?: string) =>
     invoke((bridge) => bridge.diff(repo, path, staged, commit || null)),
@@ -199,14 +232,18 @@ export const desktop = {
     invoke((bridge) => bridge.chooseDirectory(initialPath, purpose)),
   listDirectory: (initialPath?: string) => invoke((bridge) => bridge.listDirectory(initialPath)),
   cancel: () => invoke((bridge) => bridge.cancel()),
-  openResource: async (resource: 'git-docs' | 'git-book') => {
+  openResource: async (resource: 'git-docs' | 'git-book' | 'git-install') => {
     if (!isDesktop() && typeof window !== 'undefined') {
+      if (resource === 'git-install' && canConnectLocalCore())
+        return invoke((bridge) => bridge.openResource(resource))
       const url =
         resource === 'git-docs'
           ? 'https://git-scm.com/docs'
           : resource === 'git-book'
             ? 'https://git-scm.com/book/zh/v2'
-            : null
+            : resource === 'git-install'
+              ? 'https://git-scm.com/install'
+              : null
       if (!url) throw new Error('未知的帮助资源。')
       window.open(url, '_blank', 'noopener,noreferrer')
       return

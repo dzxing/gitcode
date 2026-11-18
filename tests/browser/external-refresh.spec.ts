@@ -6,12 +6,17 @@ import os from 'node:os'
 const { GitService } = createRequire(import.meta.url)('../../electron/git.cjs')
 
 test.setTimeout(60000)
-async function fixture() {
+async function fixture(refFormat?: string) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-live-observation-'))
   const repo = path.join(directory, '中文 worktree'),
     git = new GitService()
   await fs.mkdir(path.join(repo, 'src'), { recursive: true })
-  await git.git(repo, ['init', '-b', 'qa/first'])
+  await git.git(repo, [
+    'init',
+    '-b',
+    'qa/first',
+    ...(refFormat ? [`--ref-format=${refFormat}`] : []),
+  ])
   for (const [key, value] of [
     ['user.name', 'External QA'],
     ['user.email', 'external@example.test'],
@@ -59,7 +64,7 @@ async function open(page: Page, repo: string) {
     .getByRole('dialog', { name: '信任此仓库？', exact: true })
     .getByRole('button', { name: '信任并打开', exact: true })
     .click()
-  await expect(page.locator('.repo-selector')).toHaveAttribute('title', '打开本地仓库：' + repo)
+  await expect(page.locator('.repo-selector')).toHaveAttribute('data-repository-path', repo)
   await expect.poll(() => armed, { timeout: 15000 }).toBe(true)
 }
 
@@ -186,6 +191,162 @@ test('external conflict edits preserve the manual result and require explicit re
     await expect(page.getByRole('button', { name: '保存并标记已解决', exact: true })).toBeDisabled()
     expect(await fs.readFile(file, 'utf8')).toBe('external editor saved this\n')
     expect(await f.git.indexFingerprint(f.repo)).toBe(index)
+  } finally {
+    await page.close()
+    await f.dispose()
+  }
+})
+
+for (const format of ['files', 'reftable']) {
+  test(`${format}: all-branch graph updates preserve the loaded history window when a non-current branch advances`, async ({
+    page,
+  }) => {
+    const f = await fixture(format)
+    try {
+      const context = await f.git.head(f.repo)
+      let data = ''
+      for (let i = 1; i <= 520; i++) {
+        const message = `graph window ${i}`
+        data += `commit refs/heads/qa/first\nmark :${i}\ncommitter External QA <external@example.test> ${1700000000 + i} +0000\ndata ${Buffer.byteLength(message)}\n${message}\n${i > 1 ? `from :${i - 1}\n` : `from ${context}\n`}\n`
+      }
+      await f.git.git(f.repo, ['fast-import', '--quiet'], { input: data })
+      await f.git.git(f.repo, ['reset', '--hard', 'qa/first'])
+      await f.git.git(f.repo, ['branch', 'feature/background', 'qa/first'])
+      const old = (await f.git.git(f.repo, ['rev-parse', 'HEAD~400'])).trim()
+      await f.git.git(f.repo, ['branch', 'qa/old-anchor', old])
+      await open(page, f.repo)
+      await page.getByRole('button', { name: '加载更早的 250 条提交', exact: true }).click()
+      await expect(page.locator('.commit-row')).toHaveCount(500)
+      await expect(page.locator(`[data-commit-hash="${old}"]`)).toHaveCount(1)
+      const draft = page.getByRole('textbox', { name: '提交说明', exact: true })
+      await draft.fill('Keep draft while other branch moves')
+      const head = await f.git.head(f.repo)
+      const tree = (await f.git.git(f.repo, ['rev-parse', 'HEAD^{tree}'])).trim()
+      const commit = (
+        await f.git.git(f.repo, [
+          'commit-tree',
+          tree,
+          '-p',
+          head,
+          '-m',
+          'external non-current graph update',
+        ])
+      ).trim()
+      await f.git.git(f.repo, ['update-ref', 'refs/heads/feature/background', commit])
+      await expect(page.locator(`[data-commit-hash="${commit}"]`)).toHaveCount(1, {
+        timeout: 10000,
+      })
+      await expect(page.locator(`[data-commit-hash="${old}"]`)).toHaveCount(1)
+      await expect(page.locator('.commit-row')).toHaveCount(500)
+      await expect(draft).toHaveValue('Keep draft while other branch moves')
+      expect(await f.git.head(f.repo)).toBe(head)
+      const remote = (
+        await f.git.git(f.repo, [
+          'commit-tree',
+          tree,
+          '-p',
+          head,
+          '-m',
+          'manual refresh remote tip',
+        ])
+      ).trim()
+      await f.git.git(f.repo, ['update-ref', 'refs/remotes/origin/feature/remote', remote])
+      await page.getByRole('button', { name: '刷新', exact: true }).click()
+      await expect(page.locator(`[data-commit-hash="${remote}"]`)).toHaveCount(1)
+      await expect(page.locator(`[data-commit-hash="${old}"]`)).toHaveCount(1)
+      await expect(page.locator('.commit-row')).toHaveCount(500)
+      await f.git.git(f.repo, ['update-ref', '-d', 'refs/heads/feature/background', commit])
+      await f.git.git(f.repo, ['update-ref', '-d', 'refs/remotes/origin/feature/remote', remote])
+      await page.getByRole('button', { name: '刷新', exact: true }).click()
+      await expect(page.locator(`[data-commit-hash="${commit}"]`)).toHaveCount(0)
+      await expect(page.locator(`[data-commit-hash="${remote}"]`)).toHaveCount(0)
+      await expect(page.locator(`[data-commit-hash="${old}"]`)).toHaveCount(1)
+      await expect(draft).toHaveValue('Keep draft while other branch moves')
+    } finally {
+      await page.close()
+      await f.dispose()
+    }
+  })
+}
+
+test('Fetch actively refreshes changed references before planning without waiting for observation ticks', async ({
+  page,
+}) => {
+  const f = await fixture()
+  try {
+    const remote = path.join(f.directory, 'remote.git')
+    await f.git.git(f.directory, ['init', '--bare', remote])
+    await f.git.git(f.repo, ['remote', 'add', 'origin', remote])
+    await f.git.git(f.repo, ['push', '-u', 'origin', 'qa/first'])
+    await open(page, f.repo)
+    // Isolate the operation-driven path from periodic/background observation.
+    await page.evaluate(() =>
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' }),
+    )
+    const methods: string[] = []
+    page.on('request', (request) => {
+      try {
+        const body = request.postDataJSON()
+        if (['refresh-references', 'sync-plan', 'action'].includes(body?.method))
+          methods.push(body.method)
+      } catch {}
+    })
+    const head = await f.git.head(f.repo)
+    const tree = (await f.git.git(f.repo, ['rev-parse', 'HEAD^{tree}'])).trim()
+    const commit = (
+      await f.git.git(f.repo, [
+        'commit-tree',
+        tree,
+        '-p',
+        head,
+        '-m',
+        'button-triggered graph refresh',
+      ])
+    ).trim()
+    await f.git.git(f.repo, ['update-ref', 'refs/heads/feature/operation-entry', commit])
+    await expect(page.locator(`[data-commit-hash="${commit}"]`)).toHaveCount(0)
+    await page.getByRole('button', { name: '获取', exact: true }).click()
+    await expect.poll(() => methods.includes('action'), { timeout: 15000 }).toBe(true)
+    await expect(page.locator(`[data-commit-hash="${commit}"]`)).toHaveCount(1)
+    expect(methods).toEqual(['refresh-references', 'sync-plan', 'action'])
+    await expect(page.locator('.toast').filter({ hasText: '已获取' })).toBeVisible({
+      timeout: 15000,
+    })
+    expect(await f.git.head(f.repo)).toBe(head)
+    await page.screenshot({ path: '.tmp/operation-trigger-refresh.png' })
+  } finally {
+    await page.close()
+    await f.dispose()
+  }
+})
+
+test('operation-entry refresh stops an old intent when an external checkout changed only the branch name', async ({
+  page,
+}) => {
+  const f = await fixture()
+  try {
+    await open(page, f.repo)
+    await page.evaluate(() =>
+      Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' }),
+    )
+    const methods: string[] = []
+    page.on('request', (request) => {
+      try {
+        const body = request.postDataJSON()
+        if (['refresh-references', 'sync-plan', 'action'].includes(body?.method))
+          methods.push(body.method)
+      } catch {}
+    })
+    const head = await f.git.head(f.repo)
+    await f.git.git(f.repo, ['switch', 'qa/other'])
+    expect(await f.git.head(f.repo)).toBe(head)
+    await expect(page.locator('.branch-selector summary')).toContainText('qa/first')
+    await page.getByRole('button', { name: '获取', exact: true }).click()
+    await expect(page.locator('.branch-selector summary')).toContainText('qa/other')
+    await expect(page.locator('.toast').filter({ hasText: '当前分支或 HEAD 已变化' })).toBeVisible()
+    expect(methods).toEqual(['refresh-references'])
+    expect(await f.git.head(f.repo)).toBe(head)
+    expect(await f.git.currentBranch(f.repo)).toBe('qa/other')
   } finally {
     await page.close()
     await f.dispose()

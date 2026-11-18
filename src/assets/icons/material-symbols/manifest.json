@@ -51,7 +51,8 @@
     "ShieldCheck": "verified_user",
     "AlertCircle": "error",
     "WindowMaximize": "crop_square",
-    "WindowRestore": "filter_none"
+    "WindowRestore": "filter_none",
+    "Terminal": "terminal"
   },
   "files": [
     {
@@ -445,6 +446,14 @@
       "upstreamUrl": "https://github.com/google/material-design-icons/blob/10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7/symbols/web/computer/materialsymbolsoutlined/computer_24px.svg",
       "blobSha": "b8af5d464479440f9a35ae6b3a6254392468860e",
       "sha256": "e341b4ac9d81fd291cbe6cc6dce3b0b367f500837460b4962e7fdb9686edd792"
+    },
+    {
+      "name": "terminal",
+      "file": "terminal_24px.svg",
+      "path": "symbols/web/terminal/materialsymbolsoutlined/terminal_24px.svg",
+      "upstreamUrl": "https://github.com/google/material-design-icons/blob/10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7/symbols/web/terminal/materialsymbolsoutlined/terminal_24px.svg",
+      "blobSha": "53b09a6bd77ee5600078dc0e6d27ec1b358365ae",
+      "sha256": "02d50185ce66a04950f8b7eed976005aec13442b818e693247c2d3a791febaa8"
     }
   ],
   "failures": []

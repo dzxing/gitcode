@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, nextTick, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import Icon from './Icon.vue'
 import {
@@ -265,11 +266,7 @@ onUnmounted(() => {
             canonicalFontFamily(modelValue).toLocaleLowerCase()
           "
           :class="{ active: index === active }"
-          :title="
-            system.has(canonicalFontFamily(name))
-              ? `${fontDisplayName(name)}：调用系统字体，未安装时使用后备字体。`
-              : name
-          "
+          v-overflow-title="{ text: fontDisplayName(name), target: '.font-picker-name' }"
           :aria-label="fontDisplayName(name)"
           @pointermove="active = index"
           @click="choose(name)"

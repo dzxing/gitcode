@@ -26,6 +26,8 @@ process.on('SIGINT', () => stop())
 process.on('SIGTERM', () => stop())
 
 try {
+  const { prepareTerminal } = tools('../scripts/prepare-terminal.cjs')
+  await prepareTerminal(root)
   let existing = false
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(1000) })

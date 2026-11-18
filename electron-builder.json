@@ -3,7 +3,7 @@
   "productName": "GitCode",
   "electronVersion": "45.0.0",
   "asar": true,
-  "asarUnpack": ["electron/rebase-editor.cjs"],
+  "asarUnpack": ["electron/*.cjs", "electron/*.json", "electron/vendor/**/*"],
   "npmRebuild": false,
   "directories": {
     "output": "release/${version}",
@@ -13,6 +13,7 @@
     "dist/**/*",
     "electron/*.cjs",
     "electron/*.json",
+    "electron/vendor/**/*",
     "assets/**/*",
     "third-party/**/*",
     "package.json",
@@ -23,8 +24,8 @@
     "icon": "assets/icon.ico",
     "extraResources": [
       {
-        "from": ".gitcode-local/bundled-git/${arch}",
-        "to": "git",
+        "from": ".gitcode-local/wsl-runtime/${arch}",
+        "to": "wsl",
         "filter": ["**/*"]
       }
     ]
@@ -45,5 +46,5 @@
     "category": "Development",
     "maintainer": "GitCode contributors"
   },
-  "beforePack": "scripts/prepare-windows-git.cjs"
+  "beforePack": "scripts/prepare-wsl-runtime.cjs"
 }

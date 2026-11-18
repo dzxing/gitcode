@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed } from 'vue'
 import Icon from './Icon.vue'
 import type { WorktreeChange, WorktreeNode } from '../worktree'
@@ -152,7 +153,10 @@ function keydown(event: KeyboardEvent) {
         data-file-historical="false"
         :aria-label="`查看文件差异 ${fullPath}`"
         :aria-pressed="activePath === node.path && activeStaged === (zone === 'staged')"
-        :title="`${fullPath} · ${statusText[node.file.status] || node.file.status}${node.file.partial ? ' · 暂存区与工作区均有更改' : zone === 'staged' ? ' · 已暂存' : ''}`"
+        v-overflow-title="{
+          text: menu.hoverTitle(fullPath),
+          target: '.file-basename, .file-directory',
+        }"
         :disabled="busy"
         @click="emit('inspect', node.file, $event.currentTarget as HTMLElement)"
       >
@@ -173,21 +177,20 @@ function keydown(event: KeyboardEvent) {
         <span
           v-if="node.file.partial"
           class="worktree-index-badge"
-          title="暂存区与工作区均有更改"
           >部分暂存</span
         >
 
         <span
           class="worktree-file-status file-status"
           :class="`status-${node.file.status}`"
-          :title="statusText[node.file.status]"
+          :title="menu.hoverTitle(statusText[node.file.status])"
           >{{ node.file.status === '?' ? 'U' : node.file.status }}</span
         >
       </button>
       <button
         v-else
         class="worktree-row-main worktree-folder-main"
-        :title="node.path || node.label"
+        v-overflow-title="{ text: menu.hoverTitle(node.path || node.label), target: 'span' }"
         @click="emit('toggle', node.key)"
       >
         <Icon
@@ -201,7 +204,7 @@ function keydown(event: KeyboardEvent) {
         class="icon-button file-action"
         :disabled="busy || node.file.conflict"
         :aria-label="`${zone === 'staged' ? '取消暂存' : '暂存'} ${node.path}`"
-        :title="zone === 'staged' ? '取消暂存' : '暂存文件'"
+        :title="menu.hoverTitle(zone === 'staged' ? '取消暂存' : '暂存文件')"
         @click="emit('act', node.file, $event.currentTarget as HTMLElement)"
       >
         <Icon

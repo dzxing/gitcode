@@ -2,6 +2,14 @@
 import { computed, ref, useId, watch } from 'vue'
 import Icon from './Icon.vue'
 import SidebarCollapse from './SidebarCollapse.vue'
+import { useContextMenuStore } from '../stores/contextMenu'
+const menu = useContextMenuStore()
+const labelElement = ref<HTMLElement>()
+const labelClipped = ref(false)
+function measureLabel() {
+  labelClipped.value =
+    !!labelElement.value && labelElement.value.scrollWidth > labelElement.value.clientWidth
+}
 import { useSidebarStore } from '../stores/sidebar'
 import { useRepositoryStore } from '../stores/repository'
 const props = defineProps<{
@@ -50,7 +58,9 @@ function toggle() {
       :aria-controls="contentId"
       :aria-expanded="open"
       :aria-label="`展开或折叠${remote ? '远程' : '目录'} ${label}`"
-      :title="label"
+      :title="menu.hoverTitle(labelClipped ? label : undefined)"
+      @mouseenter="measureLabel"
+      @focus="measureLabel"
       @click="toggle"
     >
       <Icon
@@ -63,7 +73,7 @@ function toggle() {
         :name="remote ? 'Cloud' : 'FolderOpen'"
         :size="14"
       />
-      <span>{{ label }}</span>
+      <span ref="labelElement">{{ label }}</span>
     </button>
     <SidebarCollapse
       :id="contentId"

@@ -89,14 +89,14 @@ test('sidebar full names escape clipping without moving rows or adding checkout 
     }
   }, state)
   await page.goto('/')
+  await expect(page.getByRole('main', { name: '新标签页', exact: true })).toBeVisible()
   await page.keyboard.press('Control+o')
-  await page.getByLabel('仓库路径', { exact: true }).fill(state.path)
-  await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()
   const row = (section, name) =>
     page.locator(`[data-sidebar-section="${section}"] [data-branch-name="${name}"]`)
   const localRow = row('local', local),
     main = localRow.locator('.branch-main')
   const tip = page.getByRole('tooltip')
+  await expect(main).toBeVisible()
   await expect(page.locator('.branch-switch, .branch-row-action-space')).toHaveCount(0)
   await expect(localRow.locator('.branch-row-action')).toHaveCount(0)
   await expect(row('gitflow', local).locator('.branch-row-action')).toHaveCount(0)
@@ -129,6 +129,15 @@ test('sidebar full names escape clipping without moving rows or adding checkout 
       await expect(tip).toHaveCount(0)
     }
   }
+  await main.hover()
+  await expect(tip).toHaveText(local)
+  await main.click({ button: 'right' })
+  await expect(page.getByRole('menu')).toBeVisible()
+  await expect(tip).toHaveCount(0)
+  await main.dispatchEvent('mouseenter')
+  await expect(tip).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.mouse.move(1000, 100)
   await main.scrollIntoViewIfNeeded()
   await page.keyboard.press('Tab')
   await main.focus()

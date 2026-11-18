@@ -136,7 +136,7 @@ export const useGitFlowStore = defineStore('gitflow', () => {
       ? '请先打开并读取本地仓库。'
       : !repo.connected
         ? '本地 Git 服务未连接，请先连接并核对仓库状态。'
-        : repo.runtime?.gitAvailable === false
+        : !repo.repoGitAvailable
           ? '本机 Git 不可用，请安装或升级 Git 后重新连接。'
           : repo.busy
             ? 'Git 操作正在执行，请等待完成。'

@@ -31,7 +31,8 @@ for (const width of [720, 1280]) {
         state.branches.push({ ...current, name: `feature/test-${i}`, current: false })
       await openFixtureRepository(page, false, state)
       const status = page.locator('.status-branch')
-      await expect(status).toHaveAttribute('title', new RegExp(state.branch))
+      await status.hover()
+      await expect(status).toHaveAttribute('title', state.branch)
       const dimensions = await page.evaluate(() => {
         const footer = document.querySelector('.statusbar')!
         const left = footer.querySelector('.statusbar-primary')!,
@@ -61,6 +62,7 @@ for (const width of [720, 1280]) {
       const popup = page.locator('.branch-dropdown')
       const box = await popup.boundingBox()
       expect(box!.y + box!.height).toBeLessThanOrEqual(800)
+      await popup.getByRole('button', { name: state.branch, exact: true }).hover()
       await expect(popup.getByRole('button', { name: state.branch, exact: true })).toHaveAttribute(
         'title',
         state.branch,

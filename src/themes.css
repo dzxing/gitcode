@@ -128,7 +128,9 @@
 :root[data-palette^='islands-'] .workbench {
   background: var(--window-bg);
 }
-:root[data-palette^='islands-'] .workbench > :is(.sidebar, .history-panel, .inspector) {
+:root[data-palette^='islands-']
+  :is(.workbench, .history-original-view)
+  > :is(.sidebar, .history-panel, .inspector) {
   margin-block: 6px;
   border-radius: 8px;
 }
@@ -136,12 +138,28 @@
   margin-inline: 6px 3px;
   border-right: 0;
 }
-:root[data-palette^='islands-'] .workbench > .history-panel {
+:root[data-palette^='islands-'] :is(.workbench, .history-original-view) > .history-panel {
   margin-inline: 3px;
 }
-:root[data-palette^='islands-'] .workbench > .inspector {
+:root[data-palette^='islands-'] :is(.workbench, .history-original-view) > .inspector {
   margin-inline: 3px 6px;
   border-left: 0;
+}
+/* The tools host is structural: its gutters must expose the window frame. */
+:root[data-palette^='islands-'] :is(.history-tool-host, .history-original-view) {
+  background: transparent;
+}
+:root[data-palette^='islands-'] .history-tool-tabs {
+  margin: 6px 6px 0 3px;
+  border-bottom: 0;
+  border-radius: 8px;
+  background: var(--panel);
+}
+:root[data-palette^='islands-'] .history-tool-view {
+  margin: 6px 6px 6px 3px;
+  border-radius: 8px;
+  background: var(--panel);
+  overflow: hidden;
 }
 :root[data-palette^='islands-'] .inspector > .panel-header {
   background: var(--panel);

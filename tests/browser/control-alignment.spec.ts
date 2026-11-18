@@ -65,13 +65,16 @@ for (const scale of [1, 1.25, 1.5, 2]) {
                 return {
                   label: child.textContent?.slice(0, 20) || child.tagName,
                   height: b.height,
+                  // Branch kind icons intentionally follow the text's optical center.
+                  opticalOffset: child.matches('.branch-kind-icon') ? 1 : 0,
                   offset: b.top + b.height / 2 - center,
                 }
               })
               .filter((child) => child.height > 0)
           })
         })
-        for (const row of offsets) expect(Math.abs(row.offset), row.label).toBeLessThanOrEqual(0.5)
+        for (const row of offsets)
+          expect(Math.abs(row.offset - row.opticalOffset), row.label).toBeLessThanOrEqual(0.5)
         await page.getByRole('menuitem', { name: '视图 View', exact: true }).click()
         const menu = page.getByRole('menu', { name: '视图', exact: true })
         const menuOffsets = await menu.locator(':scope > button').evaluateAll((buttons) =>

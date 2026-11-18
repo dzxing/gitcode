@@ -11,27 +11,23 @@ const {
   environmentForGit,
 } = require('../electron/git-runtime.cjs')
 const { GitService } = require('../electron/git.cjs')
+const gitRuntime = require('../electron/git-runtime.cjs')
 
-test('bundled Windows Git takes priority over outdated system Git without requiring PATH', async () => {
+test('Windows ignores old bundled resources and uses installed Git', async () => {
   const calls = []
   const found = await discover(
     async (file) => {
       calls.push(file)
-      return {
-        code: 0,
-        stdout: file.startsWith('C:\\App\\resources')
-          ? 'git version 2.56.0.windows.4'
-          : 'git version 2.45.2.windows.1',
-      }
+      return { code: 0, stdout: 'git version 2.56.0.windows.4' }
     },
     { platform: 'win32', resourcesPath: 'C:\\App\\resources', env: {} },
   )
-  assert.equal(found.source, 'bundled')
-  assert.equal(found.path, 'C:\\App\\resources\\git\\cmd\\git.exe')
-  assert.equal(calls.length, 1)
+  assert.equal(found.source, 'system')
+  assert.equal(found.path, 'git.exe')
+  assert.ok(calls.every((file) => !file.includes('resources')))
 })
 
-test('missing bundle falls back to a suitable system installation, rejecting old versions', async () => {
+test('automatic search rejects outdated PATH Git and finds a suitable standard installation', async () => {
   const found = await discover(
     async (file) => {
       if (file.includes('resources')) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
@@ -69,7 +65,7 @@ test('explicit custom Git and environment overrides never silently switch to ano
   }
 })
 
-test('system mode bypasses bundled Git while environment override remains explicit', () => {
+test('legacy system mode remains compatible and explicit environment overrides win', () => {
   const options = {
     platform: 'win32',
     resourcesPath: 'C:\\App\\resources',
@@ -85,26 +81,30 @@ test('system mode bypasses bundled Git while environment override remains explic
   ])
 })
 
-test('bundled Git helpers and hook subprocesses use its runtime without replacing user configuration', () => {
-  const original = {
-    PATH: 'C:\\OldGit;C:\\Node',
-    GIT_EXEC_PATH: 'C:\\OldGit\\libexec',
-    HOME: 'C:\\Users\\User',
-    GIT_SSH_COMMAND: 'custom-ssh',
-  }
-  const env = environmentForGit(
-    original,
-    'C:\\App\\resources\\git\\cmd\\git.exe',
-    'bundled',
-    'win32',
+test('installed Git preserves the user environment without injecting a bundled toolchain', () => {
+  const original = { PATH: 'C:\\Tools', HOME: 'C:\\Users\\User', GIT_SSH_COMMAND: 'custom-ssh' }
+  assert.equal(environmentForGit(original, 'C:\\Git\\cmd\\git.exe', 'system', 'win32'), original)
+})
+
+test('Windows PATH candidates are absolute and preserve the selected executable identity', () => {
+  const found = candidates({
+    platform: 'win32',
+    env: { Path: 'C:\\Tools\\Git\\cmd;C:\\Windows\\System32' },
+    resourcesPath: 'C:\\OldApp\\resources',
+  })
+  assert.equal(found[0].path, 'C:\\Tools\\Git\\cmd\\git.exe')
+  assert.ok(found.every((entry) => entry.source === 'system' && !entry.path.includes('resources')))
+})
+
+test('Windows packaging includes the WSL core runtime and never PortableGit', async () => {
+  const config = JSON.parse(
+    await fs.readFile(path.join(__dirname, '../electron-builder.json'), 'utf8'),
   )
-  assert.equal(env.PATH, undefined)
-  assert.equal(env.GIT_EXEC_PATH, undefined)
-  assert.match(env.Path, /^C:\\App\\resources\\git\\cmd;/)
-  assert.ok(env.Path.endsWith(original.PATH))
-  assert.equal(env.HOME, original.HOME)
-  assert.equal(env.GIT_SSH_COMMAND, original.GIT_SSH_COMMAND)
-  assert.equal(original.GIT_EXEC_PATH, 'C:\\OldGit\\libexec')
+  assert.deepEqual(
+    config.win.extraResources.map((resource) => resource.to),
+    ['wsl'],
+  )
+  assert.equal(config.beforePack, 'scripts/prepare-wsl-runtime.cjs')
 })
 
 test('Git runtime preferences validate custom paths and recover absent or corrupt settings', async (t) => {
@@ -116,6 +116,7 @@ test('Git runtime preferences validate custom paths and recover absent or corrup
   assert.deepEqual(readPreference(file), { mode: 'auto' })
   assert.throws(() => preference({ mode: 'custom', path: 'git' }))
   assert.throws(() => preference({ mode: 'download' }))
+  assert.deepEqual(preference({ mode: 'system' }), { mode: 'auto' })
   const selected = { mode: 'custom', path: path.join(root, 'git') }
   await fs.writeFile(file, JSON.stringify(selected))
   assert.deepEqual(readPreference(file), selected)
@@ -258,4 +259,80 @@ test('failed Git discovery can be retried after installation, without switching 
   )
   git.closing = true
   await assert.rejects(git.retryRuntime(), /应用正在退出/)
+})
+
+test('custom Git applies immediately and failed validation or persistence preserves the active runtime', async (t) => {
+  if (process.platform === 'win32') return t.skip('POSIX executable fixture')
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-runtime-apply-'))
+  const git = new GitService({
+    env: {},
+    selection: { mode: 'custom', path: path.join(root, 'missing') },
+  })
+  t.after(async () => {
+    await git.shutdown()
+    await fs.rm(root, { recursive: true, force: true })
+  })
+  assert.equal((await git.runtime()).gitAvailable, false)
+  const executable = path.join(root, 'git')
+  await fs.writeFile(executable, '#!/bin/sh\nprintf "git version 2.54.0\\n"\n', { mode: 0o755 })
+  const saved = []
+  const applied = await git.configureRuntime(
+    { mode: 'custom', path: executable },
+    async (selection) => saved.push(selection),
+  )
+  assert.equal(applied.runtime.gitAvailable, true)
+  assert.equal(applied.runtime.gitPath, executable)
+  assert.equal(applied.restartRequired, undefined)
+  const previous = await git.runtime()
+  await assert.rejects(
+    git.configureRuntime({ mode: 'custom', path: path.join(root, 'absent') }),
+    /未能检测/,
+  )
+  const other = path.join(root, 'other-git')
+  await fs.copyFile(executable, other)
+  await assert.rejects(
+    git.configureRuntime({ mode: 'custom', path: other }, async () => {
+      throw Error('disk full')
+    }),
+    /disk full/,
+  )
+  assert.deepEqual(await git.runtime(), previous)
+  assert.equal(saved.length, 1)
+  git.pendingJobs = 1
+  await assert.rejects(git.configureRuntime({ mode: 'auto' }), /等待当前 Git 操作/)
+  git.pendingJobs = 0
+})
+
+test('an older discovery cannot overwrite a successfully applied runtime', async () => {
+  const original = gitRuntime.discover
+  let release,
+    calls = 0
+  const previous = new Promise((resolve) => {
+    release = resolve
+  })
+  const old = {
+    path: path.join(os.tmpdir(), 'old-git'),
+    source: 'system',
+    version: 'git version 2.53.0',
+  }
+  const next = {
+    path: path.join(os.tmpdir(), 'new-git'),
+    source: 'custom',
+    version: 'git version 2.54.0',
+  }
+  gitRuntime.discover = async () => (calls++ === 0 ? previous : next)
+  const git = new GitService({ env: {} })
+  const initial = git.runtime()
+  try {
+    await git.configureRuntime({ mode: 'custom', path: next.path })
+    release(old)
+    await initial
+    assert.equal((await git.runtime()).gitPath, next.path)
+    assert.equal(git.runtimeOptions.selection.path, next.path)
+  } finally {
+    release(old)
+    await initial.catch(() => {})
+    gitRuntime.discover = original
+    await git.shutdown()
+  }
 })

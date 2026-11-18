@@ -47,11 +47,21 @@ for (const scenario of [
     await openFixtureRepository(page)
     const root = page.locator('html')
     const original = await root.evaluate((el) => getComputedStyle(el).fontFamily)
-    expect(original).toContain(`"Cascadia Mono", "${scenario.fallback}"`)
+    const primary = scenario.fallback === 'Microsoft YaHei' ? 'Microsoft YaHei' : 'Cascadia Mono'
+    expect(original.startsWith(`"${primary}"`)).toBe(true)
+    const defaults = await root.evaluate((el) => ({
+      ui: getComputedStyle(el).getPropertyValue('--font-ui-default').trim(),
+      code: getComputedStyle(el).getPropertyValue('--font-code-default').trim(),
+    }))
+    expect(defaults.ui.startsWith(`"${primary}"`)).toBe(true)
+    expect(defaults.code.startsWith(`"${primary}"`)).toBe(true)
     await page.keyboard.press('Control+,')
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await settings.getByRole('tab', { name: '字体', exact: true }).click()
     const fallback = settings.getByRole('combobox', { name: '界面后备字体', exact: true })
+    await expect(settings.getByRole('combobox', { name: '界面主字体', exact: true })).toHaveValue(
+      primary,
+    )
     await expect(fallback).toHaveValue(scenario.fallback)
     await expect(settings.getByLabel('界面字体预览', { exact: true })).toHaveCSS(
       'font-family',
@@ -66,6 +76,9 @@ for (const scenario of [
     await expect(fallback).toHaveValue(scenario.fallback)
     await expect(root).toHaveCSS('font-family', original)
     await settings.getByRole('tab', { name: '编辑器', exact: true }).click()
+    await expect(settings.getByRole('combobox', { name: '编辑器主字体', exact: true })).toHaveValue(
+      primary,
+    )
     await expect(
       settings.getByRole('combobox', { name: '编辑器后备字体', exact: true }),
     ).toHaveValue(scenario.fallback)

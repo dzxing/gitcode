@@ -1,4 +1,3 @@
-import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import { expect } from '@playwright/test'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
@@ -99,11 +98,10 @@ export async function verifySidebarSync(page, { url, screenshotDirectory } = {})
   }, snapshot)
   await page.goto(url)
   await page.keyboard.press('Control+o')
-  const open = page.getByRole('dialog', { name: '打开本地仓库', exact: true })
-  await open.getByRole('textbox', { name: '仓库路径', exact: true }).fill(snapshot.path)
-  await open.getByRole('button', { name: '打开仓库', exact: true }).click()
-  await confirmFixtureTrust(page)
-  await expect(open).not.toBeVisible()
+  await expect(page.locator('.repo-selector')).toHaveAttribute(
+    'data-repository-path',
+    snapshot.path,
+  )
   const row = (section, name) =>
     page.locator(`[data-sidebar-section="${section}"] [data-branch-name="${name}"]`)
   for (const section of ['local', 'gitflow']) {

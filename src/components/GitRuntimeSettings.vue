@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { GitRuntimeSettings, GitRuntimeSelection } from '../types'
 import { useRepositoryStore } from '../stores/repository'
 import { noticePresentation } from '../noticePresentation'
+import { desktop, isDesktop, canConnectLocalCore } from '../services/desktop'
 
 const store = useRepositoryStore()
 const root = ref<HTMLElement>()
@@ -28,7 +29,11 @@ const dirty = computed(() => {
     (mode.value === 'custom' && customPath.value.trim() !== (baseline.path || '').trim())
   )
 })
-const canRefresh = computed(() => typeof window.gitk?.refreshGitRuntime === 'function')
+const canRefresh = computed(
+  () =>
+    typeof window.gitk?.refreshGitRuntime === 'function' || (!isDesktop() && canConnectLocalCore()),
+)
+const canBrowse = computed(() => typeof window.gitk?.chooseGit === 'function')
 const platform = computed(() => info.value?.runtime.platform || store.runtime?.platform || '')
 function presentFailure(message: string) {
   const result = noticePresentation(message, true)
@@ -43,7 +48,6 @@ const runtimeError = computed(() =>
 const source = computed(
   () =>
     ({
-      bundled: '应用内置',
       system: '系统 Git',
       custom: '自定义 Git',
       environment: '环境变量指定',
@@ -52,7 +56,7 @@ const source = computed(
 onMounted(async () => {
   pending.value = true
   try {
-    info.value = await window.gitk!.gitSettings!()
+    info.value = await desktop.gitSettings()
     mode.value = info.value.selection.mode
     customPath.value = info.value.selection.path || ''
   } catch (e) {
@@ -72,12 +76,27 @@ async function browse() {
     pending.value = false
   }
 }
+async function install() {
+  try {
+    await desktop.openResource('git-install')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '无法打开 Git 安装页面。'
+  }
+}
+async function chooseExisting() {
+  mode.value = 'custom'
+  if (canBrowse.value) await browse()
+  else {
+    await nextTick()
+    root.value?.querySelector<HTMLInputElement>('.git-runtime-path input')?.focus()
+  }
+}
 async function refresh() {
-  if (pending.value || store.busy || !window.gitk?.refreshGitRuntime) return
+  if (pending.value || store.busy || !canRefresh.value) return
   pending.value = true
   error.value = ''
   try {
-    info.value = await window.gitk.refreshGitRuntime()
+    info.value = await desktop.refreshGitRuntime()
     store.runtime = info.value.runtime
   } catch (e) {
     error.value = e instanceof Error ? e.message : '无法重新检测 Git。'
@@ -103,7 +122,8 @@ async function save() {
   error.value = ''
   saved.value = false
   try {
-    info.value = await window.gitk!.gitSettings!(selection.value)
+    info.value = await desktop.gitSettings(selection.value)
+    store.runtime = info.value.runtime
     saved.value = true
     return true
   } catch (e) {
@@ -125,6 +145,12 @@ defineExpose({ dirty, pending, validate, apply: save })
   >
     <div class="git-runtime-content">
       <h2 id="git-runtime-title">Git 运行环境</h2>
+      <p
+        v-if="info?.runtime.platform === 'windows'"
+        class="form-hint"
+      >
+        此设置用于 Windows 仓库；WSL 仓库使用对应发行版中的 Git。
+      </p>
       <dl
         v-if="info"
         class="git-runtime-details"
@@ -136,48 +162,63 @@ defineExpose({ dirty, pending, validate, apply: save })
         <dt>执行路径</dt>
         <dd>{{ info.runtime.gitPath || '—' }}</dd>
       </dl>
-      <button
-        v-if="canRefresh && !info?.runtime.gitAvailable"
-        type="button"
-        class="secondary-button"
-        :disabled="pending || store.busy"
-        @click="refresh"
+      <div
+        v-if="info && !info.runtime.gitAvailable"
+        class="git-runtime-actions"
       >
-        重新检测 Git
-      </button>
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="pending"
+          @click="install"
+        >
+          安装 Git
+        </button>
+        <button
+          type="button"
+          class="secondary-button"
+          :disabled="pending || store.busy || info.runtime.gitSource === 'environment'"
+          @click="chooseExisting"
+        >
+          选择已有 Git
+        </button>
+        <button
+          v-if="canRefresh"
+          type="button"
+          class="secondary-button"
+          :disabled="pending || store.busy"
+          @click="refresh"
+        >
+          重新检测 Git
+        </button>
+      </div>
       <p
         v-if="info?.runtime.gitSource === 'environment'"
         class="form-hint"
       >
         当前由 GITCODE_GIT_PATH 或 GITK_GIT_PATH 指定。环境变量优先于此设置。
       </p>
-      <fieldset :disabled="pending || store.busy || !info">
-        <legend>启动时使用</legend>
+      <fieldset
+        :disabled="pending || store.busy || !info || info.runtime.gitSource === 'environment'"
+      >
+        <legend>使用的 Git</legend>
         <label class="git-runtime-choice"
           ><input
             v-model="mode"
             type="radio"
             value="auto"
             @change="saved = false"
-          />{{ platform === 'windows' ? '默认（内置 Git 优先）' : '自动查找 Git' }}</label
+          />自动查找 Git</label
         >
         <p class="form-hint">
           {{
             platform === 'macos'
               ? '自动检查 Homebrew、MacPorts、Apple Command Line Tools、Xcode 和系统 Git，需要 2.46 或更高版本。'
               : platform === 'windows'
-                ? 'Windows 安装包自带完整 Git；没有内置版本时查找系统 Git。'
+                ? '检查 PATH 和常见安装位置，需要 Git 2.46 或更高版本。'
                 : '查找当前系统可用的 Git，需要 2.46 或更高版本。'
           }}
         </p>
-        <label class="git-runtime-choice"
-          ><input
-            v-model="mode"
-            type="radio"
-            value="system"
-            @change="saved = false"
-          />系统 Git</label
-        >
         <label class="git-runtime-choice"
           ><input
             v-model="mode"
@@ -199,6 +240,7 @@ defineExpose({ dirty, pending, validate, apply: save })
             @input="saved = false"
           />
           <button
+            v-if="canBrowse"
             type="button"
             class="secondary-button"
             @click="browse"
@@ -236,10 +278,10 @@ defineExpose({ dirty, pending, validate, apply: save })
         <code>xcrun --find git</code> 查找路径，再选择“自定义 Git”。
       </p>
       <p
-        v-if="saved || info?.restartRequired"
+        v-if="saved"
         role="status"
       >
-        已保存。请关闭并重新打开 GitCode 后生效。
+        已应用并保存。
       </p>
     </div>
   </section>
@@ -251,6 +293,12 @@ defineExpose({ dirty, pending, validate, apply: save })
 }
 .git-runtime-content {
   max-width: 600px;
+}
+.git-runtime-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
 }
 .git-runtime-details {
   display: grid;

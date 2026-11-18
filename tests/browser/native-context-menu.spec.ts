@@ -8,6 +8,7 @@ type NativeTestWindow = Window & {
   nativeResolves: Record<number, (value: string | null) => void>
   nativeOpenedAt: number[]
   nativeClosed: number[]
+  nativeTooltipTitles: string[][]
 }
 async function installBridge(page: Page) {
   await page.addInitScript(() => {
@@ -16,8 +17,16 @@ async function installBridge(page: Page) {
     host.nativeResolves = {}
     host.nativeClosed = []
     host.nativeOpenedAt = []
+    host.nativeTooltipTitles = []
     window.gitkContextMenu = {
       popup: (request) => {
+        host.nativeTooltipTitles.push(
+          [
+            ...document.querySelectorAll(
+              '.branch-row [title], .commit-row [title], .stash-row[title], .stash-sidebar-entry[title], .stash-graph-node title, .worktree-node-row [title], .section-head [title], .branch-dropdown [title]',
+            ),
+          ].map((element) => element.getAttribute('title') || element.textContent || ''),
+        )
         host.nativeRequests.push(request)
         host.nativeOpenedAt.push(performance.now())
         return new Promise((resolve) => {
@@ -32,6 +41,38 @@ async function installBridge(page: Page) {
 }
 const develop = (page: Page) =>
   page.locator('[data-sidebar-section="local"] [data-branch-name="develop"] .branch-main')
+
+test('branches avoid redundant hover hints and native menus suppress remaining icon tips', async ({
+  page,
+}) => {
+  await installBridge(page)
+  await openFixtureRepository(page)
+  const row = page.locator('[data-sidebar-section="local"] [data-branch-name="main"]')
+  const button = row.locator('.branch-main')
+  await expect(button).not.toHaveAttribute('title')
+  await button.hover()
+  await expect(page.locator('.branch-name-tooltip')).toHaveCount(0)
+  await expect(page.locator('.section-toggle[title], .section-count[title]')).toHaveCount(0)
+  await button.click({ button: 'right' })
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as NativeTestWindow).nativeRequests.length))
+    .toBe(1)
+  expect(
+    await page.evaluate(() => (window as unknown as NativeTestWindow).nativeTooltipTitles[0]),
+  ).toEqual([])
+  await expect(row.locator('[title]')).toHaveCount(0)
+  await expect(button).toHaveAccessibleName(/单击筛选.*当前分支/)
+  // A native popup can keep the pointer captured without delivering mouseleave.
+  await button.dispatchEvent('mouseenter')
+  await expect(page.locator('.branch-name-tooltip')).toHaveCount(0)
+  await page.evaluate(() => {
+    const host = window as unknown as NativeTestWindow
+    host.nativeResolves[host.nativeRequests[0]!.requestId]!(null)
+  })
+  await expect(button).not.toHaveAttribute('title')
+  await expect(row.locator('.branch-meta')).not.toHaveAttribute('title')
+  await expect(row.locator('.branch-favorite')).toHaveAttribute('title', /收藏/)
+})
 
 test('desktop uses one native menu with ordered groups and dispatches the chosen object', async ({
   page,
@@ -487,3 +528,61 @@ test('native commit menu opens before optional slow Git eligibility reads and ke
     .poll(() => page.evaluate(() => (window as unknown as NativeTestWindow).nativeClosed))
     .toContain(remoteSensitiveId)
 })
+
+for (const entry of [
+  { name: 'commit messages', source: '.commit-row', target: '.commit-select' },
+  { name: 'reference badges', source: '.ref-tag', target: '.ref-primary' },
+  { name: 'changed files', source: '.worktree-file-row', target: '.worktree-row-main' },
+  {
+    name: 'navigation groups',
+    source: '[data-sidebar-section="local"] .section-head',
+    target: '.section-toggle',
+  },
+  { name: 'sidebar stashes', source: '.stash-sidebar-entry', target: '' },
+  { name: 'graph stashes', source: '.stash-graph-node', target: '' },
+]) {
+  test(`${entry.name} stop hover titles before native menus capture the pointer`, async ({
+    page,
+  }) => {
+    await installBridge(page)
+    const snapshot = structuredClone(repositoryFixture)
+    snapshot.stashes = [
+      {
+        ref: 'stash@{0}',
+        oid: 'e'.repeat(40),
+        message: 'WIP on main: tooltip check',
+        date: new Date().toISOString(),
+        branch: 'main',
+        base: snapshot.head,
+      },
+    ]
+    await openFixtureRepository(page, false, snapshot)
+    const source = page.locator(entry.source).first()
+    const titles = () =>
+      source.evaluate((element) => [
+        ...(element.hasAttribute('title') ? [element.getAttribute('title')] : []),
+        ...[...element.querySelectorAll('[title], title')].map(
+          (node) => node.getAttribute('title') || node.textContent,
+        ),
+      ])
+    const target = entry.target ? source.locator(entry.target).first() : source
+    await target.hover({ force: entry.name === 'graph stashes' })
+    const before = await titles()
+    await target.click({ button: 'right', force: entry.name === 'graph stashes' })
+    await expect
+      .poll(() =>
+        page.evaluate(() => (window as unknown as NativeTestWindow).nativeRequests.length),
+      )
+      .toBe(1)
+    expect(
+      await page.evaluate(() => (window as unknown as NativeTestWindow).nativeTooltipTitles[0]),
+    ).toEqual([])
+    expect(await titles()).toEqual([])
+    await expect(page.locator('.ref-labels.is-expanded, .graph-arrow-tooltip')).toHaveCount(0)
+    await page.evaluate(() => {
+      const host = window as unknown as NativeTestWindow
+      host.nativeResolves[host.nativeRequests[0]!.requestId]!(null)
+    })
+    await expect.poll(titles).toEqual(before)
+  })
+}

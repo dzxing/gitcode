@@ -11,7 +11,10 @@ const observeWindow = (callback) => {
 // Only named, narrow operations cross the isolated renderer boundary.
 // Neither ipcRenderer nor Node's require / filesystem are exposed.
 contextBridge.exposeInMainWorld('gitk', {
+  gitConsole: (repo, request) => invoke('git-console', repo, request),
+  terminal: (repo, request) => invoke('terminal', repo, request),
   historyMetadata: (repo, sha) => invoke('history-metadata', repo, sha),
+  historyTools: (repo, request) => invoke('history-tools', repo, request),
   historyRead: (repo, request) => invoke('history-read', repo, request),
   repositoryTrust: (repo) => invoke('repository-trust', repo),
   approveRepositoryTrust: (repo, token) => invoke('repository-trust-approve', repo, token),
@@ -40,6 +43,7 @@ contextBridge.exposeInMainWorld('gitk', {
   fetchSettingsRead: (repo) => invoke('fetch-settings-read', repo),
   syncPlan: (repo, kind, expected) => invoke('sync-plan', repo, kind, expected),
   snapshot: (repo) => invoke('snapshot', repo),
+  refreshReferences: (repo, signature) => invoke('refresh-references', repo, signature),
   commit: (repo, commit) => invoke('commit', repo, commit),
   diff: (repo, file, staged, commit) => invoke('diff', repo, file, staged, commit),
   action: (repo, request) => invoke('action', repo, request),

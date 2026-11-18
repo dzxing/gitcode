@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, ref } from 'vue'
 import { useRebaseStore } from '../stores/rebase'
 import { useRepositoryStore } from '../stores/repository'
@@ -68,7 +69,7 @@ function drop(index: number) {
           </select>
           <button
             class="rebase-commit"
-            :title="step.message"
+            v-overflow-title="step.message"
             @click="rebase.select(step)"
           >
             <code>{{ step.sha.slice(0, 7) }}</code

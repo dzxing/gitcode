@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
 
 for (const theme of ['dark', 'islands-light']) {
-  test(`${theme}: Search menu moves focus from commit editor and exposes its loaded-history scope`, async ({
+  test(`${theme}: Search menu moves focus from commit editor and exposes its full-history scope`, async ({
     page,
   }) => {
     await page.addInitScript((theme) => localStorage.setItem('gitcode.theme', theme), theme)
@@ -18,7 +18,7 @@ for (const theme of ['dark', 'islands-light']) {
     await page.getByRole('menuitem', { name: /^搜索提交/ }).click()
     await expect(input).toBeFocused()
     await expect(page.getByRole('button', { name: '清除搜索', exact: true })).not.toBeVisible()
-    await expect(page.locator('.commit-search-hint')).toHaveText('仅搜索已加载的 16 条提交')
+    await expect(page.locator('.commit-search-hint')).toHaveText('搜索本地已有的全部提交历史')
     expect((await firstRow.boundingBox())!.y).toBe(rowTop)
     await expect(page.locator('.commit-search')).toHaveCSS('outline-style', 'solid')
     await expect(page.locator('.commit-search')).toHaveCSS('outline-width', '2px')

@@ -2,9 +2,9 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 
-// Renderer dependencies are compiled into dist. Main/preload/core code uses
-// Electron and Node builtins, so the shipped app has no external npm runtime tree.
-async function stageDesktopApp(root) {
+// Renderer dependencies are compiled into dist. The only native runtime dependency
+// is explicitly vendored; development dependencies never enter the shipped app.
+async function stageDesktopApp(root, { arch = process.arch, platform = process.platform } = {}) {
   await fs.access(path.join(root, 'dist', 'index.html'))
   await fs.access(path.join(root, 'electron', 'main.cjs'))
   const metadata = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))
@@ -48,6 +48,25 @@ async function stageDesktopApp(root) {
     for (const file of await fs.readdir(path.join(root, 'electron'))) {
       if (file.endsWith('.cjs') || (file.endsWith('.json') && file !== 'package.json'))
         await fs.copyFile(path.join(root, 'electron', file), path.join(directory, 'electron', file))
+    }
+    if (metadata.dependencies?.['node-pty']) {
+      const source = await require('./prepare-terminal.cjs').prepareTerminal(root, arch, platform)
+      const target = path.join(directory, 'electron', 'vendor', 'node-pty')
+      await fs.mkdir(target, { recursive: true })
+      for (const entry of ['package.json', 'LICENSE', 'lib', 'prebuilds', 'build/Release']) {
+        const from = path.join(source, entry)
+        if (
+          await fs.access(from).then(
+            () => true,
+            () => false,
+          )
+        )
+          await fs.cp(from, path.join(target, entry), {
+            recursive: true,
+            filter: (file) => !/\.(?:pdb|map)$|\.test\.js$/.test(file),
+          })
+      }
+      await fs.access(path.join(target, 'lib', 'index.js'))
     }
     return directory
   } catch (error) {

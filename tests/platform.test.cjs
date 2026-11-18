@@ -20,7 +20,7 @@ for (const [platform, id] of [
     assert.ok(locations.length > 0)
     for (const candidate of locations) {
       assert.equal(typeof candidate.path, 'string')
-      assert.ok(['system', 'bundled'].includes(candidate.source))
+      assert.equal(candidate.source, 'system')
     }
     const calls = []
     const selected = await discover(

@@ -42,11 +42,12 @@ export function fontDisplayName(name: string) {
 }
 export function getFontDefaults(platform: UIPlatform = getUIPlatform()): FontPreferences {
   const fallback = platformChineseFont(platform)
+  const family = platform === 'windows' ? 'Microsoft YaHei' : 'Cascadia Mono'
   return {
-    ui: { enabled: false, family: 'Cascadia Mono', fallback, size: 13 },
+    ui: { enabled: false, family, fallback, size: 13 },
     code: {
       enabled: false,
-      family: 'Cascadia Mono',
+      family,
       fallback,
       size: 12,
       lineHeight: 1.75,

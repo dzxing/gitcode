@@ -90,7 +90,7 @@ export async function verifyStagingZones(
     for (const name of ['C.txt', 'src/one.txt', 'src/two.txt']) await put(name, `working ${name}\n`)
 
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     assert.equal(
       await page.evaluate(() => typeof window.gitk),
       'undefined',
@@ -103,7 +103,7 @@ export async function verifyStagingZones(
       .getByRole('button', { name: '打开仓库', exact: true })
       .click()
     await confirmFixtureTrust(page)
-    await expect(page.locator('.status-path')).toHaveAttribute('title', repo)
+    await expect(page.locator('.repo-selector')).toHaveAttribute('data-repository-path', repo)
     await expect(zone('unstaged')).toBeVisible()
     await expect(zone('staged')).toBeVisible()
     await expect(page.locator('.commit-button')).toContainText('提交 2 个文件')
@@ -308,7 +308,11 @@ export async function verifyStagingZones(
     )
     assert.equal(await git.git(repo, ['show', `:${contextPath}`]), 'draft 69\n')
     await layout('目录视图')
-    await openContext(zone('unstaged').locator('.worktree-folder-main[title="src"]'))
+    await openContext(
+      zone('unstaged')
+        .locator('.worktree-folder-main')
+        .filter({ has: page.getByText('src', { exact: true }) }),
+    )
     await requestAction(() =>
       page.getByRole('menu').getByRole('menuitem', { name: '暂存 2 个文件', exact: true }).click(),
     )

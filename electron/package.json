@@ -4,6 +4,7 @@
   "private": true,
   "description": "Electron runtime and packaging tools for GitCode",
   "devDependencies": {
+    "@electron/rebuild": "3.7.0",
     "electron": "45.0.0",
     "electron-builder": "26.0.12"
   },

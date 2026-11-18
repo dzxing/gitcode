@@ -87,8 +87,9 @@ for (const scale of [1.25, 1.5, 2]) {
           for (const row of metrics.messages) {
             expect(row.offset).toBeLessThanOrEqual(0.6)
             expect(row.textHeight).toBeLessThanOrEqual(row.height - 4)
-            // Graph subjects keep a compact single line inside the fixed 30px row.
-            expect(row.line / row.size).toBeCloseTo(1.2, 2)
+            // Keep readable descenders and fit a single line inside the fixed graph row.
+            expect(row.line).toBeGreaterThanOrEqual(row.size)
+            expect(row.line).toBeLessThanOrEqual(row.height - 4)
           }
           await page.keyboard.press('Control+,')
           const settings = page.getByRole('dialog', { name: '设置', exact: true })

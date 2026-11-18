@@ -10,6 +10,7 @@ export function createLocalCoreClient(
   disconnected: () => void,
 ) {
   let token = ''
+  let corePlatform = 'linux'
   let session: Promise<string> | null = null
   const pendingReads = new Set<AbortController>()
   async function post(path: string, payload: unknown, auth?: string, signal?: AbortSignal) {
@@ -93,7 +94,10 @@ export function createLocalCoreClient(
     }
   }
   const bridge: DesktopBridge = {
+    refreshReferences: (repo, signature) =>
+      cancellableRead('refresh-references', [repo, signature]),
     historyMetadata: (repo, sha) => cancellableRead('history-metadata', [repo, sha]),
+    historyTools: (repo, request) => cancellableRead('history-tools', [repo, request]),
     historyRead: (repo, request) => cancellableRead('history-read', [repo, request]),
     repositoryTrust: (repo) => rpc('repository-trust', [repo]),
     approveRepositoryTrust: (repo, token) => rpc('repository-trust-approve', [repo, token]),
@@ -102,6 +106,8 @@ export function createLocalCoreClient(
     repositoryChanges: (repo) => rpc('repository-changes', [repo]),
     backgroundSnapshot: (repo, request) => cancellableRead('background-snapshot', [repo, request]),
     activity: () => rpc('activity', []),
+    gitConsole: (repo, request) => rpc('git-console', [repo, request]),
+    terminal: (repo, request) => rpc('terminal', [repo, request]),
     operationLog: (request) => rpc('operation-log', [request]),
     clearOperationLog: (request) => rpc('operation-log-clear', [request]),
     activitySettings: (value) => rpc('activity-settings', [value]),
@@ -114,7 +120,13 @@ export function createLocalCoreClient(
     mergeRead: (repo, file) => cancellableRead('merge-read', [repo, file]),
     stashRead: (repo, oid, file) => cancellableRead('stash-read', [repo, oid, file]),
     selectedCommitPlan: (repo, request) => cancellableRead('selected-commit-plan', [repo, request]),
-    runtime: () => rpc('runtime', []),
+    runtime: async () => {
+      const info = await rpc<Awaited<ReturnType<DesktopBridge['runtime']>>>('runtime', [])
+      corePlatform = info.platform
+      return info
+    },
+    gitSettings: (value) => rpc('git-settings', [value ?? null]),
+    refreshGitRuntime: () => rpc('git-runtime-refresh', []),
     snapshot: (repo) => cancellableRead('snapshot', [repo]),
     commit: (repo, oid) => rpc('commit', [repo, oid]),
     diff: (repo, file, staged, oid) => rpc('diff', [repo, file, staged, oid || null]),
@@ -137,7 +149,9 @@ export function createLocalCoreClient(
           ? 'https://git-scm.com/docs'
           : resource === 'git-book'
             ? 'https://git-scm.com/book/zh/v2'
-            : null
+            : resource === 'git-install'
+              ? `https://git-scm.com/install/${corePlatform === 'windows' ? 'windows' : corePlatform === 'macos' ? 'mac' : 'linux'}`
+              : null
       if (!url) return Promise.reject(new Error('未知的帮助资源。'))
       window.open(url, '_blank', 'noopener,noreferrer')
       return Promise.resolve()

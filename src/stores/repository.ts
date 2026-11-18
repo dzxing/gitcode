@@ -6,7 +6,12 @@ import {
   historyFilterKey,
   type HistoryFilterPreference,
 } from '../services/historyFilter'
-import { retainHistory, isCommitShaQuery, decorateHistory } from '../historyPaging'
+import {
+  retainHistory,
+  refillHistoryWindow,
+  isCommitShaQuery,
+  decorateHistory,
+} from '../historyPaging'
 import { useGraphViewStore } from './graphView'
 import { visibleHistory } from '../graphVisibility'
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
@@ -179,8 +184,7 @@ export const useRepositoryStore = defineStore('repository', () => {
           captured.epoch !== (snapshotEpochs.get(captured.path) || 0)
         )
           return false
-        await applyExternalSnapshot(result, captured.selection, captured.source)
-        return true
+        return applyExternalSnapshot(result, captured.selection, captured.source)
       },
       reading: (value) => {
         externalRefreshing.value = value
@@ -359,6 +363,9 @@ export const useRepositoryStore = defineStore('repository', () => {
     method: 'ff-only' | 'merge'
   } | null>(null)
   const runtime = ref<RuntimeInfo | null>(null)
+  const repoGitAvailable = computed(
+    () => repo.value.execution?.kind === 'wsl' || runtime.value?.gitAvailable !== false,
+  )
   const viewportWidth = ref(typeof window !== 'undefined' ? window.innerWidth || 1440 : 1440)
   const authorPreference = ref<boolean | null>(null),
     timePreference = ref<boolean | null>(null)
@@ -447,6 +454,30 @@ export const useRepositoryStore = defineStore('repository', () => {
       !historyFilter.value ||
       next.branches.some((b) => branchReference(b) === historyFilter.value!.fullRef)
     return preserve && filterExists ? retainHistory(repo.value, next) : next
+  }
+  function refreshContextCurrent(
+    intent: ReturnType<typeof captureOperation>,
+    epoch: number,
+    current: Snapshot,
+  ) {
+    return (
+      sameContext(intent) &&
+      epoch === (snapshotEpochs.get(intent.repo) || 0) &&
+      repo.value === current
+    )
+  }
+  function refillRefreshedHistory(
+    next: Snapshot,
+    intent: ReturnType<typeof captureOperation>,
+    epoch: number,
+    current: Snapshot,
+  ) {
+    return refillHistoryWindow(
+      current,
+      next,
+      (request) => desktop.historyRead(intent.repo, request),
+      () => refreshContextCurrent(intent, epoch, current),
+    )
   }
   async function ensureFilteredHistory() {
     if (busy.value || historyLoading.value || isNewTab.value || !repo.value.history) return
@@ -1074,10 +1105,14 @@ export const useRepositoryStore = defineStore('repository', () => {
     }
     try {
       await ensureSession()
-      if (!runtime.value?.gitAvailable)
-        throw new Error(runtime.value?.gitError || '未找到 Git，请安装 Git 后重新启动应用。')
-      startupTrace('core-ready')
       const saved = repo.value.path ? null : readWorkspaceSession()
+      const selectedPath = repo.value.path || saved?.tabs[saved.active]?.path || ''
+      const wslRepository =
+        runtime.value?.platform === 'windows' &&
+        /^\\\\(?:wsl\.localhost|wsl\$)\\/i.test(selectedPath)
+      if (!runtime.value?.gitAvailable && !wslRepository)
+        throw new Error(runtime.value?.gitError || '未找到 Git，请安装后重新检测，或选择已有 Git。')
+      startupTrace('core-ready')
       if (saved) {
         restoringSession = true
         tabs.value = saved.tabs.map((tab) => ({
@@ -1130,11 +1165,11 @@ export const useRepositoryStore = defineStore('repository', () => {
   async function retryStartup() {
     if (starting.value || busy.value) return
     sessionReady = false
-    if (runtime.value?.gitAvailable === false && isDesktop() && window.gitk?.refreshGitRuntime) {
+    if (runtime.value?.gitAvailable === false) {
       startupPhase.value = 'core'
       startupError.value = ''
       try {
-        runtime.value = (await window.gitk.refreshGitRuntime()).runtime
+        runtime.value = (await desktop.refreshGitRuntime()).runtime
       } catch (error) {
         startupError.value = noticePresentation((error as Error).message, true).text
         startupPhase.value = 'error'
@@ -1196,6 +1231,13 @@ export const useRepositoryStore = defineStore('repository', () => {
       historical ? '.inspector [aria-label="返回工作区"]' : '.workspace-nav button',
     )
     ;(source || fallback)?.focus({ preventScroll: true })
+  }
+
+  function requestOpenWsl() {
+    if (busy.value || choosingRepository.value || runtime.value?.platform !== 'windows') return
+    repositoryOpenPath.value = '\\\\wsl.localhost\\'
+    repositoryOpenError.value = ''
+    modal.value = 'open'
   }
 
   async function requestOpen() {
@@ -1310,7 +1352,37 @@ export const useRepositoryStore = defineStore('repository', () => {
     return intent.repo === repo.value.path && intent.tabId === activeTabId.value
   }
 
+  function refreshBeforeOperation(intent: ReturnType<typeof captureOperation>, startedAt: number) {
+    const current = repo.value,
+      epoch = snapshotEpochs.get(intent.repo) || 0
+    const pending = desktop.refreshReferences(intent.repo, current.referenceSignature || '')
+    // Older preload bridges keep their existing command-side context checks.
+    if (!pending) return null
+    return (async () => {
+      const snapshot = await pending
+      if (startedAt !== cancellationEpoch || !sameContext(intent)) return false
+      if (snapshot && refreshContextCurrent(intent, epoch, current)) await applySnapshot(snapshot)
+      if (startedAt !== cancellationEpoch || !sameContext(intent)) return false
+      if (repo.value.head !== intent.expectedHead || repo.value.branch !== intent.expectedBranch)
+        throw Error('当前分支或 HEAD 已变化，仓库视图已更新。请重新确认后操作。')
+      return true
+    })()
+  }
+
   async function applySnapshot(next: Snapshot, preserve = true) {
+    if (preserve) {
+      const intent = captureOperation(),
+        epoch = snapshotEpochs.get(intent.repo) || 0,
+        current = repo.value
+      try {
+        next = await refillRefreshedHistory(next, intent, epoch, current)
+      } catch (error) {
+        // Git may already have completed a commit, checkout or fetch. A failed
+        // history refill must not turn that successful operation into failure.
+        historyError.value = `仓库状态已更新，较早历史未能完整加载：${noticePresentation((error as Error).message, true).text}`
+      }
+      if (!refreshContextCurrent(intent, epoch, current)) return
+    }
     repo.value = snapshotWithHistory(next, preserve)
     next = repo.value
     validateBranchFilter()
@@ -1351,8 +1423,19 @@ export const useRepositoryStore = defineStore('repository', () => {
     selectedVersion: number,
     source: 'working' | 'staged' | 'unstaged' | null,
   ) {
-    const next = result.snapshot ? snapshotWithHistory(result.snapshot) : null
-    if (!next) return
+    if (!result.snapshot) return false
+    const intent = captureOperation(),
+      epoch = snapshotEpochs.get(intent.repo) || 0,
+      current = repo.value
+    const refreshed = await refillRefreshedHistory(result.snapshot, intent, epoch, current)
+    if (
+      !refreshContextCurrent(intent, epoch, current) ||
+      busy.value ||
+      fetching.value ||
+      modal.value
+    )
+      return false
+    const next = snapshotWithHistory(refreshed)
     externalUpdate.value = true
     try {
       if (JSON.stringify(repo.value) !== JSON.stringify(next)) {
@@ -1386,6 +1469,7 @@ export const useRepositoryStore = defineStore('repository', () => {
       externalUpdate.value = false
     }
     await ensureFilteredHistory()
+    return true
   }
 
   async function loadHistory(
@@ -1477,11 +1561,15 @@ export const useRepositoryStore = defineStore('repository', () => {
     if (busy.value) return
     const intent = captureOperation()
     invalidateSnapshot()
+    const epoch = snapshotEpochs.get(intent.repo) || 0,
+      current = repo.value
     busy.value = true
     activeOperation.value = 'refresh'
     try {
-      const next = await desktop.snapshot(intent.repo)
-      if (sameContext(intent)) await applySnapshot(next)
+      const snapshot = await desktop.snapshot(intent.repo)
+      const next = await refillRefreshedHistory(snapshot, intent, epoch, current)
+      if (!refreshContextCurrent(intent, epoch, current)) return false
+      await applySnapshot(next)
       return true
     } catch (error) {
       notify((error as Error).message, true)
@@ -1517,6 +1605,8 @@ export const useRepositoryStore = defineStore('repository', () => {
     publish?: PublishTarget,
     review = true,
   ) {
+    origin = { ...origin }
+    publish = publish ? { ...publish } : undefined
     if (busy.value || fetchCancelling.value) return
     if (isNewTab.value) {
       modal.value = 'open'
@@ -1529,22 +1619,31 @@ export const useRepositoryStore = defineStore('repository', () => {
     if (kind === 'pull') pullMethod.value = method
     syncIntent = { ...origin }
     const attempt = ++syncAttempt
-    const selected =
+    const candidate =
       source || repo.value.branches.find((b) => b.kind === 'local' && b.name === repo.value.branch)
+    const selected = candidate ? { ...candidate } : undefined
     syncTarget.value = selected ? { ...selected } : null
     syncPreview.value = null
     syncError.value = ''
-    if (kind === 'pull' && selected?.kind === 'local' && !selected.upstream) {
-      upstreamRequest.value = { branch: { ...selected }, intent: { ...origin }, method }
-      modal.value = 'upstream'
-      return
-    }
     modal.value = review ? kind : null
     busy.value = true
     activeOperation.value = 'prepare-sync'
     operationOrigin.value = origin.repo
     try {
+      const before = refreshBeforeOperation(origin, cancellationEpoch)
+      if (before && !(await before)) return
       if (selected && selected.kind !== 'local') throw new Error('请选择本地分支。')
+      const refreshed =
+        selected &&
+        repo.value.branches.find(
+          (branch) =>
+            branchReference(branch) === branchReference(selected) && branch.hash === selected.hash,
+        )
+      if (kind === 'pull' && refreshed?.kind === 'local' && !refreshed.upstream) {
+        upstreamRequest.value = { branch: { ...refreshed }, intent: { ...origin }, method }
+        modal.value = 'upstream'
+        return
+      }
       const plan = await desktop.syncPlan(syncIntent.repo, kind, {
         ...syncIntent,
         method,
@@ -1819,6 +1918,7 @@ export const useRepositoryStore = defineStore('repository', () => {
   }
 
   function runFetch(intent = captureOperation()): Promise<boolean> {
+    intent = { ...intent }
     if (fetchTask) {
       if (fetchOrigin.value === intent.repo) return fetchTask
       notify('已有其他仓库正在获取远程更新，请稍后再试。', true)
@@ -1835,6 +1935,8 @@ export const useRepositoryStore = defineStore('repository', () => {
     const startedAt = cancellationEpoch
     fetchTask = (async () => {
       try {
+        const before = refreshBeforeOperation(intent, startedAt)
+        if (before && !(await before)) return false
         const plan = await desktop.syncPlan(intent.repo, 'fetch', intent)
         if (startedAt !== cancellationEpoch) {
           notify('已放弃获取计划，未开始执行。')
@@ -1868,12 +1970,16 @@ export const useRepositoryStore = defineStore('repository', () => {
           [
             result.error ||
               result.warning ||
+              (result.refreshError
+                ? `远程获取已结束，但仓库视图尚未更新：${result.refreshError}`
+                : '') ||
               (result.outcome === 'succeeded'
                 ? `已获取 ${name} 的远程更新`
                 : `${name} 的远程更新未全部完成，请核对各远端结果`),
             ...(steps || []),
           ].join('\n'),
-          !!(result.error || result.warning) || result.outcome !== 'succeeded',
+          !!(result.error || result.warning || result.refreshError) ||
+            result.outcome !== 'succeeded',
           result.logId,
         )
         return result.outcome === 'succeeded'
@@ -1886,6 +1992,7 @@ export const useRepositoryStore = defineStore('repository', () => {
         fetchCancelling.value = false
         fetchOrigin.value = ''
         fetchTask = null
+        if (sameContext(intent)) requestExternalRefresh()
       }
     })()
     return fetchTask
@@ -1896,6 +2003,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     extra: Record<string, unknown> = {},
     intent = captureOperation(),
   ) {
+    intent = { ...intent }
     if (action === 'fetch') return runFetch(intent)
     if (fetchCancelling.value) {
       notify('正在取消此前操作，请等待结果确认。', true)
@@ -1952,12 +2060,16 @@ export const useRepositoryStore = defineStore('repository', () => {
     const operationModal = modal.value
     const startedAt = cancellationEpoch
     let worktreePatched = false
+    let recheckNeeded = false
     let checkoutNotice: { text: string; head: string; branch: string } | null = null
     try {
+      const frozenExtra = JSON.parse(JSON.stringify(extra)) as Record<string, unknown>
+      const before = refreshBeforeOperation(intent, startedAt)
+      if (before && !(await before)) return false
       const request = {
         expectedHead: intent.expectedHead,
         expectedBranch: intent.expectedBranch,
-        ...extra,
+        ...frozenExtra,
         ...(['stage', 'unstage'].includes(action) ? { refresh: 'worktree' } : {}),
         action,
       } as GitAction
@@ -1974,6 +2086,7 @@ export const useRepositoryStore = defineStore('repository', () => {
         Object.assign(request, { planId: plan.id })
       }
       const result = await desktop.action(intent.repo, request)
+      recheckNeeded = !!result.refreshError || (!result.snapshot && !result.worktree)
       if (!sameContext(intent)) return false
       lastActionResult.value = result
       if (result.snapshot) await applySnapshot(result.snapshot)
@@ -2158,6 +2271,7 @@ export const useRepositoryStore = defineStore('repository', () => {
       }
       return completed
     } catch (error) {
+      recheckNeeded = true
       notify((error as Error).message, true)
       if (wasSyncModal) syncError.value = (error as Error).message
       // IPC/transport failures may happen after Git already changed the repo.
@@ -2183,7 +2297,7 @@ export const useRepositoryStore = defineStore('repository', () => {
         )
           notify(checkoutNotice.text)
       }
-      if (worktreePatched) requestExternalRefresh()
+      if (worktreePatched || recheckNeeded) requestExternalRefresh()
     }
   }
 
@@ -2345,6 +2459,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     repositoryCreateDetails,
     repositoryCreateCancelled,
     requestOpen,
+    requestOpenWsl,
     trustRequest,
     trustError,
     trustApproving,
@@ -2463,6 +2578,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     createRepository,
     forgetRecent,
     runtime,
+    repoGitAvailable,
     chooseDirectory,
     cancelOperation,
     openResource,

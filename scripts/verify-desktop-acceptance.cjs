@@ -25,7 +25,9 @@ const { GitService, execute } = require(path.join(project, 'electron', 'git.cjs'
 const { environmentForGit } = require(path.join(project, 'electron', 'git-runtime.cjs'))
 const { quietSsh } = require(path.join(project, 'electron', 'auto-fetch.cjs'))
 const resourcesPath = path.join(appDirectory, 'resources')
-const git = new GitService({ resourcesPath })
+const git = new GitService({
+  selection: options.git ? { mode: 'custom', path: path.resolve(options.git) } : { mode: 'auto' },
+})
 const checks = []
 const limitations = []
 const apps = new Set()
@@ -104,6 +106,7 @@ async function launch(name, existingProfile, { resetSettings = true, startupShot
     )
       delete env[key]
   env.Path = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32')
+  if (options.git) env.GITCODE_GIT_PATH = path.resolve(options.git)
   const app = await _electron.launch({
     executablePath: path.join(appDirectory, 'GitCode.exe'),
     args: [`--user-data-dir=${profile}`, '--force-renderer-accessibility'],
@@ -142,8 +145,11 @@ async function launch(name, existingProfile, { resetSettings = true, startupShot
   )
   assert.ok(page.url().startsWith('file:'))
   const runtime = await page.evaluate(() => window.gitk.runtime())
-  assert.equal(runtime.gitSource, 'bundled')
-  assert.ok(runtime.gitPath.startsWith(resourcesPath))
+  assert.ok(['system', 'environment'].includes(runtime.gitSource))
+  assert.ok(
+    !runtime.gitPath.startsWith(resourcesPath),
+    'Git must not come from the application bundle',
+  )
   const state = { app, page, profile, errors, failedAssets, runtime, nativePid: actual.pid }
   await capture
   if (resetSettings) await settings(state, 0)
@@ -179,19 +185,42 @@ async function refresh(state) {
   await idle(state)
 }
 async function open(state, repo) {
+  // Let the real native chooser IPC return this disposable fixture once.
+  // Git discovery, trust and repository loading still use the production core.
+  await state.app.evaluate(({ dialog }, repo) => {
+    const previous = dialog.showOpenDialog
+    dialog.showOpenDialog = async () => {
+      dialog.showOpenDialog = previous
+      return { canceled: false, filePaths: [repo] }
+    }
+  }, repo)
   await state.page.keyboard.press('Control+o')
-  const dialog = state.page.getByRole('dialog', { name: '打开本地仓库', exact: true })
-  await dialog.getByRole('textbox', { name: '仓库路径', exact: true }).fill(repo)
-  await dialog.getByRole('button', { name: '打开仓库', exact: true }).click()
-  const { confirmFixtureTrust } = await import('./confirm-fixture-trust.mjs')
-  await confirmFixtureTrust(state.page)
-  await dialog.waitFor({ state: 'hidden' })
+  const trust = state.page.getByRole('dialog', { name: '信任此仓库？', exact: true })
+  const needsTrust = await Promise.race([
+    trust.waitFor({ state: 'visible' }).then(() => true),
+    state.page
+      .waitForFunction(
+        (repo) =>
+          document
+            .querySelector('.repo-selector')
+            ?.getAttribute('data-repository-path')
+            ?.toLowerCase() === repo.toLowerCase(),
+        repo,
+      )
+      .then(() => false),
+  ])
+  if (needsTrust) await trust.getByRole('button', { name: '信任并打开', exact: true }).click()
   await state.page.waitForFunction(
-    (repo) => document.querySelector('.status-path')?.title.toLowerCase() === repo.toLowerCase(),
+    (repo) =>
+      document
+        .querySelector('.repo-selector')
+        ?.getAttribute('data-repository-path')
+        ?.toLowerCase() === repo.toLowerCase(),
     repo,
   )
   await idle(state)
 }
+
 async function action(state, repo, operation, click, outcomes = ['succeeded']) {
   const old = await state.page.evaluate(
     async (repo) =>
@@ -341,10 +370,16 @@ async function businessSuite() {
   const { page } = state
   try {
     await check(
-      'packaged exe opens a Unicode repository using bundled Git with no system Git PATH',
+      'packaged exe opens a Unicode repository using an independently installed Git',
       async () => {
         await open(state, f.repo)
-        await page.evaluate(() => document.fonts.ready)
+        const version = await page.locator('.sidebar-version').innerText()
+        assert.ok(version.includes(`v${require(path.join(project, 'package.json')).version}`))
+        assert.doesNotMatch(version, /\bPreview\b/)
+        await page.evaluate(async () => {
+          await document.fonts.ready
+          await document.fonts.load('12px "Cascadia Mono"')
+        })
         assert.ok(
           await page.evaluate(() =>
             [...document.fonts].some(
@@ -522,6 +557,106 @@ async function businessSuite() {
     await closeClean(state)
   }
 }
+async function terminalSuite() {
+  const f = await fixture('terminal'),
+    state = await launch('terminal')
+  const { page } = state
+  try {
+    await open(state, f.repo)
+    await check(
+      'packaged Windows terminal tabs retain independent live processes alongside Git console',
+      async () => {
+        await page.getByRole('button', { name: 'Git 控制台', exact: true }).click()
+        const panel = page.locator('.terminal-workbench')
+        const consoleTab = panel.getByRole('tab', { name: 'Git 控制台', exact: true })
+        await consoleTab.waitFor()
+        await panel.getByRole('combobox', { name: '新终端使用的 Shell' }).selectOption('cmd')
+        await panel.getByRole('button', { name: '新建终端', exact: true }).click()
+        const firstTab = panel.getByRole('tab', { name: /终端 1/ })
+        await firstTab.waitFor()
+        const first = (
+          await panel.locator('.terminal-session-view').first().getAttribute('id')
+        ).slice('terminal-'.length)
+        const read = async (id) =>
+          page.evaluate(
+            async ({ repo, id }) => window.gitk.terminal(repo, { action: 'read', id, cursor: 0 }),
+            { repo: f.repo, id },
+          )
+        const waitForOutput = async (id, marker) => {
+          try {
+            await waitUntil(async () => (await read(id)).data.includes(marker))
+          } catch (error) {
+            const output = await read(id)
+            await fs.writeFile(
+              path.join(artifacts, 'terminal-failure-output.json'),
+              JSON.stringify(output, null, 2),
+            )
+            await shot(state, 'terminal-failure')
+            throw Error(`Terminal did not produce ${marker}; state=${output.state}`)
+          }
+        }
+        const command = async (id, text) => {
+          const input = page.locator(`[id="terminal-${id}"] textarea`)
+          await input.pressSequentially(text, { delay: 1 })
+          await input.press('Enter')
+        }
+        await command(first, 'set "QA_NATIVE=preserved"')
+        await command(first, 'echo __READY_%QA_NATIVE%__')
+        await waitForOutput(first, '__READY_preserved__')
+        await command(first, 'ping -n 3 127.0.0.1 >nul & echo __BACKGROUND_%QA_NATIVE%__')
+        await consoleTab.click()
+        await firstTab.waitFor()
+        await waitForOutput(first, '__BACKGROUND_preserved__')
+        assert.equal((await read(first)).state, 'running')
+        await panel.getByRole('button', { name: '新建终端', exact: true }).click()
+        await panel.getByRole('tab', { name: /终端 2/ }).waitFor()
+        const second = (
+          await panel.locator('.terminal-session-view').nth(1).getAttribute('id')
+        ).slice('terminal-'.length)
+        assert.notEqual(second, first)
+        await command(
+          second,
+          'if defined QA_NATIVE (echo __LEAK_%QA_NATIVE%__) else (echo __ISOLATED_%OS%__)',
+        )
+        await waitForOutput(second, '__ISOLATED_Windows_NT__')
+        await panel.getByRole('button', { name: '关闭终端 2', exact: true }).click()
+        await firstTab.click()
+        await command(first, 'echo __KEPT_%QA_NATIVE%__')
+        await waitForOutput(first, '__KEPT_preserved__')
+        await fs.writeFile(path.join(f.repo, 'console.txt'), 'native console\n')
+        await refresh(state)
+        await worktree(state)
+        await action(state, f.repo, 'stage', () =>
+          page.getByRole('button', { name: '全部暂存', exact: true }).click(),
+        )
+        await page.getByRole('button', { name: 'Git 控制台', exact: true }).click()
+        await page
+          .locator('.git-console-line.start')
+          .filter({ hasText: /\badd\b/ })
+          .waitFor()
+        await panel.getByRole('button', { name: '关闭终端 1', exact: true }).click()
+        // Native PTY closure is acknowledged asynchronously before removing its tab.
+        await firstTab.waitFor({ state: 'hidden' })
+        assert.equal(await panel.isVisible(), true)
+        assert.equal(await consoleTab.getAttribute('aria-selected'), 'true')
+        assert.equal(await panel.getByRole('tab').count(), 1)
+        assert.deepEqual(state.errors, [])
+        assert.deepEqual(state.failedAssets, [])
+        await shot(state, 'native-console-and-terminal')
+        return {
+          nativePty: true,
+          backgroundCommandContinued: true,
+          environmentPreserved: true,
+          independentShells: true,
+          gitOutputRecorded: true,
+        }
+      },
+    )
+  } finally {
+    await closeClean(state)
+  }
+}
+
 async function flowSuite() {
   const f = await fixture('gitflow', 'production'),
     state = await launch('gitflow')
@@ -627,7 +762,20 @@ async function httpsRemote(fixture) {
   await fs.mkdir(directory)
   const key = path.join(directory, 'server.key'),
     certificate = path.join(directory, 'server.crt')
-  const openssl = path.join(resourcesPath, 'git', 'ucrt64', 'bin', 'openssl.exe')
+  const gitRoot = path.dirname(path.dirname((await git.runtime()).gitPath))
+  let openssl = 'openssl.exe'
+  for (const toolchain of ['ucrt64', 'mingw64', 'usr']) {
+    const candidate = path.join(gitRoot, toolchain, 'bin', 'openssl.exe')
+    if (
+      await fs.access(candidate).then(
+        () => true,
+        () => false,
+      )
+    ) {
+      openssl = candidate
+      break
+    }
+  }
   const generated = await execute(
     openssl,
     [
@@ -712,10 +860,10 @@ async function httpsRemote(fixture) {
           REMOTE_ADDR: '127.0.0.1',
           GIT_PROTOCOL: request.headers['git-protocol'] || '',
         },
-        path.join(resourcesPath, 'git', 'cmd', 'git.exe'),
-        'bundled',
+        git.gitPath,
+        git.gitSource,
       )
-      const child = spawn(path.join(resourcesPath, 'git', 'cmd', 'git.exe'), ['http-backend'], {
+      const child = spawn(git.gitPath, ['http-backend'], {
         env,
         windowsHide: true,
       })
@@ -2013,6 +2161,7 @@ async function main() {
   )
   const suites = [
     businessSuite,
+    terminalSuite,
     flowSuite,
     lifecycleSuite,
     authSuite,

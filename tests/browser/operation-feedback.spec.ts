@@ -41,11 +41,8 @@ test('Fetch allows cached tab browsing and never applies its result to another r
     .getByRole('button', { name: 'repository /test-fixtures/repository', exact: true })
     .click()
   await page.keyboard.press('Control+o')
-  await expect(page.locator('.status-path')).toHaveAttribute(
-    'title',
-    /^\/test-fixtures\/second(?:；|$)/,
-  )
-  await page.locator('.tab-select[title="/test-fixtures/repository"]').click()
+  await expect(page.locator('.status-path')).toHaveText('/test-fixtures/second')
+  await page.locator('.tab-select[data-repository-path="/test-fixtures/repository"]').click()
   await page.locator('.toolbar-actions').getByRole('button', { name: '获取', exact: true }).click()
   const task = page.getByRole('status', { name: 'Git 操作进度', exact: true })
   await expect(task).toContainText('获取远程引用')
@@ -53,21 +50,15 @@ test('Fetch allows cached tab browsing and never applies its result to another r
   await expect(
     page.locator('.toolbar-actions button').filter({ hasText: '获取' }).locator('.spin'),
   ).toHaveCount(1)
-  const second = page.locator('.tab-select[title="/test-fixtures/second"]')
+  const second = page.locator('.tab-select[data-repository-path="/test-fixtures/second"]')
   await expect(second).toBeEnabled()
   await second.click()
-  await expect(page.locator('.status-path')).toHaveAttribute(
-    'title',
-    /^\/test-fixtures\/second(?:；|$)/,
-  )
+  await expect(page.locator('.status-path')).toHaveText('/test-fixtures/second')
   await page.evaluate(() => (window as unknown as { finishFetch: () => void }).finishFetch())
   await expect(task).not.toBeVisible()
-  await expect(page.locator('.status-path')).toHaveAttribute(
-    'title',
-    /^\/test-fixtures\/second(?:；|$)/,
-  )
+  await expect(page.locator('.status-path')).toHaveText('/test-fixtures/second')
   await expect(page.locator('.history-heading .pill')).not.toHaveText('123')
-  await page.locator('.tab-select[title="/test-fixtures/repository"]').click()
+  await page.locator('.tab-select[data-repository-path="/test-fixtures/repository"]').click()
   await expect(page.locator('.history-heading .pill')).toHaveText('123')
 })
 

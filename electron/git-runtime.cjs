@@ -2,12 +2,14 @@
 
 const path = require('node:path')
 const fs = require('node:fs')
+const { randomUUID } = require('node:crypto')
 const { getPlatform } = require('./platform.cjs')
+const preferenceWrites = new Map()
 
 function preference(value) {
   if (!value || !['auto', 'system', 'custom'].includes(value.mode))
-    throw new Error('请选择内置优先、系统 Git 或自定义 Git。')
-  if (value.mode !== 'custom') return { mode: value.mode }
+    throw new Error('请选择自动查找或自定义 Git。')
+  if (value.mode !== 'custom') return { mode: 'auto' }
   if (
     typeof value.path !== 'string' ||
     !path.isAbsolute(value.path) ||
@@ -23,6 +25,28 @@ function readPreference(file) {
     return preference(JSON.parse(fs.readFileSync(file, 'utf8')))
   } catch {
     return { mode: 'auto' }
+  }
+}
+
+async function writePreference(file, value) {
+  const selection = preference(value)
+  const previous = preferenceWrites.get(file) || Promise.resolve()
+  const write = previous.then(async () => {
+    await fs.promises.mkdir(path.dirname(file), { recursive: true })
+    const temporary = `${file}.${randomUUID()}.tmp`
+    try {
+      await fs.promises.writeFile(temporary, JSON.stringify(selection), { mode: 0o600, flag: 'wx' })
+      await fs.promises.rename(temporary, file)
+    } finally {
+      await fs.promises.rm(temporary, { force: true }).catch(() => {})
+    }
+  })
+  const settled = write.catch(() => {})
+  preferenceWrites.set(file, settled)
+  try {
+    await write
+  } finally {
+    if (preferenceWrites.get(file) === settled) preferenceWrites.delete(file)
   }
 }
 
@@ -103,4 +127,11 @@ function environmentForGit(env, executable, source, platform = process.platform)
   return getPlatform(platform).git.environment(env, executable, source)
 }
 
-module.exports = { preference, readPreference, candidates, discover, environmentForGit }
+module.exports = {
+  preference,
+  readPreference,
+  writePreference,
+  candidates,
+  discover,
+  environmentForGit,
+}

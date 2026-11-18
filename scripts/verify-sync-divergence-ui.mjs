@@ -92,7 +92,7 @@ export async function verifySyncDivergence(
     await writeFile(path.join(local, file), content)
     await git.git(local, ['add', file])
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     // This scenario asserts stale tracking refs before an explicit Fetch. Disable the
     // independent periodic reader through the real UI so it cannot invalidate the setup.
     await page.getByRole('button', { name: '活动日志', exact: true }).click()
@@ -109,7 +109,7 @@ export async function verifySyncDivergence(
     await open.getByRole('button', { name: '打开仓库', exact: true }).click()
     await confirmFixtureTrust(page)
     await expect(open).not.toBeVisible()
-    await expect(page.locator('.status-path')).toHaveAttribute('title', local)
+    await expect(page.locator('.repo-selector')).toHaveAttribute('data-repository-path', local)
     await page
       .getByRole('textbox', { name: '提交说明', exact: true })
       .fill('Commit while remote has advanced')
@@ -151,7 +151,7 @@ export async function verifySyncDivergence(
       remoteHead,
     )
     await expect(push.getByRole('button', { name: '推送', exact: true })).toBeDisabled()
-    await expect(push.getByRole('button', { name: '重试检查', exact: true })).toBeVisible()
+    await expect(push.getByRole('button', { name: '重新检查', exact: true })).toBeVisible()
     await capture('push-rejected')
     if (recoverPush) {
       const recovered = await action(() =>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useCommitActionsStore } from '../stores/commitActions'
 import { useRepositoryStore } from '../stores/repository'
@@ -416,7 +417,7 @@ function move(index: number, offset: number) {
               entry.type === 'tree' ? !collapsedDirectories.has(entry.path) : undefined
             "
             :class="{ selected: action.file === entry.path }"
-            :title="entry.path"
+            v-overflow-title="{ text: entry.path, target: '.file-name, span' }"
             @click="selectHistoryEntry(entry)"
           >
             <Icon

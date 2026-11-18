@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openFixtureRepository } from './repository-fixture'
+import { openFixtureRepository, openRepositoryFallback } from './repository-fixture'
 
 test('repository history, searching, file diff, modal and shortcuts', async ({ page }) => {
   await openFixtureRepository(page)
@@ -26,7 +26,7 @@ test('repository history, searching, file diff, modal and shortcuts', async ({ p
   await expect(page.locator('.diff-line.add')).not.toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(page.getByRole('region', { name: '文件差异' })).not.toBeVisible()
-  await page.keyboard.press('Control+o')
+  await openRepositoryFallback(page)
   await expect(page.getByRole('dialog')).toBeVisible()
   await expect(page.getByLabel('仓库路径', { exact: true })).toBeFocused()
   await page.keyboard.press('Escape')

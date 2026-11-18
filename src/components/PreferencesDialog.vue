@@ -13,6 +13,7 @@ import { normalizeFonts } from '../fontPreferences'
 import { commitPreferences } from '../preferencesSession'
 import { isThemePreference } from '../themePresets'
 import { getUIPlatform } from '../services/platform'
+import { canConnectLocalCore } from '../services/desktop'
 
 const props = defineProps<{ initialSection?: 'appearance' | 'fonts' | 'repository' | 'git' }>()
 const emit = defineEmits<{ close: [] }>()
@@ -20,7 +21,10 @@ const store = useRepositoryStore()
 const section = ref<'appearance' | 'fonts' | 'repository' | 'git'>(
   props.initialSection || 'appearance',
 )
-const canConfigureGit = computed(() => typeof window.gitk?.gitSettings === 'function')
+const canConfigureGit = computed(
+  () =>
+    typeof window.gitk?.gitSettings === 'function' || (store.connected && canConnectLocalCore()),
+)
 const gitSettings = ref<InstanceType<typeof GitRuntimeSettings>>()
 const gitVisited = ref(section.value === 'git')
 const applying = ref(false)

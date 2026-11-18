@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useGitFlowStore, flowLabels, flowTypes } from '../stores/gitflow'
 import { useRepositoryStore } from '../stores/repository'
@@ -47,16 +48,12 @@ const title = computed(
     })[flow.panel || 'overview'],
 )
 const rulesVerified = computed(
-  () =>
-    repo.connected &&
-    repo.runtime?.gitAvailable !== false &&
-    !!flow.state?.ready &&
-    !flow.requiresRecheck,
+  () => repo.connected && repo.repoGitAvailable && !!flow.state?.ready && !flow.requiresRecheck,
 )
 const readinessStatus = computed(() =>
   !repo.connected
     ? '本地 Git 服务未连接 · 规则状态待核对'
-    : repo.runtime?.gitAvailable === false
+    : !repo.repoGitAvailable
       ? '本机 Git 不可用'
       : flow.requiresRecheck
         ? 'GitFlow 状态待核对'
@@ -170,7 +167,7 @@ function showWorktree() {
     </header>
     <div
       class="gitflow-location"
-      :title="repo.repo.path"
+      v-overflow-title="repo.repo.path"
     >
       {{ repo.repo.path }}
     </div>

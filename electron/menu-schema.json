@@ -15,6 +15,11 @@
         "accelerator": "CmdOrCtrl+O"
       },
       {
+        "id": "file.openWsl",
+        "label": "打开 WSL 仓库…",
+        "windowsOnly": true
+      },
+      {
         "id": "file.recent",
         "label": "最近仓库"
       },
@@ -233,6 +238,15 @@
             "radio": true
           }
         ]
+      },
+      {
+        "id": "view.terminal",
+        "label": "终端",
+        "separator": true
+      },
+      {
+        "id": "view.gitConsole",
+        "label": "Git 控制台"
       },
       {
         "id": "view.activityLog",

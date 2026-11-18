@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { desktop, isDesktop, pathName } from '../services/desktop'
 import { useRepositoryStore } from '../stores/repository'
@@ -26,6 +27,10 @@ const visible = computed(() =>
   ),
 )
 const selection = computed(() => selected.value?.path || listing.value?.path || '')
+const distributionList = computed(() =>
+  /^\\\\(?:wsl\.localhost|wsl\$)\\?$/i.test(listing.value?.path || ''),
+)
+const virtualSelection = computed(() => /^\\\\(?:wsl\.localhost|wsl\$)\\?$/i.test(selection.value))
 
 async function navigate(path?: string) {
   const request = ++version
@@ -87,7 +92,12 @@ onUnmounted(() => {
           :size="19"
         />
         <h2 id="directory-heading">{{ mode === 'repo' ? '选择 Git 仓库' : '选择父目录' }}</h2>
-        <span>{{ store.runtime?.environment === 'wsl' ? 'WSL 目录' : '本机目录' }}</span>
+        <span>{{
+          store.runtime?.environment === 'wsl' ||
+          /^\\\\(?:wsl\.localhost|wsl\$)\\/i.test(listing?.path || '')
+            ? 'WSL 目录'
+            : '本机目录'
+        }}</span>
       </div>
       <button
         class="icon-button"
@@ -158,11 +168,20 @@ onUnmounted(() => {
             name="Monitor"
             :size="15"
           />{{ listing.root }}</button
+        ><button
+          v-for="location in listing?.locations || []"
+          :key="location.path"
+          @click="navigate(location.path)"
+        >
+          <Icon
+            name="FolderOpen"
+            :size="15"
+          />{{ location.name }}</button
         ><span v-if="store.recent.length">最近仓库</span
         ><button
           v-for="recent in store.recent"
           :key="recent"
-          :title="recent"
+          v-overflow-title="recent"
           @click="navigate(recent)"
         >
           <Icon
@@ -254,8 +273,18 @@ onUnmounted(() => {
             <Icon
               name="FolderOpen"
               :size="28"
-            /><span>{{ query ? '没有匹配的目录' : '当前目录没有可显示的子目录' }}</span
-            ><small>可以直接选择当前目录，或输入其他路径。</small>
+            /><span>{{
+              query
+                ? '没有匹配的目录'
+                : distributionList
+                  ? '未发现已安装的 WSL 发行版'
+                  : '当前目录没有可显示的子目录'
+            }}</span
+            ><small>{{
+              distributionList
+                ? '请先在 Windows 中安装或导入 WSL 发行版。'
+                : '可以直接选择当前目录，或输入其他路径。'
+            }}</small>
           </div>
         </div>
         <p
@@ -268,7 +297,8 @@ onUnmounted(() => {
     </div>
     <footer class="directory-footer">
       <div>
-        <span>已选择</span><strong :title="selection">{{ selection || '尚未选择目录' }}</strong>
+        <span>已选择</span
+        ><strong v-overflow-title="selection">{{ selection || '尚未选择目录' }}</strong>
       </div>
       <div>
         <button
@@ -284,7 +314,7 @@ onUnmounted(() => {
           取消</button
         ><button
           class="primary-button"
-          :disabled="!selection || loading || !!error"
+          :disabled="!selection || virtualSelection || loading || !!error"
           @click="emit('select', selection)"
         >
           <Icon

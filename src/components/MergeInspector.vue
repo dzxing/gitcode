@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useMergeStore } from '../stores/merge'
 import { useRepositoryStore } from '../stores/repository'
@@ -72,7 +73,7 @@ function returnToDraft() {
       </button>
     </header>
     <div class="merge-context">
-      <strong :title="merge.state.branch">{{ merge.state.branch }}</strong>
+      <strong v-overflow-title="merge.state.branch">{{ merge.state.branch }}</strong>
       <span v-if="merge.state.active"
         >{{ operationName }} {{ merge.state.incoming.slice(0, 7) }}</span
       >
@@ -100,7 +101,7 @@ function returnToDraft() {
         >
           <button
             class="conflict-file-name"
-            :title="file.path"
+            v-overflow-title="{ text: file.path, target: '.file-name, span' }"
             :disabled="disabled || !supported(file)"
             @click="merge.openFile(file.path)"
           >
@@ -151,7 +152,7 @@ function returnToDraft() {
         <span
           v-for="file in resolved"
           :key="file"
-          :title="file"
+          v-overflow-title="file"
           ><Icon
             name="Check"
             :size="12"

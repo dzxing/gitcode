@@ -257,9 +257,7 @@ test('Shift 范围只选择当前可见提交，筛选后不会把隐藏提交�
   await commitRow(page, 3)
     .locator('.commit-select')
     .click({ modifiers: ['Control'] })
-  await page
-    .getByPlaceholder('搜索已加载提交；输入 SHA 后按 Enter 定位', { exact: true })
-    .fill('feat(graph)')
+  await page.getByRole('textbox', { name: '搜索提交', exact: true }).fill('feat(graph)')
   await expect(page.locator('.commit-row')).toHaveCount(2)
   await commitRow(page, 4)
     .locator('.commit-select')

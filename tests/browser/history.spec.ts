@@ -94,8 +94,8 @@ test('real history paging retains graph geometry, scroll and selection across ap
       .locator('.toolbar-actions')
       .getByRole('button', { name: '刷新', exact: true })
       .click()
-    await expect(page.locator('.commit-row')).toHaveCount(250)
-    await expect(page.locator('.history-pagination')).toContainText('621')
+    await expect(page.locator('.commit-row')).toHaveCount(621)
+    await expect(page.locator('.history-pagination')).toHaveCount(0)
     // Multiple independent tips and a merge whose parents cross page one.
     await f.cmd('switch', '-c', 'qa/side', 'HEAD~400')
     for (let i = 0; i < 3; i++) await f.cmd('commit', '--allow-empty', '-m', `side ${i}`)
@@ -108,15 +108,14 @@ test('real history paging retains graph geometry, scroll and selection across ap
       .locator('.toolbar-actions')
       .getByRole('button', { name: '刷新', exact: true })
       .click()
-    await expect(page.locator('.commit-row')).toHaveCount(250)
-    await expect(page.locator('.history-pagination')).toContainText('626')
+    await expect(page.locator('.commit-row')).toHaveCount(626)
+    await expect(page.locator('.history-pagination')).toHaveCount(0)
     const forkGeometry = await page
       .locator('[data-node-hash] > circle:first-child')
       .evaluateAll((nodes) =>
         nodes.slice(0, 250).map((n) => [n.getAttribute('cx'), n.getAttribute('cy')]),
       )
-    await more.click()
-    await expect(page.locator('.commit-row')).toHaveCount(500)
+    await expect(more).toHaveCount(0)
     expect(
       await page
         .locator('[data-node-hash] > circle:first-child')

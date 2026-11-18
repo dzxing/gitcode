@@ -30,6 +30,7 @@ const { diagnoseCommand, presentCommandFailure } = require('./command-diagnostic
 const { RepositoryTrust, TRUST_READ } = require('./repository-trust.cjs')
 
 const { HistoryOperations } = require('./history.cjs')
+const { HistoryTools } = require('./history-tools.cjs')
 
 const MAX_OUTPUT = 32 * 1024 * 1024
 const MAX_DIFF = 300_000
@@ -54,7 +55,7 @@ function absolutePath(value) {
       .toLowerCase()
       .replace(/^\\\\\?\\unc\\/, '\\\\')
     if (/^\\\\wsl(?:\.localhost|\$)\\/.test(normalized))
-      throw new Error('Windows 版本暂不支持 WSL 仓库，请选择 Windows 本地仓库。')
+      throw new Error('WSL 仓库必须通过对应发行版的核心访问，请重新打开仓库。')
   }
   return path.normalize(value)
 }
@@ -119,7 +120,7 @@ function killTree(child) {
 function execute(
   executable,
   args,
-  { cwd, timeout = 30_000, signal, env = process.env, input, onStderr, onPrepared } = {},
+  { cwd, timeout = 30_000, signal, env = process.env, input, onStderr, onStdout, onPrepared } = {},
 ) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error(CANCELLED))
@@ -172,6 +173,7 @@ function execute(
       timeout,
     )
     child.stdout.on('data', (chunk) => {
+      onStdout?.(chunk)
       outBytes += chunk.length
       if (outBytes <= MAX_OUTPUT) stdout.push(chunk)
       else stop('Git 输出超过 32 MiB，请缩小操作范围。')
@@ -277,7 +279,10 @@ class GitService {
     // transports enforce trust; the renderer cannot change these options.
     this.runtimeOptions = runtimeOptions
     this.trust = new RepositoryTrust(this, { directory: runtimeOptions.dataDirectory })
+    this.terminal = new (require('./terminal.cjs').TerminalService)(this)
+    this.console = new (require('./git-console.cjs').GitConsole)()
     this.history = new HistoryOperations(this)
+    this.historyTools = new HistoryTools(this, filePath)
     this.journal =
       runtimeOptions.journal || new OperationLog({ directory: runtimeOptions.dataDirectory })
     this.activeLog = null
@@ -290,6 +295,7 @@ class GitService {
     this.gitPath = null
     this.gitVersion = ''
     this.discovery = null
+    this.runtimeRevision = 0
     this.tail = Promise.resolve()
     this.current = null
     this.generation = 0
@@ -311,12 +317,18 @@ class GitService {
     this.repositoryWatch = new RepositoryWatch(this)
     this.recovery = new RecoveryOperations(this)
     this.partialStage = new PartialStageOperations(this, { filePath })
+    this.wsl =
+      process.platform === 'win32'
+        ? new (require('./wsl.cjs').WslManager)(this, runtimeOptions)
+        : null
   }
 
   async discover() {
     if (this.discovery) return this.discovery
+    const revision = this.runtimeRevision
     this.discovery = (async () => {
       const found = await gitRuntime.discover(execute, this.runtimeOptions)
+      if (revision !== this.runtimeRevision) return
       this.gitPath = found.path || null
       this.gitVersion = found.version || ''
       this.gitSource = found.source || ''
@@ -327,6 +339,10 @@ class GitService {
 
   async runtime() {
     await this.discover()
+    return this.runtimeState()
+  }
+
+  runtimeState() {
     return {
       platform:
         process.platform === 'darwin'
@@ -339,6 +355,14 @@ class GitService {
       gitPath: this.gitPath || '',
       gitSource: this.gitSource,
       gitError: this.gitError,
+    }
+  }
+
+  async runtimeSettings() {
+    await this.discover()
+    return {
+      selection: gitRuntime.preference(this.runtimeOptions.selection || { mode: 'auto' }),
+      runtime: this.runtimeState(),
     }
   }
 
@@ -356,6 +380,39 @@ class GitService {
       this.discovery = null
     }
     return this.runtime()
+  }
+
+  async configureRuntime(value, persist = async () => {}) {
+    const selection = gitRuntime.preference(value)
+    if (this.closing || this.current || this.pendingJobs)
+      throw Error('请等待当前 Git 操作完成后修改运行环境。')
+    const env = this.runtimeOptions.env || process.env
+    if (env.GITCODE_GIT_PATH || env.GITK_GIT_PATH)
+      throw Error(
+        '当前 Git 由环境变量指定，请先移除 GITCODE_GIT_PATH 或 GITK_GIT_PATH，再修改此设置。',
+      )
+    return this.job(async (signal) => {
+      const found = await gitRuntime.discover(execute, { ...this.runtimeOptions, selection })
+      if (!found.path) throw Error(found.error)
+      if (signal.aborted) throw Error(CANCELLED)
+      // Save before publishing the new runtime. A failed save leaves the
+      // active executable and all cached state unchanged.
+      await persist(selection)
+      this.runtimeRevision++
+      this.runtimeOptions = { ...this.runtimeOptions, selection }
+      this.gitPath = found.path
+      this.gitVersion = found.version
+      this.gitSource = found.source
+      this.gitError = ''
+      this.discovery = Promise.resolve()
+      this.repositoryLocations.clear()
+      this.flow.plans.clear()
+      this.flow.validatedStateConfigs.clear()
+      this.sync.plans.clear()
+      this.selectedCommit.plans.clear()
+      this.commitOperations.plans.clear()
+      return this.runtimeSettings()
+    })
   }
 
   // Capturing an epoch at enqueue time cancels both active and previously
@@ -414,11 +471,14 @@ class GitService {
   cancel() {
     this.generation++
     this.current?.abort()
+    this.wsl?.cancel()
   }
   async shutdown() {
     this.closing = true
+    await this.terminal.shutdown()
     this.repositoryWatch.close()
     this.cancel()
+    await this.wsl?.shutdown()
     await this.tail
     await this.journal.writes
   }
@@ -496,40 +556,92 @@ class GitService {
       if (this.activity?.state === 'running') this.activity = { ...this.activity, ...value }
     })
     const commandStarted = Date.now()
-    const run = (commandEnv) =>
-      execute(
-        this.gitPath,
-        [
-          '--no-pager',
-          '--literal-pathspecs',
-          '-c',
-          'core.quotePath=false',
-          '-c',
-          'color.ui=false',
-          '-c',
-          'core.fsmonitor=false',
-          '-c',
-          'protocol.ext.allow=never',
-          ...(process.platform === 'win32' ? ['-c', 'core.longpaths=true'] : []),
-          ...(hooksPath ? ['-c', `core.hooksPath=${hooksPath}`] : []),
-          ...args,
-        ],
-        {
+    // Capture the operation before asynchronous output; queue ownership must not drift.
+    const record = this.activeLog
+    const quiet = new Set([
+      'rev-parse',
+      'status',
+      'diff',
+      'diff-index',
+      'diff-files',
+      'ls-files',
+      'ls-tree',
+      'log',
+      'show',
+      'for-each-ref',
+      'symbolic-ref',
+      'merge-base',
+      'check-ref-format',
+      'cat-file',
+      'rev-list',
+      'ls-remote',
+      'show-ref',
+      'version',
+      'check-attr',
+      'check-ignore',
+    ])
+    const visible =
+      record &&
+      !this.background &&
+      !trustRead &&
+      !quiet.has(args[0]) &&
+      !(args[0] === 'remote' && (!args[1] || ['-v', 'get-url', 'show'].includes(args[1]))) &&
+      !(args[0] === 'worktree' && args[1] === 'list') &&
+      !(args[0] === 'stash' && ['list', 'show'].includes(args[1])) &&
+      !(
+        args[0] === 'branch' &&
+        (!args[1] ||
+          args.some((arg) => /^--(?:show-current|list|format|contains|merged|no-merged)/.test(arg)))
+      ) &&
+      !(
+        args[0] === 'tag' &&
+        (!args[1] || args.some((arg) => /^--(?:list|format|contains|merged)/.test(arg)))
+      ) &&
+      !(args[0] === 'config' && args.some((arg) => /^--(?:get|list|show|includes)/.test(arg)))
+    const fullArgs = [
+      '--no-pager',
+      '--literal-pathspecs',
+      '-c',
+      'core.quotePath=false',
+      '-c',
+      'color.ui=false',
+      '-c',
+      'core.fsmonitor=false',
+      '-c',
+      'protocol.ext.allow=never',
+      ...(process.platform === 'win32' ? ['-c', 'core.longpaths=true'] : []),
+      ...(hooksPath ? ['-c', `core.hooksPath=${hooksPath}`] : []),
+      ...args,
+    ]
+    const run = async (commandEnv) => {
+      const consoleCommand = visible
+        ? this.console.start(record.repo || repo, record.id, this.gitPath, fullArgs)
+        : null
+      try {
+        const result = await execute(this.gitPath, fullArgs, {
           cwd: repo,
           timeout,
           signal,
           env: commandEnv,
           input,
-          onStderr: reportProgress,
           onPrepared,
-        },
-      )
+          onStdout: (chunk) => consoleCommand?.write('stdout', chunk),
+          onStderr: (chunk) => {
+            reportProgress(chunk)
+            consoleCommand?.write('stderr', chunk)
+          },
+        })
+        consoleCommand?.finish(result)
+        return result
+      } catch (error) {
+        consoleCommand?.finish(error.gitResult, error, signal?.aborted === true)
+        throw error
+      }
+    }
     const result = diagnose
-      ? await diagnoseCommand(env, run, (diagnostic) =>
-          this.journal.diagnostic(this.activeLog, diagnostic),
-        )
+      ? await diagnoseCommand(env, run, (diagnostic) => this.journal.diagnostic(record, diagnostic))
       : await run(env)
-    if (!trustRead) this.journal.command(this.activeLog, args, result, Date.now() - commandStarted)
+    if (!trustRead) this.journal.command(record, args, result, Date.now() - commandStarted)
     if (!allowedCodes.includes(result.code)) {
       if (optional && result.code === 1) return ''
       throw new Error(
@@ -747,24 +859,7 @@ class GitService {
     )
   }
 
-  async snapshot(repo, signal) {
-    const locations = await this.gitPaths(
-      repo,
-      [
-        'MERGE_HEAD',
-        'CHERRY_PICK_HEAD',
-        'REVERT_HEAD',
-        'rebase-merge',
-        'rebase-apply',
-        'gitcode-rebase.json',
-        'gitcode-flow-finish.json',
-        'config',
-        'config.worktree',
-        'shallow',
-        'info/grafts',
-      ],
-      signal,
-    )
+  async referenceState(repo, signal, locations) {
     const { head, branch } = await this.headContext(repo, signal)
     const rawRefs = await this.git(
       repo,
@@ -817,6 +912,41 @@ class GitService {
         if (local) local.worktreePath = worktreePath
       }
     }
+    const referenceSignature = createHash('sha256')
+      .update(JSON.stringify([head, branch, rawRefs, worktreeRaw, graphBasis]))
+      .digest('hex')
+    return { head, branch, branches, graphBasis, referenceSignature }
+  }
+
+  async refreshReferences(repo, signature, signal) {
+    if (typeof signature !== 'string' || (signature && !/^[a-f0-9]{64}$/.test(signature)))
+      throw new Error('无效的仓库引用版本。')
+    const references = await this.referenceState(repo, signal)
+    return references.referenceSignature === signature
+      ? null
+      : this.snapshot(repo, signal, references)
+  }
+
+  async snapshot(repo, signal, references) {
+    const locations = await this.gitPaths(
+      repo,
+      [
+        'MERGE_HEAD',
+        'CHERRY_PICK_HEAD',
+        'REVERT_HEAD',
+        'rebase-merge',
+        'rebase-apply',
+        'gitcode-rebase.json',
+        'gitcode-flow-finish.json',
+        'config',
+        'config.worktree',
+        'shallow',
+        'info/grafts',
+      ],
+      signal,
+    )
+    const { head, branch, branches, graphBasis, referenceSignature } =
+      references || (await this.referenceState(repo, signal, locations))
     const history = await this.history.initial(repo, branches, head, signal, graphBasis)
     const state = await this.status(repo, signal)
     const gitflow = await this.flow.state(repo, branches, signal, locations)
@@ -824,6 +954,7 @@ class GitService {
     const merge = await this.merge.state(repo, signal, locations)
     return {
       path: repo,
+      referenceSignature,
       name: path.basename(repo) || 'repository',
       branch: branch || 'detached HEAD',
       head,

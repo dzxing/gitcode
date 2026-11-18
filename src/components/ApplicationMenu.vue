@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { focusMenuItem } from '../menuFocus'
 import AppBrand from './AppBrand.vue'
 import { version as appVersion } from '../../package.json'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import { useGraphViewStore } from '../stores/graphView'
+import { useTerminalStore } from '../stores/terminal'
 import { useContextMenuStore } from '../stores/contextMenu'
 import {
   applicationBridge,
@@ -21,6 +23,7 @@ import PreferencesDialog from './PreferencesDialog.vue'
 const props = defineProps<{ platform: string }>()
 const emit = defineEmits<{ search: []; resetView: [] }>()
 const graphView = useGraphViewStore()
+const terminal = useTerminalStore()
 const appearance = useAppearanceStore()
 const store = useRepositoryStore(),
   context = useContextMenuStore(),
@@ -97,6 +100,7 @@ const state = computed<ApplicationMenuState>(() => {
       'view.theme.system',
     )
     enabled.push('view.activityLog', 'help.shortcuts', 'help.gitDocs', 'help.gitBook', 'help.about')
+    if (terminal.available) enabled.push('view.terminal', 'view.gitConsole')
     if (!store.busy && !store.choosingRepository) {
       enabled.push(
         'file.newTab',
@@ -106,6 +110,7 @@ const state = computed<ApplicationMenuState>(() => {
         'file.closeTab',
         'view.resetLayout',
       )
+      if (store.runtime?.platform === 'windows') enabled.push('file.openWsl')
       store.recent.forEach((_, i) => enabled.push(`file.recent.${i}`))
       if (store.connected && !store.isNewTab && !store.fetchCancelling) {
         enabled.push(
@@ -138,6 +143,7 @@ const state = computed<ApplicationMenuState>(() => {
   for (const key of Object.keys(editing.value) as EditCommand[])
     if (editing.value[key]) enabled.push(`edit.${key}`)
   return {
+    wsl: store.runtime?.platform === 'windows',
     enabled,
     recent: store.recent.map((path) => `${pathName(path)} — ${path}`),
     author: store.showAuthor,
@@ -340,6 +346,7 @@ async function run(id: string) {
       captureEditing()
     } else if (id === 'file.newTab') store.newTab()
     else if (id === 'file.open') await store.requestOpen()
+    else if (id === 'file.openWsl') store.requestOpenWsl()
     else if (id === 'file.clone') store.modal = 'clone'
     else if (id === 'file.create') store.modal = 'create'
     else if (id === 'file.settings' || id === 'repository.settings') {
@@ -375,6 +382,8 @@ async function run(id: string) {
     else if (id === 'repository.push') await store.sync('push')
     else if (id === 'repository.recovery') store.modal = 'recovery'
     else if (id === 'view.activityLog') store.openActivityLog()
+    else if (id === 'view.terminal') await terminal.toggle()
+    else if (id === 'view.gitConsole') terminal.showConsole()
     else if (id === 'help.shortcuts') store.modal = 'help'
     else if (id === 'help.gitDocs') await store.openResource('git-docs')
     else if (id === 'help.gitBook') await store.openResource('git-book')
@@ -398,7 +407,7 @@ async function receiveClose(id: number) {
   if (!(await bridge.acknowledgeClose(id))) return
   close(false)
   context.close(false)
-  if (!store.isWorking && !store.draftTabs.length) {
+  if (!store.isWorking && !store.draftTabs.length && !terminal.running) {
     await bridge.approveClose(id)
     return
   }
@@ -544,6 +553,7 @@ function menuKey(event: KeyboardEvent) {
 }
 function globalKey(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return
+  if ((event.target as HTMLElement)?.closest?.('.terminal-workbench')) return
   if (active.value) {
     menuKey(event)
     if (event.defaultPrevented) return
@@ -744,7 +754,6 @@ defineExpose({ openGitSettings })
       aria-haspopup="menu"
       :aria-expanded="active === entry.id"
       :aria-label="`${entry.label} ${menuEnglishNames[entry.id]}`"
-      :title="`${entry.label} (Alt+${entry.accessKey.toUpperCase()})`"
       :class="{ expanded: active === entry.id }"
       @pointerdown.prevent
       @click="active === entry.id ? close() : open(entry.id)"
@@ -820,7 +829,7 @@ defineExpose({ openGitSettings })
             :aria-checked="recent.radio ? recent.checked : undefined"
             tabindex="-1"
             :disabled="!recent.enabled"
-            :title="recent.label"
+            v-overflow-title="{ text: recent.label, target: '.application-item-label' }"
             @click="run(recent.id)"
           >
             <span class="application-item-label"
@@ -889,6 +898,9 @@ defineExpose({ openGitSettings })
       <div class="dialog-content">
         <h2 id="quit-title">退出 GitCode？</h2>
         <p v-if="approving">正在退出…</p>
+        <p v-if="terminal.running">
+          退出会关闭 {{ terminal.running }} 个终端会话，并结束其中正在运行的命令。
+        </p>
         <p v-if="store.isWorking">
           {{
             quitMode

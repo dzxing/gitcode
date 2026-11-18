@@ -60,7 +60,7 @@ export async function verifyGitKrakenParity(page, { url, screenshotDirectory } =
     await git.git(repo, ['update-ref', 'refs/remotes/origin/topic', base])
     await writeFile(path.join(repo, 'draft.txt'), 'local draft\n')
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     await page.keyboard.press('Control+o')
     await page.getByLabel('仓库路径', { exact: true }).fill(repo)
     await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()

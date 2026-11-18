@@ -1,4 +1,3 @@
-import { confirmFixtureTrust } from './confirm-fixture-trust.mjs'
 import assert from 'node:assert/strict'
 import { expect } from '@playwright/test'
 
@@ -116,10 +115,10 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
       .evaluateAll((elements) => elements.map((element) => element.dataset.sidebarSection))
   const openFixture = async () => {
     await page.keyboard.press('Control+o')
-    const dialog = page.getByRole('dialog', { name: '打开本地仓库' })
-    await dialog.getByLabel('仓库路径', { exact: true }).fill(fixture.path)
-    await dialog.getByRole('button', { name: '打开仓库', exact: true }).click()
-    await confirmFixtureTrust(page)
+    await expect(page.locator('.repo-selector')).toHaveAttribute(
+      'data-repository-path',
+      fixture.path,
+    )
     await expect(
       page.locator('[data-sidebar-section="gitflow"] [data-flow-group="feature"]'),
     ).toBeVisible()
@@ -360,11 +359,11 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
   const collapseIcon = await bounds(collapse.locator('.disclosure-chevron'))
   const panelButton = await bounds(flowAction)
   assert.equal(panelButton.width, 40)
-  assert.equal(panelButton.height, 26)
+  assert.equal(panelButton.height, 24)
   const createBranchButton = await bounds(
     page.locator('[data-sidebar-section="local"] .section-action'),
   )
-  assert.equal(createBranchButton.width, 26)
+  assert.equal(createBranchButton.width, 24)
   assert.equal(createBranchButton.height, panelButton.height)
   assert.equal(createBranchButton.x + createBranchButton.width, panelButton.x + panelButton.width)
   assert.ok(
@@ -386,7 +385,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
       'No empty action column without an action',
     )
     const wasExpanded = await toggle.getAttribute('aria-expanded')
-    await page.mouse.click(toggleBox.x + toggleBox.width - 2, toggleBox.y + toggleBox.height / 2)
+    await toggle.click({ position: { x: toggleBox.width - 2, y: toggleBox.height / 2 } })
     await expect(toggle).toHaveAttribute('aria-expanded', wasExpanded === 'true' ? 'false' : 'true')
     await toggle.click()
     await expect(toggle).toHaveAttribute('aria-expanded', wasExpanded)
@@ -395,7 +394,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
     Math.abs(
       (await bounds(page.locator('[data-sidebar-section="local"] .section-toggle'))).width -
         collapseBox.width -
-        14,
+        (panelButton.width - createBranchButton.width),
     ) <= 1,
     'Compact plus returns space to the title',
   )
@@ -596,7 +595,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
             const star = row.querySelector('.branch-favorite').getBoundingClientRect()
             return (
               text.right <= star.x + 0.5 &&
-              star.width === 22 &&
+              star.width === 24 &&
               row.getBoundingClientRect().right >= star.right
             )
           }),

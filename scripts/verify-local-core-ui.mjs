@@ -21,7 +21,7 @@ export async function verifyLocalCore(
   })
   try {
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     assert.equal(
       await page.evaluate(() => typeof window.gitk),
       'undefined',
@@ -33,8 +33,7 @@ export async function verifyLocalCore(
       .getByRole('button', { name: '创建仓库', exact: true })
       .click()
     const dialog = page.getByRole('dialog', { name: '创建本地仓库', exact: true })
-    await expect(dialog.locator('.local-core-note')).toContainText('本机 Git 核心已连接')
-    await dialog.getByRole('button', { name: '父目录', exact: true }).click()
+    await dialog.getByRole('button', { name: '浏览…', exact: true }).click()
     const directory = page.getByRole('dialog', { name: '选择父目录', exact: true })
     await expect(directory).toBeVisible()
     await expect(directory.getByRole('button', { name: '系统选择器', exact: true })).toHaveCount(0)
@@ -42,7 +41,7 @@ export async function verifyLocalCore(
     await directory.getByRole('textbox', { name: '目录地址', exact: true }).press('Enter')
     await expect(directory.locator('.directory-footer strong')).toHaveText(root)
     await directory.getByRole('button', { name: '选择父目录', exact: true }).click()
-    await dialog.getByLabel('新仓库路径', { exact: true }).fill(repo)
+    await dialog.getByRole('textbox', { name: '仓库名称', exact: true }).fill('browser-project')
     await dialog.getByRole('button', { name: '创建并打开', exact: true }).click()
     await page
       .getByRole('dialog', { name: '信任此仓库？', exact: true })
@@ -109,7 +108,9 @@ export async function verifyLocalCore(
       .getByRole('button', { name: '刷新', exact: true })
       .click()
     const flowSection = page.locator('[data-sidebar-section="gitflow"]')
-    await expect(flowSection.locator('.section-count')).toHaveText('—')
+    await expect(
+      flowSection.getByRole('button', { name: '补齐基础分支', exact: true }),
+    ).toBeVisible()
     await flowSection.getByRole('button', { name: '补齐基础分支', exact: true }).click()
     await expect(
       page.locator('.gitflow-settings').getByRole('combobox', { name: /develop.*选择起点/ }),
@@ -117,7 +118,9 @@ export async function verifyLocalCore(
     await page.getByRole('button', { name: '收起 GitFlow 面板', exact: true }).click()
     await page.getByRole('button', { name: '打开 GitFlow 操作面板', exact: true }).click()
     const overview = page.locator('.gitflow-panel')
-    await expect(overview.getByText('缺少基础分支：develop', { exact: true })).toBeVisible()
+    await expect(
+      overview.locator('.gitflow-note').filter({ hasText: /本地缺少基础分支：develop/ }),
+    ).toBeVisible()
     await overview.getByRole('button', { name: '补齐基础分支', exact: true }).click()
     const settings = page.locator('.gitflow-settings')
     const source = settings.getByRole('combobox', { name: /develop.*选择起点/ })

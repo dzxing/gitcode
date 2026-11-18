@@ -233,15 +233,17 @@ test('a delayed automatic fetch never changes the newly active repository and do
     window.gitk!.chooseDirectory = async () => '/test-fixtures/other'
   })
   await page.keyboard.press('Control+o')
-  await expect(page.locator('.tab-select[title="/test-fixtures/other"]')).toBeVisible()
+  await expect(
+    page.locator('.tab-select[data-repository-path="/test-fixtures/other"]'),
+  ).toBeVisible()
   await page.evaluate(() => (window as unknown as { resolveAuto: () => void }).resolveAuto())
   await expect(page.locator('.fetch-status-button')).not.toContainText('后台获取中')
-  await expect(page.locator('.status-path')).toHaveAttribute(
-    'title',
-    /^\/test-fixtures\/other(?:；|$)/,
+  await expect(page.locator('.repo-selector')).toHaveAttribute(
+    'data-repository-path',
+    '/test-fixtures/other',
   )
   await expect(page.locator('.history-heading .pill')).not.toHaveText('777')
-  await page.locator('.tab-select[title="/test-fixtures/repository"]').click()
+  await page.locator('.tab-select[data-repository-path="/test-fixtures/repository"]').click()
   await expect(page.locator('.history-heading .pill')).toHaveText('777')
 })
 

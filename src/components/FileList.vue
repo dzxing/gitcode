@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed } from 'vue'
 import { useFileViewStore } from '../stores/fileView'
 import { useRepositoryStore } from '../stores/repository'
 import type { FileChange } from '../types'
 import Icon from './Icon.vue'
+import { useContextMenuStore } from '../stores/contextMenu'
+const menu = useContextMenuStore()
 
 const props = defineProps<{ files: FileChange[]; staged?: boolean; historical?: boolean }>()
 const store = useRepositoryStore(),
@@ -39,12 +42,33 @@ const statusTitle: Record<string, string> = {
     >
       <button
         class="file-main"
-        :title="fullPath(file)"
+        v-overflow-title="{
+          text: menu.hoverTitle(fullPath(file)),
+          target: '.file-basename, .file-directory',
+        }"
         :aria-label="`查看文件差异 ${fullPath(file)}`"
         :data-file-path="file.path"
         :data-file-staged="!!staged"
         :data-file-historical="!!historical"
         @click="store.selectFile(file, staged, $event.currentTarget as HTMLElement)"
+        @contextmenu="
+          historical && store.selectedCommit
+            ? menu.open($event, {
+                kind: 'historical-file',
+                path: file.path,
+                revision: store.selectedCommit.hash,
+              })
+            : undefined
+        "
+        @keydown="
+          historical && store.selectedCommit
+            ? menu.keyboard($event, {
+                kind: 'historical-file',
+                path: file.path,
+                revision: store.selectedCommit.hash,
+              })
+            : undefined
+        "
       >
         <Icon
           name="FileCode2"

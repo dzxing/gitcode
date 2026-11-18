@@ -2,10 +2,18 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import AppBrand from './AppBrand.vue'
+import { desktop } from '../services/desktop'
 const emit = defineEmits<{ configureGit: [] }>()
 
 const store = useRepositoryStore()
 const delayed = ref(false)
+const configuring = ref(false)
+const missingGit = computed(
+  () =>
+    !!store.runtime &&
+    !store.runtime.gitAvailable &&
+    !/^\\\\(?:wsl\.localhost|wsl\$)\\/i.test(store.activeRepositoryTab?.path || ''),
+)
 let timer: ReturnType<typeof setTimeout> | undefined
 const waiting = computed(() => store.starting || (store.unloadedRepository && store.busy))
 const failed = computed(
@@ -26,7 +34,9 @@ watch(
 onUnmounted(() => clearTimeout(timer))
 const title = computed(() =>
   failed.value
-    ? '仓库工作台尚未就绪'
+    ? missingGit.value
+      ? '需要安装或配置 Git'
+      : '仓库工作台尚未就绪'
     : store.startupPhase === 'core'
       ? '正在连接本地 Git 服务…'
       : '正在恢复仓库工作区…',
@@ -44,6 +54,30 @@ function retry() {
 function skip() {
   if (store.startupPhase === 'error') store.skipStartup()
   else store.newTab()
+}
+async function install() {
+  try {
+    await desktop.openResource('git-install')
+  } catch (error) {
+    store.notify((error as Error).message, true)
+  }
+}
+async function chooseGit() {
+  if (!window.gitk?.chooseGit || !window.gitk.gitSettings) {
+    emit('configureGit')
+    return
+  }
+  configuring.value = true
+  try {
+    const path = await window.gitk.chooseGit()
+    if (!path) return
+    store.runtime = (await window.gitk.gitSettings({ mode: 'custom', path })).runtime
+    await store.retryStartup()
+  } catch (error) {
+    store.notify((error as Error).message, true)
+  } finally {
+    configuring.value = false
+  }
 }
 </script>
 
@@ -71,18 +105,30 @@ function skip() {
         class="startup-actions"
       >
         <button
+          v-if="missingGit"
           class="primary-button"
+          :disabled="configuring"
+          @click="install"
+        >
+          安装 Git
+        </button>
+        <button
+          v-if="missingGit"
+          class="secondary-button"
+          :disabled="configuring"
+          @click="chooseGit"
+        >
+          选择已有 Git
+        </button>
+        <button
+          :class="missingGit ? 'secondary-button' : 'primary-button'"
+          :disabled="configuring"
           @click="retry"
         >
-          重试</button
-        ><button
-          v-if="store.runtime && !store.runtime.gitAvailable"
-          class="secondary-button"
-          @click="emit('configureGit')"
-        >
-          配置 Git</button
+          {{ missingGit ? '重新检测 Git' : '重试' }}</button
         ><button
           class="secondary-button"
+          :disabled="configuring"
           @click="skip"
         >
           进入新标签页
@@ -135,6 +181,7 @@ progress {
 }
 .startup-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
 }

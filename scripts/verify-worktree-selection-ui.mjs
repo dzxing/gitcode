@@ -51,7 +51,7 @@ export async function verifyWorktreeSelection(
       .getByRole('button', { name: '打开仓库', exact: true })
       .click()
     await confirmFixtureTrust(page)
-    await expect(page.locator('.status-path')).toHaveAttribute('title', target)
+    await expect(page.locator('.repo-selector')).toHaveAttribute('data-repository-path', target)
     await expect(page.locator('.worktree-changes')).toBeVisible()
   }
   const choose = (name) => page.getByRole('checkbox', { name: `选择提交 ${name}`, exact: true })
@@ -108,7 +108,7 @@ export async function verifyWorktreeSelection(
     await put(second, 'other.txt', 'other repository edit\n')
 
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     assert.equal(await page.evaluate(() => typeof window.gitk), 'undefined')
     await open(repo)
     const initialIndex = await readFile(path.join(repo, '.git/index'))

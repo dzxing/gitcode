@@ -279,3 +279,58 @@ test('a preempted read cannot publish a value even if its final filesystem work 
   await assert.rejects(read, (error) => error.code === 'READ_PREEMPTED')
   assert.equal(await foreground, 'fresh foreground')
 })
+
+test('operation-entry reference refresh skips full snapshots when unchanged and detects renamed or moved refs', async (t) => {
+  const f = await fixture(t)
+  await f.approve()
+  const initial = await f.git.snapshot(f.repo)
+  const original = f.git.git.bind(f.git),
+    commands = []
+  f.git.git = async (...args) => {
+    commands.push(args[1])
+    return original(...args)
+  }
+  assert.equal(await f.git.refreshReferences(f.repo, initial.referenceSignature), null)
+  assert.ok(commands.filter((args) => args[0] !== 'config').length <= 4, JSON.stringify(commands))
+  assert.ok(
+    commands.some((args) => args[0] === 'config'),
+    'Trust validation remains active',
+  )
+  assert.ok(!commands.some((args) => ['log', 'status', 'ls-files'].includes(args[0])))
+  await f.cmd('branch', 'feature/before')
+  const added = await f.git.refreshReferences(f.repo, initial.referenceSignature)
+  assert.ok(added.branches.some((b) => b.name === 'feature/before'))
+  await f.cmd('branch', '-m', 'feature/before', 'feature/after')
+  const renamed = await f.git.refreshReferences(f.repo, added.referenceSignature)
+  assert.equal(renamed.head, initial.head)
+  assert.equal(renamed.history.signature, added.history.signature)
+  assert.ok(!renamed.branches.some((b) => b.name === 'feature/before'))
+  assert.ok(renamed.branches.some((b) => b.name === 'feature/after'))
+  await assert.rejects(f.git.refreshReferences(f.repo, '../bad'), /无效的仓库引用版本/)
+})
+
+test('operation-entry reference reads wait for queued writes and never bypass the Git service queue', async (t) => {
+  const f = await fixture(t)
+  await f.approve()
+  const first = await f.git.snapshot(f.repo)
+  let release,
+    readStarted = false
+  const held = f.git.job(async (signal) => {
+    await new Promise((resolve) => {
+      release = resolve
+    })
+    await f.git.git(f.repo, ['branch', 'feature/queued'], { signal })
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  const pending = f.git.job(async (signal) => {
+    readStarted = true
+    return f.git.refreshReferences(f.repo, first.referenceSignature, signal)
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(readStarted, false)
+  release()
+  await held
+  const next = await pending
+  assert.equal(readStarted, true)
+  assert.ok(next.branches.some((b) => b.name === 'feature/queued'))
+})

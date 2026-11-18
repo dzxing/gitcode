@@ -81,8 +81,10 @@ test('reference leaders connect the complete badge group to its node without add
   }, snapshot)
   await page.goto('/')
   await page.keyboard.press('Control+o')
-  await page.getByLabel('仓库路径', { exact: true }).fill(snapshot.path)
-  await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()
+  await expect(page.locator('.repo-selector')).toHaveAttribute(
+    'data-repository-path',
+    snapshot.path,
+  )
   const mergeRow = page.locator(`[data-commit-hash="${main}"]`)
   const mergeIcon = mergeRow.locator('.commit-message > svg')
   await expect(mergeIcon).toHaveAttribute('width', '13')
@@ -260,8 +262,10 @@ test('refreshing a different HEAD leaves every rendered commit and ancestry trac
   }, snapshot)
   await page.goto('/')
   await page.keyboard.press('Control+o')
-  await page.getByLabel('仓库路径', { exact: true }).fill(snapshot.path)
-  await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()
+  await expect(page.locator('.repo-selector')).toHaveAttribute(
+    'data-repository-path',
+    snapshot.path,
+  )
   const layout = () =>
     page.evaluate(() => ({
       nodes: [...document.querySelectorAll('[data-node-hash]')].map((e) => ({
@@ -350,8 +354,7 @@ for (const labelsAfterMessage of [false, true]) {
     }, state)
     await page.goto('/')
     await page.keyboard.press('Control+o')
-    await page.getByLabel('仓库路径', { exact: true }).fill(state.path)
-    await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()
+    await expect(page.locator('.repo-selector')).toHaveAttribute('data-repository-path', state.path)
     await page.mouse.move(1200, 100)
     const row = page.locator(`[data-commit-hash="${a}"]`),
       group = row.locator('.ref-labels'),
@@ -496,8 +499,10 @@ test('WIP appears only for real changes and removing it keeps every graph node a
   }, snapshot)
   await page.goto('/')
   await page.keyboard.press('Control+o')
-  await page.getByLabel('仓库路径', { exact: true }).fill(snapshot.path)
-  await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()
+  await expect(page.locator('.repo-selector')).toHaveAttribute(
+    'data-repository-path',
+    snapshot.path,
+  )
   for (const mode of ['clean', 'unstaged', 'staged', 'untracked', 'clean']) {
     const next = structuredClone(snapshot)
     if (mode === 'staged') next.staged = [{ path: 'tracked.txt', status: 'M' }]

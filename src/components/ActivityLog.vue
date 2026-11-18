@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import { desktop } from '../services/desktop'
@@ -317,7 +318,9 @@ onUnmounted(() => {
       >
         当前仓库
       </button>
-      <span :title="query.repo">{{ scope === 'repository' ? store.repo.name : 'GitCode' }}</span>
+      <span v-overflow-title="query.repo">{{
+        scope === 'repository' ? store.repo.name : 'GitCode'
+      }}</span>
       <button
         class="text-button"
         :disabled="saving || !records.length"

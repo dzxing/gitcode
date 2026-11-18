@@ -93,8 +93,6 @@ test('file density preserves selections and drafts, distinguishes paths and pers
   )
   const open = async () => {
     await page.keyboard.press('Control+o')
-    await page.getByLabel('仓库路径', { exact: true }).fill(fixture.path)
-    await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()
     await expect(page.locator('.repo-selector strong')).toHaveText(fixture.name)
   }
   await page.goto('/')

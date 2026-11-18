@@ -6,12 +6,17 @@ const os = require('node:os')
 const { GitService } = require('../electron/git.cjs')
 const { RepositoryWatch } = require('../electron/repository-watch.cjs')
 
-async function setup(t) {
+async function setup(t, refFormat) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-watch-中文-'))
   const repo = path.join(directory, 'repo'),
     git = new GitService()
   await fs.mkdir(path.join(repo, 'src', 'deep'), { recursive: true })
-  await git.git(repo, ['init', '-b', 'qa/base'])
+  await git.git(repo, [
+    'init',
+    '-b',
+    'qa/base',
+    ...(refFormat ? [`--ref-format=${refFormat}`] : []),
+  ])
   for (const [key, value] of [
     ['user.name', 'Watch QA'],
     ['user.email', 'watch@example.test'],
@@ -92,6 +97,37 @@ test('external branch switches and commits update HEAD, graph and references', a
   assert.equal(result.snapshot.commits[0].subject, 'external commit')
   assert.equal(result.snapshot.head, await git.head(repo))
 })
+
+for (const format of ['files', 'reftable']) {
+  test(`${format}: non-current local and remote branch changes update the complete graph without checkout`, async (t) => {
+    const { git, repo, watch } = await setup(t, format)
+    const head = await git.head(repo)
+    const tree = (await git.git(repo, ['rev-parse', 'HEAD^{tree}'])).trim()
+    await git.git(repo, ['branch', 'feature/background'])
+    const before = await watch.status(repo)
+    const commit = (
+      await git.git(repo, ['commit-tree', tree, '-p', head, '-m', 'non-current branch commit'])
+    ).trim()
+    await git.git(repo, ['update-ref', 'refs/heads/feature/background', commit])
+    await changed(watch, repo, before.revision)
+    const first = (await watch.read(repo, null)).snapshot
+    assert.equal(first.head, head)
+    assert.equal(first.branch, 'qa/base')
+    assert.ok(first.commits.some((c) => c.hash === commit))
+    assert.equal(first.branches.find((b) => b.name === 'feature/background').hash, commit)
+    const status = await watch.status(repo)
+    const remote = (
+      await git.git(repo, ['commit-tree', tree, '-p', head, '-m', 'remote tracking commit'])
+    ).trim()
+    await git.git(repo, ['update-ref', 'refs/remotes/origin/feature/remote', remote])
+    await changed(watch, repo, status.revision)
+    const next = (await watch.read(repo, null)).snapshot
+    assert.equal(next.head, head)
+    assert.ok(next.commits.some((c) => c.hash === commit))
+    assert.ok(next.commits.some((c) => c.hash === remote))
+    assert.equal(next.branches.find((b) => b.name === 'origin/feature/remote').hash, remote)
+  })
+}
 
 test('readonly updates defer to foreground work and external index locks', async (t) => {
   const { git, repo, watch } = await setup(t)

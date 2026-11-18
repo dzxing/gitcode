@@ -189,6 +189,9 @@ class RepositoryWatch {
       metadataRoots.add(gitDir)
       metadataRoots.add(commonDir)
     }
+    // Reftable stores all branch/tag updates below this directory, without
+    // touching HEAD or refs/. Watching only the metadata root misses them.
+    for (const root of metadataRoots) add(path.join(root, 'reftable'))
     const queue = [...metadataRoots].map((dir) => path.join(dir, 'refs'))
     while (queue.length && directories.size < this.limit) {
       const directory = queue.shift()

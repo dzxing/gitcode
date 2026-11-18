@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { ref } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import { useStashStore } from '../stores/stash'
@@ -30,8 +31,7 @@ const store = useRepositoryStore(),
         /><Icon
           name="Archive"
           :size="14"
-        /><span class="section-title">贮藏</span
-        ><small class="section-count">{{ stash.entries.length }}</small>
+        /><span class="section-title">贮藏</span>
       </button>
     </div>
     <SidebarCollapse
@@ -50,7 +50,7 @@ const store = useRepositoryStore(),
               store.selectedStash?.oid === entry.oid && store.selectedStash?.ref === entry.ref,
           }"
           :disabled="store.busy"
-          :title="`${entry.message}\n创建时分支：${entry.branch}（仅作记录，可跨分支恢复）\n${new Date(entry.date).toLocaleString()}`"
+          v-overflow-title="{ text: menu.hoverTitle(entry.message), target: 'span' }"
           @click="stash.openList(entry)"
           @contextmenu="menu.open($event, { kind: 'stash', stash: entry })"
           @keydown="menu.keyboard($event, { kind: 'stash', stash: entry })"

@@ -59,7 +59,7 @@ export async function verifyReferenceCheckout(
     const indexPath = path.join(repo, '.git', 'index'),
       beforeIndex = await readFile(indexPath)
     await page.goto(url)
-    await expect(page.locator('#operation-status')).toContainText('本机核心已连接')
+    await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     assert.equal(await page.evaluate(() => typeof window.gitk), 'undefined')
     await page.keyboard.press('Control+o')
     await page.getByLabel('仓库路径', { exact: true }).fill(repo)

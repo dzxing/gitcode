@@ -1,13 +1,18 @@
 <script setup lang="ts">
+import { vOverflowTitle } from './directives/overflowTitle'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from './stores/repository'
 import Sidebar from './components/Sidebar.vue'
 import CommitHistory from './components/CommitHistory.vue'
+import HistoryToolsView from './components/HistoryToolsView.vue'
+import { useHistoryToolsStore } from './stores/historyTools'
 import Inspector from './components/Inspector.vue'
 import Dialogs from './components/Dialogs.vue'
 import RepositoryDialog from './components/RepositoryDialog.vue'
 import RecoveryPanel from './components/RecoveryPanel.vue'
 import OperationFeedback from './components/OperationFeedback.vue'
+import TerminalPanel from './components/TerminalPanel.vue'
+import { useTerminalStore } from './stores/terminal'
 import ActivityLog from './components/ActivityLog.vue'
 import StartupScreen from './components/StartupScreen.vue'
 import RepositoryTrustDialog from './components/RepositoryTrustDialog.vue'
@@ -40,6 +45,17 @@ import WorkbenchMenu, { type WorkbenchMenuItem } from './components/WorkbenchMen
 import { applicationBridge } from './services/application'
 
 const store = useRepositoryStore()
+const terminal = useTerminalStore()
+const historyTools = useHistoryToolsStore()
+watch(
+  () => store.repo,
+  () => historyTools.markStale(),
+)
+watch(
+  () => [store.repo.path, store.activeTabId] as const,
+  ([repo, tabId]) => historyTools.setContext(repo, tabId),
+  { immediate: true },
+)
 const applicationMenu = ref<InstanceType<typeof ApplicationMenu>>()
 const rebase = useRebaseStore()
 const merge = useMergeStore()
@@ -126,11 +142,13 @@ const workbenchItems = computed<WorkbenchMenuItem[]>(() => {
 })
 const currentTracking = computed(() => branchTracking(store.repo.branches.find((b) => b.current)))
 const coreLabel = computed(() =>
-  store.runtime?.transport === 'local'
-    ? store.runtime.environment === 'wsl'
-      ? 'WSL Git 服务'
-      : '本地 Git 服务'
-    : '本地 Git 服务',
+  store.repo.execution?.kind === 'wsl'
+    ? `WSL ${store.repo.execution.distribution} Git 服务`
+    : store.runtime?.transport === 'local'
+      ? store.runtime.environment === 'wsl'
+        ? 'WSL Git 服务'
+        : '本地 Git 服务'
+      : '本地 Git 服务',
 )
 const connectionStatus = computed(() =>
   store.starting
@@ -144,7 +162,7 @@ const connectionStatus = computed(() =>
       : store.connecting
         ? '正在连接本地 Git 服务…'
         : store.connected
-          ? `${coreLabel.value}已连接 · ${store.runtime?.gitAvailable ? store.runtime.gitVersion : '未找到 Git'}`
+          ? `${coreLabel.value}已连接 · ${store.repo.execution?.gitVersion || (store.runtime?.gitAvailable ? store.runtime.gitVersion : '未找到 Git')}`
           : '本地 Git 服务未连接',
 )
 function beforeUnload(event: BeforeUnloadEvent) {
@@ -415,6 +433,12 @@ function keydown(event: KeyboardEvent) {
     document.querySelector('dialog[open]')
   )
     return
+  if (event.ctrlKey && event.code === 'Backquote') {
+    event.preventDefault()
+    void terminal.toggle()
+    return
+  }
+  if ((event.target as HTMLElement)?.closest?.('.terminal-workbench')) return
   if (event.ctrlKey && event.key === 'Tab') {
     event.preventDefault()
     const index = store.tabs.findIndex((tab) => tab.id === store.activeTabId)
@@ -568,9 +592,10 @@ onUnmounted(() => {
         >
           <button
             class="tab-select"
+            :data-repository-path="tab.path"
             :disabled="store.blocksTabs || rebase.active"
             :aria-current="tab.id === store.activeTabId ? 'page' : undefined"
-            :title="tab.path || '新标签页'"
+            v-overflow-title="{ text: contextMenu.hoverTitle(tab.path), target: 'span' }"
             @click="store.activateTab(tab.id)"
           >
             <Icon
@@ -581,7 +606,7 @@ onUnmounted(() => {
             class="icon-button tab-close"
             :disabled="store.blocksTabs || rebase.active"
             :aria-label="`关闭标签 ${tab.name}`"
-            title="关闭标签"
+            :title="contextMenu.hoverTitle('关闭标签')"
             @click="store.closeTab(tab.id)"
           >
             <Icon
@@ -594,7 +619,7 @@ onUnmounted(() => {
       <button
         class="icon-button new-repo"
         :disabled="store.blocksTabs || rebase.active"
-        title="新标签页 (Alt+T)"
+        :title="contextMenu.hoverTitle('新标签页 (Alt+T)')"
         aria-label="新建标签页"
         @click="store.newTab()"
       >
@@ -612,7 +637,7 @@ onUnmounted(() => {
           />本地工作台</span
         ><button
           class="icon-button"
-          title="快捷键与帮助"
+          :title="contextMenu.hoverTitle('快捷键与帮助')"
           aria-label="快捷键与帮助"
           @click="store.modal = 'help'"
         >
@@ -621,12 +646,7 @@ onUnmounted(() => {
             :size="17"
           />
         </button>
-        <div
-          class="profile"
-          title="GitCode 本地工作台"
-        >
-          G
-        </div>
+        <div class="profile">G</div>
       </div>
       <WindowControls
         v-if="chrome.customFrame.value"
@@ -647,10 +667,11 @@ onUnmounted(() => {
       >
         <button
           class="repo-selector"
+          :data-repository-path="store.repo.path"
           :disabled="store.busy || rebase.active"
           aria-haspopup="dialog"
           :aria-label="`打开本地仓库，当前仓库 ${store.repo.name}`"
-          :title="`打开本地仓库：${store.repo.path}`"
+          v-overflow-title="{ text: contextMenu.hoverTitle(store.repo.name), target: 'strong' }"
           @click="store.requestOpen()"
         >
           <span class="toolbar-folder"
@@ -671,7 +692,7 @@ onUnmounted(() => {
             ref="branchTrigger"
             :aria-label="`选择本地分支，当前 ${store.repo.branch}`"
             :aria-disabled="store.busy"
-            :title="store.repo.branch"
+            v-overflow-title="{ text: contextMenu.hoverTitle(store.repo.branch), target: 'strong' }"
             aria-haspopup="dialog"
             @click.prevent="branchMenu?.open ? closeBranchMenu(true) : openBranchPicker($event)"
             @keydown.down.prevent="openBranchPicker"
@@ -687,7 +708,7 @@ onUnmounted(() => {
             ><span
               v-if="currentTracking.label"
               class="tracking"
-              :title="currentTracking.description"
+              :title="contextMenu.hoverTitle(currentTracking.description)"
               >{{ currentTracking.label }}</span
             ><Icon
               name="ChevronDown"
@@ -719,7 +740,7 @@ onUnmounted(() => {
             <button
               v-for="branch in branchChoices"
               :key="branch.name"
-              :title="branch.name"
+              v-overflow-title="{ text: contextMenu.hoverTitle(branch.name), target: 'span' }"
               :aria-current="branch.current ? 'true' : undefined"
               :disabled="store.busy || rebase.active"
               @contextmenu="contextMenu.open($event, { kind: 'branch', branch })"
@@ -746,9 +767,11 @@ onUnmounted(() => {
             :disabled="store.busy || store.fetching || rebase.active"
             :aria-describedby="store.isWorking ? 'operation-status' : undefined"
             :title="
-              store.isWorking
-                ? '请等待当前操作完成'
-                : '获取远程更新并清理获取范围内的失效引用；分支范围可在“仓库 → 当前仓库设置”调整'
+              contextMenu.hoverTitle(
+                store.isWorking
+                  ? '请等待当前操作完成'
+                  : '获取远程更新并清理获取范围内的失效引用；分支范围可在“仓库 → 当前仓库设置”调整',
+              )
             "
             @click="store.run('fetch')"
           >
@@ -767,11 +790,13 @@ onUnmounted(() => {
             :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
             :title="
-              store.busy
-                ? '请等待当前操作完成'
-                : store.pullMethod === 'ff-only'
-                  ? '拉取远程更新（仅快进）'
-                  : '拉取远程更新（快进或合并）'
+              contextMenu.hoverTitle(
+                store.busy
+                  ? '请等待当前操作完成'
+                  : store.pullMethod === 'ff-only'
+                    ? '拉取远程更新（仅快进）'
+                    : '拉取远程更新（快进或合并）',
+              )
             "
             @click="store.sync('pull')"
           >
@@ -789,7 +814,6 @@ onUnmounted(() => {
           <button
             :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
-            :title="store.busy ? '请等待当前操作完成' : '推送本地提交'"
             @click="store.sync('push')"
           >
             <span class="toolbar-action-icon"
@@ -811,7 +835,7 @@ onUnmounted(() => {
           >
             <summary
               aria-label="同步选项"
-              title="选择拉取方式或核对同步目标"
+              :title="contextMenu.hoverTitle('选择拉取方式或核对同步目标')"
             >
               <Icon
                 name="ChevronDown"
@@ -842,7 +866,6 @@ onUnmounted(() => {
           <button
             :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
-            :title="store.busy ? '请等待当前操作完成' : '创建新分支'"
             @click="store.modal = 'branch'"
           >
             <span class="toolbar-action-icon"
@@ -856,7 +879,9 @@ onUnmounted(() => {
             :disabled="store.busy || rebase.active"
             :aria-describedby="store.busy ? 'operation-status' : undefined"
             :title="
-              store.busy ? '请等待当前操作完成' : '刷新本地状态 (Ctrl+R)；更新远程分支请点击获取'
+              contextMenu.hoverTitle(
+                store.busy ? '请等待当前操作完成' : '刷新本地状态 (Ctrl+R)；更新远程分支请点击获取',
+              )
             "
             @click="store.refresh()"
           >
@@ -868,19 +893,41 @@ onUnmounted(() => {
             ><span>刷新</span>
           </button>
         </div>
-        <button
-          class="open-button secondary-button"
-          aria-label="打开仓库"
-          title="打开仓库"
-          :disabled="store.busy || rebase.active"
-          @click="store.requestOpen()"
-        >
-          <Icon
-            name="FolderOpen"
-            :size="15"
-          /><span>打开仓库</span
-          ><kbd>{{ chrome.platform.value === 'macos' ? '⌘ O' : 'Ctrl O' }}</kbd>
-        </button>
+        <div class="toolbar-tools">
+          <button
+            class="secondary-button toolbar-terminal"
+            :disabled="!terminal.available"
+            :aria-pressed="terminal.visible && terminal.tool === 'terminal'"
+            aria-label="显示或隐藏终端"
+            title="终端 (Ctrl+`)"
+            @click="terminal.toggle()"
+          >
+            <Icon
+              name="Terminal"
+              :size="16"
+            /><span>终端</span>
+          </button>
+          <button
+            class="secondary-button"
+            :disabled="!terminal.available"
+            :aria-pressed="terminal.visible && terminal.tool === 'console'"
+            @click="terminal.showConsole()"
+          >
+            Git 控制台
+          </button>
+          <button
+            class="open-button secondary-button"
+            aria-label="打开仓库"
+            :disabled="store.busy || rebase.active"
+            @click="store.requestOpen()"
+          >
+            <Icon
+              name="FolderOpen"
+              :size="15"
+            /><span>打开仓库</span
+            ><kbd>{{ chrome.platform.value === 'macos' ? '⌘ O' : 'Ctrl O' }}</kbd>
+          </button>
+        </div>
       </div>
       <GitFlowFinishStatus />
       <MergeStatus />
@@ -912,17 +959,30 @@ onUnmounted(() => {
           :aria-valuemax="330"
           @pointerdown="resize($event, 'left')"
           @dblclick.stop.prevent="resetPanel('left')"
-          title="拖动调整宽度；双击恢复此侧默认宽度"
+          :title="contextMenu.hoverTitle('拖动调整宽度；双击恢复此侧默认宽度')"
           @keydown.left.prevent="resizeByKeyboard('left', -10)"
           @keydown.right.prevent="resizeByKeyboard('left', 10)"
         ></div>
-        <CommitHistory
+        <HistoryToolsView
           v-if="!rebase.active"
-          ref="history"
           :inert="!!flow.panel || mergeEditing"
           :aria-hidden="flow.panel || mergeEditing ? 'true' : undefined"
-        />
+        >
+          <CommitHistory
+            v-if="!rebase.active"
+            ref="history"
+            :inert="!!flow.panel || mergeEditing"
+            :aria-hidden="flow.panel || mergeEditing ? 'true' : undefined"
+          />
+
+          <Inspector
+            ref="inspector"
+            :inert="store.inspectorCovered || mergeEditing"
+            :aria-hidden="store.inspectorCovered || mergeEditing ? 'true' : undefined"
+          />
+        </HistoryToolsView>
         <div
+          v-if="!historyTools.active || rebase.active"
           class="resize-handle right"
           :inert="mergeEditing"
           role="separator"
@@ -935,18 +995,15 @@ onUnmounted(() => {
           :aria-valuemax="540"
           @pointerdown="resize($event, 'right')"
           @dblclick.stop.prevent="resetPanel('right')"
-          title="拖动调整宽度；双击恢复此侧默认宽度"
+          :title="contextMenu.hoverTitle('拖动调整宽度；双击恢复此侧默认宽度')"
           @keydown.left.prevent="resizeByKeyboard('right', 10)"
           @keydown.right.prevent="resizeByKeyboard('right', -10)"
         ></div>
-        <Inspector
-          ref="inspector"
-          :inert="store.inspectorCovered || mergeEditing"
-          :aria-hidden="store.inspectorCovered || mergeEditing ? 'true' : undefined"
-        />
+        <Inspector v-if="rebase.active" />
         <GitFlowPanel />
       </div>
     </template>
+    <TerminalPanel />
     <footer class="statusbar">
       <div class="statusbar-primary">
         <span
@@ -956,10 +1013,16 @@ onUnmounted(() => {
         ><span
           id="operation-status"
           role="status"
-          :title="store.isWorking ? connectionStatus : store.runtime?.gitPath"
+          :title="
+            contextMenu.hoverTitle(
+              store.isWorking
+                ? connectionStatus
+                : store.repo.execution?.gitPath || store.runtime?.gitPath,
+            )
+          "
           >{{ connectionStatus }}</span
         ><button
-          v-if="store.runtime && !store.runtime.gitAvailable"
+          v-if="store.runtime && !store.repoGitAvailable"
           class="status-cancel"
           @click="applicationMenu?.openGitSettings()"
         >
@@ -968,7 +1031,7 @@ onUnmounted(() => {
           v-if="!store.connected"
           class="status-cancel"
           :disabled="store.connecting || store.busy"
-          :title="store.connectionError || '连接本地 Git 服务'"
+          :title="contextMenu.hoverTitle(store.connectionError || '连接本地 Git 服务')"
           @click="store.init()"
         >
           {{ store.connecting ? '连接中…' : '连接本地 Git 服务' }}</button
@@ -986,7 +1049,7 @@ onUnmounted(() => {
             :size="12"
           /><button
             class="status-branch"
-            :title="`切换分支：${store.repo.branch}；右键查看分支操作`"
+            v-overflow-title="{ text: contextMenu.hoverTitle(store.repo.branch), target: 'span' }"
             :aria-label="`切换当前分支，当前 ${store.repo.branch}`"
             :disabled="store.blocksTabs || rebase.active || !store.repo.path"
             @click="openBranchPicker"
@@ -1005,7 +1068,7 @@ onUnmounted(() => {
         <button
           v-if="store.externalRefreshError"
           class="external-refresh-status"
-          :title="store.externalRefreshError"
+          :title="contextMenu.hoverTitle(store.externalRefreshError)"
           @click="store.requestExternalRefresh()"
         >
           仓库状态刷新失败，重试
@@ -1027,12 +1090,14 @@ onUnmounted(() => {
           class="fetch-status-button"
           :class="{ 'has-error': !!store.currentFetchStatus?.error }"
           :title="
-            (store.currentFetchStatus?.error
-              ? fetchFailureSummary(store.currentFetchStatus.error)
-              : '') ||
-            (store.currentFetchStatus?.lastSuccess
-              ? `最后成功获取：${new Date(store.currentFetchStatus.lastSuccess).toLocaleString()}`
-              : '尚无成功获取记录')
+            contextMenu.hoverTitle(
+              (store.currentFetchStatus?.error
+                ? fetchFailureSummary(store.currentFetchStatus.error)
+                : '') ||
+                (store.currentFetchStatus?.lastSuccess
+                  ? `最后成功获取：${new Date(store.currentFetchStatus.lastSuccess).toLocaleString()}`
+                  : '尚无成功获取记录'),
+            )
           "
           @click="store.openFetchLog()"
         >
@@ -1060,7 +1125,7 @@ onUnmounted(() => {
         <button
           v-if="!store.isNewTab"
           class="status-path"
-          :title="`${store.repo.path}；单击复制，右键显示位置操作`"
+          v-overflow-title="{ text: contextMenu.hoverTitle(store.repo.path), target: 'span' }"
           aria-label="复制仓库路径"
           :disabled="store.blocksTabs || !store.repo.path"
           @click="repositoryLocation('copy-path')"
@@ -1073,7 +1138,7 @@ onUnmounted(() => {
           class="status-path"
           >打开仓库以查看分支和工作区状态</span
         ><button
-          title="活动日志与自动获取设置"
+          :title="contextMenu.hoverTitle('活动日志与自动获取设置')"
           aria-label="活动日志"
           :disabled="!store.connected"
           @click="store.openActivityLog()"
@@ -1083,7 +1148,7 @@ onUnmounted(() => {
             :size="14"
           /></button
         ><button
-          title="快捷键"
+          :title="contextMenu.hoverTitle('快捷键')"
           aria-label="查看快捷键"
           @click="store.modal = 'help'"
         >

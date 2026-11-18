@@ -1,6 +1,7 @@
 import type { ThemeSource, ThemePalette, ThemePreference } from '../themePresets'
 import type { ReferenceLabelStyle } from '../referenceLabels'
 export interface ApplicationMenuState {
+  wsl?: boolean
   theme?: ThemeSource
   themePreference?: ThemePreference
   palette?: ThemePalette

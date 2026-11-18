@@ -45,17 +45,17 @@ test('fast launch restores the active tab without a forced animation or scanning
 }) => {
   await setup(page, 'fast')
   await expect(page.locator('.repo-selector')).toHaveAttribute(
-    'title',
-    '打开本地仓库：/test-fixtures/one',
+    'data-repository-path',
+    '/test-fixtures/one',
   )
   await expect(page.getByRole('region', { name: '应用启动状态' })).toHaveCount(0)
   expect(await page.evaluate(() => (window as unknown as Controls).restoreCalls)).toEqual([
     '/test-fixtures/one',
   ])
-  await page.locator('.tab-select[title="/test-fixtures/two"]').click()
+  await page.locator('.tab-select[data-repository-path="/test-fixtures/two"]').click()
   await expect(page.locator('.repo-selector')).toHaveAttribute(
-    'title',
-    '打开本地仓库：/test-fixtures/two',
+    'data-repository-path',
+    '/test-fixtures/two',
   )
   expect(await page.evaluate(() => (window as unknown as Controls).restoreCalls)).toEqual([
     '/test-fixtures/one',
@@ -81,8 +81,8 @@ test('slow restore displays its actual phase and respects reduced motion until t
   await page.evaluate(() => (window as unknown as Controls).finishRestore())
   await expect(screen).toHaveCount(0)
   await expect(page.locator('.repo-selector')).toHaveAttribute(
-    'title',
-    '打开本地仓库：/test-fixtures/one',
+    'data-repository-path',
+    '/test-fixtures/one',
   )
 })
 
@@ -97,8 +97,8 @@ test('a missing startup repository can be retried after it becomes available', a
   await screen.getByRole('button', { name: '重试', exact: true }).click()
   await expect(screen).toHaveCount(0)
   await expect(page.locator('.repo-selector')).toHaveAttribute(
-    'title',
-    '打开本地仓库：/test-fixtures/one',
+    'data-repository-path',
+    '/test-fixtures/one',
   )
 })
 
@@ -111,7 +111,7 @@ test('skipping failed recovery opens a new tab while retaining the inaccessible 
     .getByRole('button', { name: '进入新标签页', exact: true })
     .click()
   await expect(page.getByRole('main', { name: '新标签页', exact: true })).toBeVisible()
-  await expect(page.locator('.tab-select[title="/test-fixtures/one"]')).toBeVisible()
+  await expect(page.locator('.tab-select[data-repository-path="/test-fixtures/one"]')).toBeVisible()
   const saved = await page.evaluate(() =>
     JSON.parse(localStorage.getItem('gitcode.workspaceSession.v1')!),
   )

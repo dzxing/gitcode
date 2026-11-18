@@ -60,6 +60,7 @@ function buildMenuTemplate(state, dispatch, platform = process.platform) {
   const groups = schema.map((group) => ({
     label: group.label,
     submenu: group.items.flatMap((definition) => {
+      if (definition.windowsOnly && platform !== 'win32') return []
       if (
         platform === 'darwin' &&
         ['file.quit', 'help.about', 'file.settings'].includes(definition.id)

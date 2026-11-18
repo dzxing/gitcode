@@ -9,6 +9,7 @@ const props = defineProps<{
   busy?: boolean
   presentation?: boolean
   appearance?: ReferenceLabelStyle
+  tooltipsDisabled?: boolean
 }>()
 const emit = defineEmits<{
   expand: [event: MouseEvent]
@@ -47,7 +48,7 @@ const icon = computed(() =>
     ]"
     :data-label-kind="group.primary.kind"
     :data-reference-key="presentation ? undefined : group.key"
-    :title="title"
+    :aria-description="presentation ? undefined : title"
     @contextmenu.prevent="!presentation && emit('menu', $event, group.primary)"
   >
     <component
@@ -81,7 +82,7 @@ const icon = computed(() =>
       :is="presentation ? 'span' : 'button'"
       v-if="remote"
       class="ref-inspect"
-      :title="`查看远程引用 ${remote.key}`"
+      :title="presentation || tooltipsDisabled ? undefined : `查看远程引用 ${remote.key}`"
       :aria-label="presentation ? undefined : `查看远程引用 ${remote.key}`"
       @click.stop="!presentation && emit('inspect', remote, $event)"
       @contextmenu.stop.prevent="!presentation && emit('menu', $event, remote)"

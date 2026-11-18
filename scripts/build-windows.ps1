@@ -39,10 +39,13 @@ try {
     Write-Host "Node.js $nodeVersion"
     Invoke-BuildStep $bun.Source @('--version')
     if (-not (Test-Path -LiteralPath (Join-Path $env:SystemRoot 'System32\curl.exe'))) {
-        throw 'Windows curl.exe is required to download the verified Git runtime.'
+        throw 'Windows curl.exe is required to download the verified WSL core runtime.'
+    }
+    if (-not (Get-Command tar.exe -CommandType Application -ErrorAction SilentlyContinue)) {
+        throw 'Windows tar.exe is required to prepare the WSL core runtime.'
     }
     Write-Host "Project: $projectRoot"
-    Write-Host "Target: Windows $Arch (bundled Git)"
+    Write-Host "Target: Windows $Arch (system Git, bundled WSL core runtime)"
     if ($CheckOnly) {
         Write-Host 'Environment check passed. No dependencies installed and no build started.'
         exit 0
@@ -56,7 +59,7 @@ try {
     }
     Write-Host '[2/3] Checking and building the frontend...'
     Invoke-BuildStep $bun.Source @('run', 'build')
-    Write-Host '[3/3] Packaging Windows application and verified Git runtime...'
+    Write-Host '[3/3] Packaging Windows application and verified WSL core runtime...'
     Invoke-BuildStep $node.Source @('scripts/package-desktop.mjs', '--win', "--$Arch")
     $package = Get-Content -Raw -LiteralPath (Join-Path $projectRoot 'package.json') | ConvertFrom-Json
     $installer = Join-Path $projectRoot "release\$($package.version)\GitCode Setup $($package.version).exe"

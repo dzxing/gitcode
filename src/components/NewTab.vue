@@ -45,6 +45,17 @@ function openResource(event: MouseEvent, resource: 'git-docs' | 'git-book') {
           /><span>打开仓库</span><kbd>{{ modifierKey }}+O</kbd>
         </button>
         <button
+          v-if="store.runtime?.platform === 'windows'"
+          class="repository-action"
+          :disabled="store.busy"
+          @click="store.requestOpenWsl()"
+        >
+          <Icon
+            name="FolderOpen"
+            :size="20"
+          /><span>打开 WSL 仓库</span>
+        </button>
+        <button
           class="repository-action"
           :disabled="store.busy"
           @click="store.modal = 'clone'"

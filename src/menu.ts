@@ -18,6 +18,7 @@ export interface MenuGroup {
   items: MenuItem[]
 }
 interface MenuDefinition {
+  windowsOnly?: boolean
   id: string
   label: string
   accelerator?: string
@@ -56,7 +57,10 @@ export function buildMenus(state: ApplicationMenuState): MenuGroup[] {
           : (state.labelStyle || 'gitkraken') === definition.id.split('.').at(-1)
     return item
   }
-  return schema.map((group) => ({ ...group, items: group.items.map(buildItem) }))
+  return schema.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !('windowsOnly' in item) || state.wsl).map(buildItem),
+  }))
 }
 export function shortcutLabel(value: string | undefined, mac: boolean) {
   return value?.replace('CmdOrCtrl', mac ? '⌘' : 'Ctrl').replace('Shift', mac ? '⇧' : 'Shift') || ''

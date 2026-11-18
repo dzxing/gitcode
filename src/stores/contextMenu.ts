@@ -1,11 +1,14 @@
 import { defineStore } from 'pinia'
-import { ref, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import type { Branch, Commit, FileChange, Snapshot, StashEntry } from '../types'
 import { useRepositoryStore } from './repository'
+import { useHistoryQueryStore } from './historyQuery'
 import type { SidebarSection } from '../sidebar'
 
 export type MenuObject =
   | { kind: 'files'; files: FileChange[]; staged: boolean; label: string }
+  | { kind: 'file-revision'; path: string; oldPath?: string; currentPath: string; revision: string }
+  | { kind: 'historical-file'; path: string; revision: string }
   | { kind: 'stash'; stash: StashEntry }
   | { kind: 'branch'; branch: Branch }
   | { kind: 'commit'; commit: Commit; commits?: Commit[] }
@@ -83,13 +86,23 @@ export function referenceBranch(branches: Branch[], name: string, hash: string) 
 
 export const useContextMenuStore = defineStore('context-menu', () => {
   const repository = useRepositoryStore()
+  const query = useHistoryQueryStore()
+  const historyCommits = computed(() => [
+    ...new Map(
+      [...repository.repo.commits, ...(query.enabled ? query.commits : [])].map((commit) => [
+        commit.hash,
+        commit,
+      ]),
+    ).values(),
+  ])
+  const visibleCommits = computed(() => (query.enabled ? query.commits : repository.visibleCommits))
   const target = shallowRef<MenuContext | null>(null)
   const trigger = shallowRef<HTMLElement | null>(null)
   const selectedCommits = ref<string[]>([])
   watch(
-    () => repository.visibleCommits.map((c) => c.hash).join(','),
+    () => visibleCommits.value.map((c) => c.hash).join(','),
     () => {
-      const visible = new Set(repository.visibleCommits.map((c) => c.hash))
+      const visible = new Set(visibleCommits.value.map((c) => c.hash))
       selectedCommits.value = selectedCommits.value.filter((sha) => visible.has(sha))
     },
   )
@@ -108,6 +121,11 @@ export const useContextMenuStore = defineStore('context-menu', () => {
   )
   const x = ref(0),
     y = ref(0)
+  // Chromium hover titles must be cleared before a native menu captures the
+  // pointer; its source element may never receive mouseleave.
+  function hoverTitle(value: string | null | undefined) {
+    return target.value ? undefined : (value ?? undefined)
+  }
   function close(restore = true) {
     target.value = null
     if (restore && trigger.value?.isConnected) trigger.value.focus({ preventScroll: true })
@@ -129,7 +147,7 @@ export const useContextMenuStore = defineStore('context-menu', () => {
         selectedCommits.value = [object.commit.hash]
       object = {
         ...object,
-        commits: repository.repo.commits.filter((c) => selectedCommits.value.includes(c.hash)),
+        commits: historyCommits.value.filter((c) => selectedCommits.value.includes(c.hash)),
       }
     }
     const frozen = JSON.parse(JSON.stringify(object)) as MenuObject
@@ -149,5 +167,16 @@ export const useContextMenuStore = defineStore('context-menu', () => {
   function keyboard(event: KeyboardEvent, object: MenuObject) {
     if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) open(event, object)
   }
-  return { target, trigger, selectedCommits, x, y, open, keyboard, close }
+  return {
+    historyCommits,
+    target,
+    trigger,
+    selectedCommits,
+    x,
+    y,
+    open,
+    keyboard,
+    close,
+    hoverTitle,
+  }
 })

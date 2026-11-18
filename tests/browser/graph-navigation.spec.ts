@@ -259,3 +259,25 @@ test('shown long edges draw diagonal arrows within the edge row, matching the so
   await expect(page.getByRole('tooltip')).toContainText('Common base')
   await page.screenshot({ path: 'design/idea-graph-polish/diagonal-arrow-parity.png' })
 })
+
+test('graph arrow hover information closes when a context menu opens and resumes after dismissal', async ({
+  page,
+}) => {
+  await openFixtureRepository(page, false, fixture())
+  const arrow = page.locator(`[data-graph-arrow="down"][data-arrow-target="${base}"]`)
+  await arrow.hover()
+  await expect(page.getByRole('tooltip')).toContainText('Common base')
+  await arrow.click({ button: 'right' })
+  await expect(page.getByRole('menu')).toBeVisible()
+  await expect(page.locator('.graph-arrow-tooltip')).toHaveCount(0)
+  await arrow.evaluate((node) =>
+    node
+      .closest('.graph-jump-arrow')!
+      .dispatchEvent(new MouseEvent('mouseenter', { bubbles: true })),
+  )
+  await expect(page.locator('.graph-arrow-tooltip')).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await page.mouse.move(1000, 100)
+  await arrow.hover()
+  await expect(page.getByRole('tooltip')).toContainText('Common base')
+})

@@ -32,8 +32,6 @@ for (const host of ['macOS', 'Windows']) {
     const settings = page.getByRole('dialog', { name: '设置', exact: true })
     await expect(settings).toBeVisible()
     await settings.getByRole('tab', { name: '字体', exact: true }).click()
-    await settings.getByRole('button', { name: '读取本机字体', exact: true }).click()
-    await expect(settings.getByText('已读取 1 个字体家族', { exact: true })).toBeVisible()
     await settings.getByLabel('使用自定义界面字体', { exact: true }).check()
     await settings.getByRole('button', { name: '展开界面主字体列表', exact: true }).click()
     const picker = settings.getByRole('dialog', { name: '选择界面主字体', exact: true })

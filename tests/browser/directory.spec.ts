@@ -38,7 +38,11 @@ test('dark directory browser navigates and selects a repository without a native
   })
   await page.goto('/')
   await page.keyboard.press('Control+o')
-  await page.getByRole('button', { name: '使用内置目录浏览器', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: '打开本地仓库', exact: true })
+    .locator('summary', { hasText: '更多选项' })
+    .click()
+  await page.getByRole('button', { name: '使用内置目录浏览器…', exact: true }).click()
   const picker = page.getByRole('dialog', { name: '选择 Git 仓库', exact: true })
   await expect(picker).toBeVisible()
   await expect(picker.getByText('Git 仓库', { exact: true })).toBeVisible()

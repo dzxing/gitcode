@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
+import { useHistoryToolsStore } from '../stores/historyTools'
 import { computed, ref } from 'vue'
 import { usePartialStage } from '../composables/usePartialStage'
 import { useRepositoryStore } from '../stores/repository'
@@ -69,7 +71,7 @@ function retryDiff() {
         <Icon
           name="FileCode2"
           :size="15"
-        /><strong :title="store.selectedFile?.path">{{ baseName }}</strong
+        /><strong v-overflow-title="store.selectedFile?.path">{{ baseName }}</strong
         ><span class="diff-kind">{{
           store.selectedStash
             ? store.stashDiffSource === 'staged'
@@ -160,7 +162,28 @@ function retryDiff() {
     >
       缺少结尾换行的修改块仅支持整块操作。
     </p>
-    <div class="diff-path">{{ store.selectedFile?.path }}</div>
+    <div class="diff-path">
+      {{ store.selectedFile?.path }}
+      <button
+        class="text-button"
+        @click="
+          useHistoryToolsStore().open(
+            'file',
+            store.selectedFile!.path,
+            store.selectedCommit?.hash || store.repo.head,
+          )
+        "
+      >
+        显示文件历史
+      </button>
+      <button
+        v-if="!store.selectedCommit && !store.selectedStash"
+        class="text-button"
+        @click="useHistoryToolsStore().open('three', store.selectedFile!.path, store.repo.head)"
+      >
+        比较三个版本
+      </button>
+    </div>
     <div
       v-if="store.selectedStash && stash.details?.indexDiff"
       class="diff-source-switch"

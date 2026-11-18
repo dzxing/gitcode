@@ -209,7 +209,8 @@ test('long branch menu labels stay on one line, grow naturally and fit the viewp
     } else {
       expect(geometry.scroll).toBeGreaterThan(geometry.client)
       await expect(label).toHaveCSS('text-overflow', 'ellipsis')
-      await expect(label.locator('..')).toHaveAttribute('title', `重命名 ${name}`)
+      await label.hover()
+      await expect(label).toHaveAttribute('title', `重命名 ${name}`)
     }
     await page.keyboard.press('Escape')
   }

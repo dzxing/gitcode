@@ -211,7 +211,7 @@ export async function verifyGitFlowFinish(
       await expect(ready).toBeVisible()
       await ready.getByRole('button', { name: '稍后处理', exact: true }).click()
       await page.reload()
-      await expect(page.locator('.repo-selector')).toHaveAttribute('title', '打开本地仓库：' + repo)
+      await expect(page.locator('.repo-selector')).toHaveAttribute('data-repository-path', repo)
       await expect(
         page.getByRole('dialog', { name: '信任此仓库？', exact: true }),
       ).not.toBeVisible()

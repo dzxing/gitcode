@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useHistoryToolsStore } from '../stores/historyTools'
 import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { branchReference, sidebarBranchKey } from '../references'
 import { branchTracking } from '../branchTracking'
@@ -46,16 +47,13 @@ function hideName() {
   nameTip.value = null
 }
 function showName(event: MouseEvent | FocusEvent) {
+  if (menu.target) return
   if (event.type === 'focus') {
     keyboardIn = (event.currentTarget as HTMLElement).matches(':focus-visible')
     if (!keyboardIn) return
   } else pointerIn = true
   const name = nameElement.value
-  if (
-    !name ||
-    (name.scrollWidth <= name.clientWidth && (!props.label || props.label === props.branch.name))
-  )
-    return
+  if (!name || name.scrollWidth <= name.clientWidth) return
   const rect = name.getBoundingClientRect()
   const left = Math.max(8, Math.min(rect.left, window.innerWidth - 160))
   const above = window.innerHeight - rect.bottom < 80
@@ -92,6 +90,16 @@ watch(
   { flush: 'sync' },
 )
 watch(() => store.modal, hideName)
+watch(
+  () => menu.target,
+  (target) => {
+    if (!target) return
+    pointerIn = false
+    keyboardIn = false
+    hideName()
+  },
+  { flush: 'sync' },
+)
 watch(() => props.branch.name, hideName)
 onBeforeUnmount(clearNameListeners)
 async function toggleFavorite() {
@@ -125,6 +133,7 @@ function checkout() {
 function filterBranch(event: MouseEvent) {
   // A double-click emits two clicks before dblclick; apply the toggle only once.
   if (event.detail > 1) return
+  useHistoryToolsStore().active = ''
   store.setBranchFilter(props.branch, selectionKey.value, true)
 }
 function doubleClick() {
@@ -154,7 +163,6 @@ function openBranchMenu(event: MouseEvent) {
       :aria-pressed="selected"
       :aria-label="branchHint"
       :aria-describedby="nameTip ? nameTipId : undefined"
-      :title="nameTip ? undefined : branchHint"
       @mouseenter="showName"
       @mouseleave="leaveName"
       @focus="showName"
@@ -175,7 +183,6 @@ function openBranchMenu(event: MouseEvent) {
       <small
         v-if="branch.current || tracking.label"
         class="branch-meta"
-        :title="tracking.description || '当前分支'"
         aria-hidden="true"
       >
         <Icon
@@ -207,7 +214,7 @@ function openBranchMenu(event: MouseEvent) {
       :class="{ 'is-favorite': favorite }"
       :aria-pressed="favorite"
       :aria-label="`${favorite ? '取消收藏' : '收藏'} ${branch.name}`"
-      :title="favorite ? '取消收藏' : '收藏并置顶'"
+      :title="menu.hoverTitle(favorite ? '取消收藏' : '收藏并置顶')"
       @click.stop="toggleFavorite"
       @dblclick.stop
     >

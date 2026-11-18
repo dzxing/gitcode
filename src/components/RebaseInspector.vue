@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import { useMergeStore } from '../stores/merge'
@@ -34,7 +35,7 @@ const canContinue = computed(() => !state.value.files.length && !!state.value.st
         v-for="file in state.files"
         :key="file.path"
         class="rebase-file"
-        :title="file.path"
+        v-overflow-title="{ text: file.path, target: '.file-name, span' }"
         :disabled="repo.busy || merge.loading"
         @click="merge.openFile(file.path)"
       >

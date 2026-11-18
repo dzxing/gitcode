@@ -3,6 +3,7 @@
 const { randomBytes } = require('node:crypto')
 const os = require('node:os')
 const path = require('node:path')
+const gitRuntime = require('./git-runtime.cjs')
 const { OperationLog } = require('./operation-log.cjs')
 const { GitService } = require('./git.cjs')
 
@@ -12,6 +13,11 @@ const LIMIT = 1024 * 1024
 const IDLE = 30 * 60 * 1000
 const loopback = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 const hosts = new Set(['localhost', '127.0.0.1', '[::1]'])
+const runtimeInfo = (value) => ({
+  ...value,
+  transport: 'local',
+  environment: /microsoft/i.test(os.release()) || process.env.WSL_INTEROP ? 'wsl' : 'native',
+})
 
 function failure(status, message) {
   return Object.assign(new Error(message), { status })
@@ -37,7 +43,42 @@ async function body(req) {
 
 // Same business operations as Electron IPC, with no arbitrary shell or filesystem API.
 function dispatch(git, method, args) {
+  if (git.wsl) return git.wsl.route(method, args, () => dispatchLocal(git, method, args))
+  return dispatchLocal(git, method, args)
+}
+function dispatchLocal(git, method, args) {
   const jobs = new Map([
+    ['git-console', [2, ([repo, request]) => git.console.read(repo, request)]],
+    ['terminal', [2, ([repo, request]) => git.terminal.request(repo, request)]],
+    [
+      'git-settings',
+      [
+        1,
+        async ([value]) => {
+          if (value === null) {
+            const state = await git.runtimeSettings()
+            return { ...state, runtime: runtimeInfo(state.runtime) }
+          }
+          if (!git.runtimeOptions.dataDirectory) throw Error('本地服务未配置 Git 设置保存目录。')
+          const file = path.join(git.runtimeOptions.dataDirectory, 'git-runtime.json')
+          const result = await git.configureRuntime(value, (selection) =>
+            gitRuntime.writePreference(file, selection),
+          )
+          return { ...result, runtime: runtimeInfo(result.runtime) }
+        },
+      ],
+    ],
+    [
+      'git-runtime-refresh',
+      [
+        0,
+        async () => {
+          await git.retryRuntime()
+          const state = await git.runtimeSettings()
+          return { ...state, runtime: runtimeInfo(state.runtime) }
+        },
+      ],
+    ],
     [
       'history-metadata',
       [
@@ -49,6 +90,7 @@ function dispatch(git, method, args) {
           ),
       ],
     ],
+    ['history-tools', [2, ([repo, request]) => git.historyTools.request(repo, request)]],
     [
       'history-read',
       [
@@ -94,6 +136,16 @@ function dispatch(git, method, args) {
       ],
     ],
     ['repository-changes', [1, ([repo]) => git.repositoryWatch.status(repo)]],
+    [
+      'refresh-references',
+      [
+        2,
+        ([repo, signature]) =>
+          git.job(async (signal) =>
+            git.refreshReferences(await git.repository(repo, signal), signature, signal),
+          ),
+      ],
+    ],
     ['background-snapshot', [2, ([repo, request]) => git.repositoryWatch.read(repo, request)]],
     ['activity', [0, () => git.activity]],
     ['operation-log', [1, ([request]) => git.journal.read(request)]],
@@ -144,19 +196,7 @@ function dispatch(git, method, args) {
           ),
       ],
     ],
-    [
-      'runtime',
-      [
-        0,
-        () =>
-          git.runtime().then((value) => ({
-            ...value,
-            transport: 'local',
-            environment:
-              /microsoft/i.test(os.release()) || process.env.WSL_INTEROP ? 'wsl' : 'native',
-          })),
-      ],
-    ],
+    ['runtime', [0, () => git.runtime().then(runtimeInfo)]],
     [
       'merge-read',
       [
@@ -266,7 +306,13 @@ function createLocalCore({
   now = Date.now,
 } = {}) {
   const journal = new OperationLog({ directory: dataDirectory })
-  serviceFactory ||= () => new GitService({ journal, dataDirectory, enforceRepositoryTrust: true })
+  serviceFactory ||= () =>
+    new GitService({
+      journal,
+      dataDirectory,
+      enforceRepositoryTrust: true,
+      selection: gitRuntime.readPreference(path.join(dataDirectory, 'git-runtime.json')),
+    })
   const sessions = new Map()
   const activeRequests = new Set()
   let closing = false
@@ -397,4 +443,4 @@ function createLocalCore({
   }
 }
 
-module.exports = { createLocalCore }
+module.exports = { createLocalCore, dispatch }

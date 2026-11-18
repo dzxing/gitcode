@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useMergeStore } from '../stores/merge'
 import { useRepositoryStore } from '../stores/repository'
@@ -74,7 +75,7 @@ function reloadFile() {
       <Icon
         name="GitMerge"
         :size="16"
-      /><strong :title="file.path">{{ file.path }}</strong
+      /><strong v-overflow-title="file.path">{{ file.path }}</strong
       ><span>{{ merge.dirty ? '未保存' : '尚未标记解决' }}</span
       ><button
         class="icon-button"

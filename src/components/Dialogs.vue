@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import Icon from './Icon.vue'
@@ -211,7 +212,7 @@ function close() {
           <li
             v-for="tab in store.pendingCloseTabs"
             :key="tab.id"
-            :title="tab.path"
+            v-overflow-title="tab.path"
           >
             {{ tab.name }}
           </li>

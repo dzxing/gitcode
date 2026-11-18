@@ -1,35 +1,19 @@
 'use strict'
 const path = require('node:path').win32
 
-function gitCandidates({ env, resourcesPath, selection }) {
-  const result = []
-  if (selection.mode === 'auto' && resourcesPath)
-    result.push({ path: path.join(resourcesPath, 'git/cmd/git.exe'), source: 'bundled' })
+function gitCandidates({ env }) {
+  const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path')
+  const result = (env[pathKey] || '')
+    .split(';')
+    .slice(0, 64)
+    .map((directory) => directory.replace(/^"|"$/g, ''))
+    .filter((directory) => path.isAbsolute(directory))
+    .map((directory) => ({ path: path.join(directory, 'git.exe'), source: 'system' }))
   result.push({ path: 'git.exe', source: 'system' })
   for (const key of ['ProgramFiles', 'ProgramFiles(x86)', 'LOCALAPPDATA'])
     if (env[key])
       for (const suffix of [['Git'], ['Programs', 'Git']])
         result.push({ path: path.join(env[key], ...suffix, 'cmd/git.exe'), source: 'system' })
-  return result
-}
-function gitEnvironment(env, executable, source) {
-  if (source !== 'bundled') return env
-  const result = { ...env },
-    root = path.dirname(path.dirname(executable))
-  const current = Object.keys(result).find((key) => key.toLowerCase() === 'path')
-  const previous = current ? result[current] : ''
-  for (const key of Object.keys(result))
-    if (key.toLowerCase() === 'path' || key.toUpperCase() === 'GIT_EXEC_PATH') delete result[key]
-  result.Path = [
-    path.join(root, 'cmd'),
-    path.join(root, 'ucrt64/bin'),
-    path.join(root, 'mingw64/bin'),
-    path.join(root, 'clangarm64/bin'),
-    path.join(root, 'usr/bin'),
-    previous,
-  ]
-    .filter(Boolean)
-    .join(';')
   return result
 }
 async function readFonts(execute, options) {
@@ -54,7 +38,7 @@ module.exports = Object.freeze({
     candidates: gitCandidates,
     probeOptions: () => ({}),
     defer: () => false,
-    environment: gitEnvironment,
+    environment: (env) => env,
   }),
   fonts: Object.freeze({ read: readFonts }),
 })

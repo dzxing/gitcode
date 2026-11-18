@@ -3888,6 +3888,106 @@ try {
     assert.equal(store.repo.staged.length, 0)
   })
 
+  await test('Operation entry waits for reference refresh and freezes the original action DTO', async () => {
+    const store = freshStore()
+    store.connected = true
+    const original = window.gitk.refreshReferences
+    let release,
+      actions = []
+    window.gitk.refreshReferences = () =>
+      new Promise((resolve) => {
+        release = resolve
+      })
+    nativeHandler = async (method, data) => {
+      if (method === 'action') {
+        actions.push(data.request)
+        return {
+          outcome: 'succeeded',
+          output: '',
+          snapshot: JSON.parse(JSON.stringify(store.repo)),
+        }
+      }
+      return nativeRuntime
+    }
+    try {
+      const extra = { name: 'feature/original', nested: { value: 'original' } }
+      const pending = store.run('branch', extra)
+      assert.equal(store.busy, true)
+      assert.equal(actions.length, 0)
+      assert.equal(await store.run('branch', { name: 'feature/duplicate' }), false)
+      extra.name = 'feature/changed'
+      extra.nested.value = 'changed'
+      release(null)
+      assert.equal(await pending, true)
+      assert.equal(actions.length, 1)
+      assert.equal(actions[0].name, 'feature/original')
+      assert.deepEqual(actions[0].nested, { value: 'original' })
+    } finally {
+      window.gitk.refreshReferences = original
+    }
+  })
+
+  await test('A changed HEAD found during operation entry updates the view without executing the old intent', async () => {
+    const store = freshStore()
+    store.connected = true
+    const original = window.gitk.refreshReferences
+    const next = { ...JSON.parse(JSON.stringify(store.repo)), head: 'f'.repeat(40) }
+    window.gitk.refreshReferences = async () => next
+    let actions = 0
+    nativeHandler = async (method) => {
+      if (method === 'action') actions++
+      return method === 'snapshot' ? structuredClone(next) : nativeRuntime
+    }
+    try {
+      assert.equal(await store.run('branch', { name: 'feature/stale' }), false)
+      assert.equal(actions, 0)
+      assert.equal(store.repo.head, next.head)
+      assert.ok(store.notices.some((n) => n.error && n.text.includes('HEAD 已变化')))
+    } finally {
+      window.gitk.refreshReferences = original
+    }
+  })
+
+  await test('Cancellation during operation-entry refresh cannot start a Git mutation after the read returns', async () => {
+    const store = freshStore()
+    store.connected = true
+    const original = window.gitk.refreshReferences
+    let release,
+      actions = 0
+    window.gitk.refreshReferences = () =>
+      new Promise((resolve) => {
+        release = resolve
+      })
+    nativeHandler = async (method) => {
+      if (method === 'action') actions++
+      return nativeRuntime
+    }
+    try {
+      const pending = store.run('branch', { name: 'feature/cancelled' })
+      await store.cancelOperation()
+      release(null)
+      assert.equal(await pending, false)
+      assert.equal(actions, 0)
+      assert.equal(store.busy, false)
+    } finally {
+      window.gitk.refreshReferences = original
+    }
+  })
+
+  await test('Fetch distinguishes completed Git work from a failed view refresh', async () => {
+    const store = freshStore()
+    store.connected = true
+    nativeHandler = async (method) =>
+      method === 'sync-plan'
+        ? { id: 'refresh-failed' }
+        : method === 'action'
+          ? { outcome: 'succeeded', output: '', snapshot: null, refreshError: 'snapshot failed' }
+          : nativeRuntime
+    assert.equal(await store.run('fetch'), true)
+    assert.ok(store.notices.some((n) => n.error && n.text.includes('仓库视图尚未更新')))
+    assert.equal(store.fetching, false)
+  })
+
   await test('API failures preserve the active repository and expose the Git error', async () => {
     const store = freshStore()
     store.connected = true
@@ -4464,6 +4564,122 @@ try {
       history: { ...next.history, signature: 'new-roots', basis: 'new-roots' },
     }
     assert.equal(retainHistory(current, changed), changed)
+  })
+
+  await test('Changed graph roots refill the loaded window only from the new frame and never retain removed commits', async () => {
+    const { refillHistoryWindow } = await vite.ssrLoadModule('/src/historyPaging.ts')
+    const full = structuredClone(fixture)
+    const frame = {
+      token: 'fresh',
+      signature: 'new-roots',
+      basis: 'new-roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    const next = { ...full, commits: full.commits.slice(0, 5), history: frame }
+    const current = {
+      ...full,
+      commits: structuredClone(full.commits.slice(0, 10)),
+      history: {
+        ...frame,
+        token: 'old',
+        signature: 'old-roots',
+        basis: 'old-roots',
+        nextOffset: 10,
+      },
+    }
+    current.commits[8].hash = 'f'.repeat(40)
+    const calls = []
+    const result = await refillHistoryWindow(
+      current,
+      next,
+      async (request) => {
+        calls.push(request)
+        return { commits: full.commits.slice(5, 10), history: { ...frame, nextOffset: 10 } }
+      },
+      () => true,
+    )
+    assert.deepEqual(calls, [{ token: 'fresh', offset: 5 }])
+    assert.deepEqual(result.commits, full.commits.slice(0, 10))
+    assert.ok(!result.commits.some((c) => c.hash === 'f'.repeat(40)))
+    assert.equal(current.commits[8].hash, 'f'.repeat(40))
+  })
+
+  await test('Graph window refill stops when its repository context changes and rejects a mismatched page', async () => {
+    const { refillHistoryWindow } = await vite.ssrLoadModule('/src/historyPaging.ts')
+    const full = structuredClone(fixture)
+    const frame = {
+      token: 'fresh',
+      signature: 'new-roots',
+      basis: 'new-roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    const next = { ...full, commits: full.commits.slice(0, 5), history: frame }
+    const current = {
+      ...full,
+      history: { ...frame, token: 'old', signature: 'old-roots', basis: 'old-roots' },
+    }
+    let valid = true,
+      calls = 0
+    const result = await refillHistoryWindow(
+      current,
+      next,
+      async () => {
+        calls++
+        valid = false
+        return { commits: full.commits.slice(5, 10), history: { ...frame, nextOffset: 10 } }
+      },
+      () => valid,
+    )
+    assert.equal(result, next)
+    assert.equal(calls, 1)
+    await assert.rejects(
+      refillHistoryWindow(
+        current,
+        next,
+        async () => ({
+          commits: full.commits.slice(5, 10),
+          history: { ...frame, token: 'other', nextOffset: 10 },
+        }),
+        () => true,
+      ),
+      /历史分页状态已变化/,
+    )
+  })
+
+  await test('A history refill failure cannot report a completed commit as failed or keep its draft', async () => {
+    const store = freshStore()
+    store.connected = true
+    const full = structuredClone(fixture)
+    const frame = {
+      token: 'fresh',
+      signature: 'new-roots',
+      basis: 'new-roots',
+      focus: null,
+      nextOffset: 5,
+      total: 16,
+    }
+    store.repo = {
+      ...full,
+      commits: full.commits.slice(0, 10),
+      history: { ...frame, token: 'old', signature: 'old-roots', basis: 'old-roots' },
+    }
+    const next = { ...full, commits: full.commits.slice(0, 5), history: frame }
+    nativeHandler = async (method) => {
+      if (method === 'history-read') throw Error('history page unavailable')
+      if (method === 'action') return { outcome: 'succeeded', output: '', snapshot: next }
+      return nativeRuntime
+    }
+    store.commitMessage = 'completed commit'
+    assert.equal(await store.run('commit', { message: store.commitMessage }), true)
+    assert.equal(store.commitMessage, '')
+    assert.equal(store.lastActionResult.outcome, 'succeeded')
+    assert.equal(store.repo.history.signature, 'new-roots')
+    assert.equal(store.repo.commits.length, 5)
+    assert.match(store.historyError, /较早历史未能完整加载.*history page unavailable/)
   })
 
   await test('Loading an old branch preserves its keyword and the existing detail selection', async () => {

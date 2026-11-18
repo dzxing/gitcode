@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
+import { useHistoryQueryStore } from '../stores/historyQuery'
+import { useHistoryToolsStore } from '../stores/historyTools'
 import { focusMenuItem } from '../menuFocus'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
@@ -84,6 +87,7 @@ const heading = computed(
 const objectTitle = computed(() => {
   const target = menu.target
   if (target?.kind === 'files') return target.label
+  if (target?.kind === 'file-revision' || target?.kind === 'historical-file') return target.path
   if (target?.kind === 'navigation') return '仓库导航显示设置'
   if (target?.kind === 'stash') return target.stash.message
   if (target?.kind === 'section') return `${SIDEBAR_SECTIONS[target.section].title}分组`
@@ -118,6 +122,18 @@ const rawItems = computed<Item[]>(() => {
     reason,
     ...extra,
   })
+  if (target.kind === 'historical-file')
+    return [
+      { id: 'historical-history', label: '显示文件历史' },
+      { id: 'historical-copy', label: '复制路径' },
+    ]
+  if (target.kind === 'file-revision')
+    return [
+      { id: 'revision-local', label: '与本地版本比较' },
+      { id: 'revision-locate', label: '在提交图中定位' },
+      { id: 'revision-copy', label: '复制提交 SHA', separator: true },
+      { id: 'revision-path', label: '复制路径' },
+    ]
   if (target.kind === 'files')
     return [
       mutation(
@@ -133,7 +149,13 @@ const rawItems = computed<Item[]>(() => {
             ),
         },
       ),
-      ...(target.files.length === 1 ? [{ id: 'files-diff', label: '查看文件差异' }] : []),
+      ...(target.files.length === 1
+        ? [
+            { id: 'files-diff', label: '查看文件差异' },
+            { id: 'files-history', label: '显示文件历史' },
+            { id: 'files-three', label: '比较三个版本' },
+          ]
+        : []),
       { id: 'files-copy-path', label: '复制路径', separator: true },
     ]
   if (target.kind === 'stash')
@@ -240,12 +262,12 @@ const rawItems = computed<Item[]>(() => {
       store.repo.head &&
       store.repo.branch !== 'detached HEAD' &&
       oid !== store.repo.head &&
-      !knownAncestor(store.repo.commits, oid, store.repo.head)
+      !knownAncestor(menu.historyCommits, oid, store.repo.head)
     ) {
       result.push(
         mutation('merge-branch', `合并 ${b.name} 到 ${store.repo.branch}`, { separator: true }),
       )
-      if (knownAncestor(store.repo.commits, store.repo.head, oid))
+      if (knownAncestor(menu.historyCommits, store.repo.head, oid))
         result.push(mutation('fast-forward', `快进 ${store.repo.branch} 到 ${b.name}`))
     }
     if (
@@ -380,7 +402,7 @@ function valid(target: MenuContext) {
 function targetCommit(target: MenuContext) {
   if (target.kind === 'commit') return target.commit
   if (target.kind === 'branch')
-    return store.repo.commits.find(
+    return menu.historyCommits.find(
       (c) =>
         c.hash === target.branch.hash ||
         (target.branch.kind === 'tag' && c.refs.includes(`tag: ${target.branch.name}`)),
@@ -389,7 +411,7 @@ function targetCommit(target: MenuContext) {
 }
 function locate(target: MenuContext, head = false) {
   const commit = head
-    ? store.repo.commits.find((c) => c.hash === target.head)
+    ? menu.historyCommits.find((c) => c.hash === target.head)
     : targetCommit(target)
   if (!commit) {
     store.notify('目标提交尚未加载，当前仅加载最近 250 条提交。', true)
@@ -435,9 +457,9 @@ async function jumpCommit(hash: string, target: MenuContext) {
       if (valid(target)) store.notify(store.historyError || '目标提交暂时无法定位。', true)
       return
     }
-    commit = store.repo.commits.find((commit) => commit.hash === hash)
+    commit = menu.historyCommits.find((commit) => commit.hash === hash)
   } else if (!commit) {
-    commit = store.repo.commits.find((commit) => commit.hash === hash)
+    commit = menu.historyCommits.find((commit) => commit.hash === hash)
     if (commit) {
       store.query = ''
       store.clearBranchFilter(false)
@@ -495,7 +517,7 @@ async function perform(item: Item) {
     let hashes =
       id === 'jump-parent'
         ? target.commit.parents
-        : store.repo.commits
+        : menu.historyCommits
             .filter((commit) => commit.parents.includes(target.commit.hash))
             .map((commit) => commit.hash)
     if (id === 'jump-child') {
@@ -527,6 +549,33 @@ async function perform(item: Item) {
     }
     return
   }
+  if (target.kind === 'historical-file') {
+    if (id === 'historical-history')
+      useHistoryToolsStore().open('file', target.path, target.revision)
+    else {
+      try {
+        await navigator.clipboard.writeText(target.path)
+      } catch {
+        store.notify('无法访问剪贴板。', true)
+      }
+    }
+    return
+  }
+  if (target.kind === 'file-revision') {
+    if (id === 'revision-locate') {
+      useHistoryQueryStore().clear()
+      if (await store.loadHistory('locate', target.revision)) useHistoryToolsStore().active = ''
+    } else if (id === 'revision-local') {
+      await useHistoryToolsStore().compareLocal(target.path, target.currentPath, target.revision)
+    } else {
+      try {
+        await navigator.clipboard.writeText(id === 'revision-copy' ? target.revision : target.path)
+      } catch {
+        store.notify('无法访问剪贴板。', true)
+      }
+    }
+    return
+  }
   if (target.kind === 'files') {
     const file = target.files[0]
     if (id === 'files-copy-path') {
@@ -536,6 +585,12 @@ async function perform(item: Item) {
       } catch {
         store.notify('无法访问剪贴板，请从文件提示中选择路径。', true)
       }
+    } else if ((id === 'files-history' || id === 'files-three') && file) {
+      useHistoryToolsStore().open(
+        id === 'files-history' ? 'file' : 'three',
+        file.path,
+        store.repo.head,
+      )
     } else if (id === 'files-diff' && file) {
       if (file.status === 'U') await useMergeStore().openFile(file.path)
       else await store.selectFile(file, target.staged)
@@ -877,8 +932,8 @@ function prepareRebaseMenu(target: MenuContext) {
   const fullRef = branchReference(target.branch)
   const expectedOid = target.branch.hash
   const oid = target.branch.commitHash || expectedOid
-  if (oid === target.head || knownAncestor(store.repo.commits, target.head, oid)) return false
-  const fromHistory = interactiveRebaseFromHistory(store.repo.commits, target.head, oid)
+  if (oid === target.head || knownAncestor(menu.historyCommits, target.head, oid)) return false
+  const fromHistory = interactiveRebaseFromHistory(menu.historyCommits, target.head, oid)
   if (fromHistory !== null) return fromHistory
   const key = JSON.stringify([target.repo, target.head, target.currentBranch, fullRef, expectedOid])
   if (rebaseMenuCache.has(key)) return rebaseMenuCache.get(key)!
@@ -929,6 +984,10 @@ async function showMenu() {
     })
   }
   try {
+    // Native menus capture the pointer: Chromium may never send mouseleave to
+    // the source row. Flush its suppressed hover titles before entering popup.
+    await nextTick()
+    if (nativeRequest.value !== requestId || menu.target !== target) return
     const selected = await bridge.popup({ requestId, items: template })
     if (nativeRequest.value !== requestId || menu.target !== target) return
     nativeRequest.value = null
@@ -949,7 +1008,11 @@ watch(
     if (
       target &&
       (branchContextCurrent(target, store.repo, store.activeTabId) ||
-        commitContextCurrent(target, store.repo, store.activeTabId))
+        commitContextCurrent(
+          target,
+          { ...store.repo, commits: menu.historyCommits },
+          store.activeTabId,
+        ))
     )
       return
     menu.close(false)
@@ -1028,7 +1091,7 @@ onUnmounted(() => {
           :aria-checked="item.checked"
           tabindex="-1"
           :disabled="item.disabled"
-          :title="item.reason || item.label"
+          :title="item.reason || undefined"
           :class="{ danger: item.danger }"
           @click="perform(item)"
         >
@@ -1037,7 +1100,11 @@ onUnmounted(() => {
             class="context-menu-check"
             aria-hidden="true"
             >{{ item.checked ? '✓' : '' }}</span
-          ><span class="context-menu-label">{{ item.label }}</span>
+          ><span
+            class="context-menu-label"
+            v-overflow-title="item.label"
+            >{{ item.label }}</span
+          >
         </button></template
       >
     </div>
@@ -1066,7 +1133,8 @@ onUnmounted(() => {
               ><template v-if="jumpChoice.direction === '父提交'"
                 >父节点 {{ index + 1 }} · </template
               >{{
-                store.repo.commits.find((commit) => commit.hash === hash)?.subject || '未加载的提交'
+                menu.historyCommits.find((commit) => commit.hash === hash)?.subject ||
+                '未加载的提交'
               }}</span
             >
           </button>

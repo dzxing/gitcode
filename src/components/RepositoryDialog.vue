@@ -66,10 +66,12 @@ watch(
   mode,
   async (value, previous) => {
     if (value) {
-      if (!previous && !store.busy) {
+      if (!previous && !store.busy && typeof document !== 'undefined') {
         const active = document.activeElement
         returnFocus =
-          active instanceof HTMLElement && active !== document.body
+          typeof HTMLElement !== 'undefined' &&
+          active instanceof HTMLElement &&
+          active !== document.body
             ? active
             : document.querySelector<HTMLElement>('[data-top-menu="file"]')
       }
@@ -81,6 +83,12 @@ watch(
       await nextTick()
       if (!dialog.value?.open) dialog.value?.showModal()
       await focusInput()
+      if (
+        value === 'open' &&
+        store.runtime?.platform === 'windows' &&
+        /^\\\\(?:wsl\.localhost|wsl\$)\\?$/i.test(store.repositoryOpenPath)
+      )
+        directoryMode.value = 'repo'
     } else {
       dialog.value?.close()
       directoryMode.value = null
@@ -90,7 +98,8 @@ watch(
   { immediate: true },
 )
 watch(busy, (value) => {
-  if (!value && document.activeElement === dialog.value) void focusInput()
+  if (!value && typeof document !== 'undefined' && document.activeElement === dialog.value)
+    void focusInput()
 })
 function close() {
   if (store.busy) {
@@ -103,6 +112,10 @@ function setName(event: Event) {
   clearError()
   draft.value.name = (event.target as HTMLInputElement).value
   draft.value.nameEdited = !!draft.value.name.trim()
+}
+function browseWsl() {
+  store.repositoryOpenPath = '\\\\wsl.localhost\\'
+  void browse('repo', true)
 }
 function choosePath(path: string) {
   clearError()
@@ -223,7 +236,15 @@ async function submit() {
                 :disabled="busy || !localReady"
                 @click="browse('repo')"
               >
-                浏览…
+                浏览…</button
+              ><button
+                v-if="store.runtime?.platform === 'windows'"
+                type="button"
+                class="secondary-button"
+                :disabled="busy || !localReady"
+                @click="browseWsl"
+              >
+                WSL…
               </button></span
             ></label
           >

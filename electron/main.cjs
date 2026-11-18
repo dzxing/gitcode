@@ -15,7 +15,7 @@ const {
 const path = require('node:path')
 const fs = require('node:fs')
 const { pathToFileURL } = require('node:url')
-const { GitService, execute } = require('./git.cjs')
+const { GitService } = require('./git.cjs')
 const gitRuntime = require('./git-runtime.cjs')
 const { isCommand, editCommands, sanitizeState, buildMenuTemplate } = require('./menus.cjs')
 const { ContextMenus } = require('./context-menu.cjs')
@@ -27,6 +27,7 @@ const { WindowAppearance, windowColors } = require('./window-appearance.cjs')
 const { WindowRecovery } = require('./window-recovery.cjs')
 const { repositoryLocation } = require('./repository-location.cjs')
 const { installedFonts } = require('./fonts.cjs')
+const { TerminalService } = require('./terminal.cjs')
 
 const root = fs.realpathSync(path.resolve(__dirname, '..'))
 const development =
@@ -111,11 +112,13 @@ function authorized(event) {
 function handle(name, work) {
   ipcMain.handle(`gitk:${name}`, async (event, ...args) => {
     authorized(event)
-    return work(...args)
+    return git.wsl ? git.wsl.route(name, args, () => work(...args)) : work(...args)
   })
 }
 
 function registerHandlers() {
+  handle('git-console', (repo, request) => git.console.read(repo, request))
+  handle('terminal', (repo, request) => git.terminal.request(repo, request))
   handle('app:fonts', () => installedFonts())
   handle('partial-stage-read', (repo, request) =>
     git.job(async (signal) =>
@@ -171,29 +174,15 @@ function registerHandlers() {
   })
   handle('activity', () => git.activity)
   handle('runtime', () => git.runtime())
-  handle('git-runtime-refresh', async () => ({
-    selection: gitRuntime.readPreference(gitSettingsFile),
-    runtime: await git.retryRuntime(),
-  }))
+  handle('git-runtime-refresh', async () => {
+    await git.retryRuntime()
+    return git.runtimeSettings()
+  })
   handle('git-settings', async (value) => {
-    if (value === undefined)
-      return { selection: gitRuntime.readPreference(gitSettingsFile), runtime: await git.runtime() }
-    if (git.current) throw new Error('请等待当前 Git 操作完成后修改运行环境。')
-    const selection = gitRuntime.preference(value)
-    const env = { ...process.env }
-    delete env.GITCODE_GIT_PATH
-    delete env.GITK_GIT_PATH
-    const found = await gitRuntime.discover(execute, {
-      resourcesPath: app.isPackaged ? process.resourcesPath : undefined,
-      selection,
-      env,
-    })
-    if (!found.path) throw new Error(found.error)
-    await fs.promises.mkdir(path.dirname(gitSettingsFile), { recursive: true })
-    const temporary = `${gitSettingsFile}.tmp`
-    await fs.promises.writeFile(temporary, JSON.stringify(selection), { mode: 0o600 })
-    await fs.promises.rename(temporary, gitSettingsFile)
-    return { selection, runtime: await git.runtime(), restartRequired: true }
+    if (value === undefined) return git.runtimeSettings()
+    return git.configureRuntime(value, (selection) =>
+      gitRuntime.writePreference(gitSettingsFile, selection),
+    )
   })
   handle('choose-git', async () => {
     if (selectingGit) return null
@@ -244,13 +233,19 @@ function registerHandlers() {
     ),
   )
   handle('open-commit', async (repo, request, remote) => {
-    const result = await git.job(async (signal) =>
-      git.commitOperations.read(
-        await git.repository(repo, signal),
-        { ...request, kind: 'hosting' },
-        signal,
-      ),
-    )
+    const result = git.wsl?.isRepository(repo)
+      ? await git.wsl.route(
+          'commit-operation-read',
+          [repo, { ...request, kind: 'hosting' }],
+          () => {},
+        )
+      : await git.job(async (signal) =>
+          git.commitOperations.read(
+            await git.repository(repo, signal),
+            { ...request, kind: 'hosting' },
+            signal,
+          ),
+        )
     const entry = result.urls?.find((link) => link.name === remote)
     if (!entry) throw Error('托管地址已变化，请重新读取。')
     await shell.openExternal(entry.url)
@@ -269,6 +264,7 @@ function registerHandlers() {
       { background: true },
     ),
   )
+  handle('history-tools', (repo, request) => git.historyTools.request(repo, request))
   handle('history-read', (repo, request) =>
     git.job(
       async (signal) => git.history.read(await git.repository(repo, signal), request, signal),
@@ -277,6 +273,11 @@ function registerHandlers() {
   )
   handle('snapshot', (repo) =>
     git.job(async (signal) => git.snapshot(await git.repository(repo, signal), signal)),
+  )
+  handle('refresh-references', (repo, signature) =>
+    git.job(async (signal) =>
+      git.refreshReferences(await git.repository(repo, signal), signature, signal),
+    ),
   )
   handle('commit', (repo, commit) =>
     git.job(async (signal) =>
@@ -315,14 +316,25 @@ function registerHandlers() {
         ? 'https://git-scm.com/docs'
         : resource === 'git-book'
           ? 'https://git-scm.com/book/zh/v2'
-          : null
+          : resource === 'git-install'
+            ? `https://git-scm.com/install/${process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'mac' : 'linux'}`
+            : null
     if (!url) throw new Error('未知的帮助资源。')
     await shell.openExternal(url)
   })
   handle('window:minimize', () => mainWindow.minimize())
-  handle('app:repository-location', (repo, action) =>
-    repositoryLocation(git, shell, clipboard, repo, action),
-  )
+  handle('app:repository-location', async (repo, action) => {
+    if (!git.wsl?.isRepository(repo)) return repositoryLocation(git, shell, clipboard, repo, action)
+    if (!['copy-path', 'show-folder'].includes(action)) throw Error('不支持的仓库位置操作。')
+    const { parseWslPath, toUnc } = require('./wsl-path.cjs')
+    const { distribution, linuxPath } = parseWslPath(repo)
+    const root = toUnc(
+      distribution,
+      await git.wsl.invoke(distribution, 'canonical-repository', [linuxPath]),
+    )
+    if (action === 'copy-path') clipboard.writeText(root)
+    else shell.showItemInFolder(root)
+  })
   handle('window:maximize', () =>
     mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize(),
   )
@@ -426,6 +438,9 @@ function createWindow() {
   ])
     mainWindow.on(event, state)
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    const previous = git.terminal
+    git.terminal = new TerminalService(git)
+    void previous.shutdown()
     contextMenus.close()
     closing.rendererGone()
     void recovery.recover('crash', `原因：${details.reason}；退出码：${details.exitCode}`)
@@ -434,6 +449,12 @@ function createWindow() {
     void recovery.recover('unresponsive')
   })
   mainWindow.webContents.on('did-start-loading', () => contextMenus.close())
+  mainWindow.webContents.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => {
+    if (!isMainFrame || inPlace) return
+    const previous = git.terminal
+    git.terminal = new TerminalService(git)
+    void previous.shutdown()
+  })
   mainWindow.on('closed', () => contextMenus.close())
   mainWindow.once('ready-to-show', () => {
     if (restoreMaximized) {

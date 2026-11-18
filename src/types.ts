@@ -1,3 +1,6 @@
+import type { GitConsoleReply, GitConsoleRequest } from './gitConsoleTypes'
+import type { TerminalReply, TerminalRequest } from './terminalTypes'
+
 export interface Commit {
   hash: string
   parents: string[]
@@ -55,11 +58,36 @@ export interface HistoryRequest {
   offset?: number
   sha?: string
 }
+export interface HistoryToolRequest {
+  kind: 'file' | 'diff' | 'three' | 'query' | 'cancel'
+  scope?: string
+  local?: boolean
+  path?: string
+  oldPath?: string
+  revision?: string
+  base?: string
+  token?: string
+  offset?: number
+  query?: string
+  author?: string
+  branch?: string
+  since?: string
+  until?: string
+}
+export interface HistoryToolResult {
+  commits?: (Commit & { path?: string; oldPath?: string })[]
+  nextOffset?: number | null
+  diff?: string
+  versions?: { exists: boolean; text: string | null; binary: boolean }[]
+  signature?: string
+}
 export interface HistoryPage {
   commits: Commit[]
   history: HistoryState
 }
 export interface Snapshot {
+  execution?: { kind: 'wsl'; distribution: string; gitPath: string; gitVersion: string }
+  referenceSignature?: string
   history?: HistoryState
   remotes?: string[]
   merge?: MergeState | null
@@ -205,6 +233,7 @@ export interface DirectoryListing {
   root: string
   folders: DirectoryEntry[]
   truncated: boolean
+  locations?: { name: string; path: string }[]
 }
 export interface OperationContext {
   expectedHead: string
@@ -514,10 +543,14 @@ export interface RepositoryFetchSettings {
   }[]
 }
 export interface DesktopBridge {
+  gitConsole?(repo: string, request: GitConsoleRequest): Promise<GitConsoleReply>
+  terminal?(repo: string, request: TerminalRequest): Promise<TerminalReply | void>
+  refreshReferences?(repo: string, signature: string): Promise<Snapshot | null>
   fetchSettingsRead?(repo: string): Promise<RepositoryFetchSettings>
   openCommit?(repo: string, request: CommitOperationRequest, remote: string): Promise<void>
   commitOperationRead?(repo: string, request: CommitOperationRequest): Promise<CommitOperationRead>
   historyMetadata?(repo: string, sha: string): Promise<CommitMetadata>
+  historyTools?(repo: string, request: HistoryToolRequest): Promise<HistoryToolResult>
   historyRead?(repo: string, request: HistoryRequest): Promise<HistoryPage>
   repositoryTrust?(repo: string): Promise<RepositoryTrustInfo>
   approveRepositoryTrust?(repo: string, token: string): Promise<{ path: string }>
@@ -578,7 +611,7 @@ export interface DesktopBridge {
   chooseDirectory(initialPath?: string, purpose?: 'repository' | 'parent'): Promise<string | null>
   listDirectory(initialPath?: string): Promise<DirectoryListing>
   cancel(): Promise<void>
-  openResource(resource: 'git-docs' | 'git-book'): Promise<void>
+  openResource(resource: 'git-docs' | 'git-book' | 'git-install'): Promise<void>
 }
 export type GitAction =
   | ({

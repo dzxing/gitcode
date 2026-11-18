@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { vOverflowTitle } from '../directives/overflowTitle'
 import { useRepositoryStore } from '../stores/repository'
 import { useStashStore } from '../stores/stash'
 import Icon from './Icon.vue'
@@ -77,7 +78,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
           :data-stash-file-path="file.path"
           :aria-pressed="store.selectedFile?.path === file.path"
           :aria-label="`查看贮藏文件差异 ${file.path}`"
-          :title="file.path"
+          v-overflow-title="{ text: file.path, target: '.file-name, span' }"
           @click="stash.preview(file.path)"
         >
           <Icon
@@ -175,7 +176,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
         <button
           class="primary-button"
           :disabled="!!stash.restoreBlocked"
-          :title="stash.restoreBlocked || '恢复并保留这条记录'"
+          :title="stash.restoreBlocked || undefined"
           @click="stash.restore('stash-apply')"
         >
           <Icon
@@ -187,7 +188,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
         ><button
           class="secondary-button"
           :disabled="!!stash.restoreBlocked"
-          :title="stash.restoreBlocked || '恢复成功后移除这条记录'"
+          :title="stash.restoreBlocked || undefined"
           @click="stash.restore('stash-pop')"
         >
           <Icon

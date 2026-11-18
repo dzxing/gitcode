@@ -28,10 +28,7 @@ for (const size of [11, 16])
       '.staging-zone-title',
     ])
       await expect(page.locator(selector).first()).toHaveCSS('font-size', `${size}px`)
-    await expect(page.locator('.section-count').first()).toHaveCSS(
-      'font-size',
-      `${Math.max(11, size - 1)}px`,
-    )
+    await expect(page.locator('.section-count')).toHaveCount(0)
     // Populate read-only plans through the same stores as the UI; no Git writes are allowed.
     await page.evaluate(`(async () => {
       const useRepositoryStore=()=>document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('repository');
