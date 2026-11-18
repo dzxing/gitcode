@@ -17,12 +17,6 @@ const operation = computed(() =>
 const origin = computed(() => (store.busy ? store.operationOrigin : store.fetchOrigin))
 const cancelling = computed(() => store.cancelling || store.fetchCancelling)
 const label = computed(() => (store.busy ? store.operationLabel : '获取远程分支'))
-const visible = computed(
-  () =>
-    store.isWorking &&
-    !store.modal &&
-    ['clone', 'fetch', 'pull', 'push', 'pull-and-push', 'prepare-sync'].includes(operation.value),
-)
 let timer: ReturnType<typeof setTimeout> | undefined
 let version = 0
 watch(
@@ -67,7 +61,6 @@ onUnmounted(() => {
 
 <template>
   <aside
-    v-if="visible"
     class="operation-feedback"
     role="status"
     aria-live="polite"

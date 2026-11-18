@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { presentDiff } from '../diffPresentation'
 import { vOverflowTitle } from '../directives/overflowTitle'
 import { useHistoryToolsStore } from '../stores/historyTools'
 import { computed, ref } from 'vue'
@@ -14,34 +15,7 @@ const partial = usePartialStage(() => diffScroll.value)
 const diff = computed(() =>
   partial.enabled.value && partial.plan.value ? partial.plan.value.diff : store.diffText,
 )
-const lines = computed(() => {
-  let old = 0,
-    next = 0,
-    inside = false
-  return diff.value.split('\n').map((text) => {
-    const hunk = text.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)/)
-    if (hunk) {
-      inside = true
-      old = Number(hunk[1])
-      next = Number(hunk[2])
-      return { text, type: 'hunk', old: '', next: '' }
-    }
-    if (
-      !inside &&
-      (text.startsWith('+++') ||
-        text.startsWith('---') ||
-        text.startsWith('diff ') ||
-        text.startsWith('index ') ||
-        text.startsWith('new file') ||
-        text.startsWith('deleted file'))
-    )
-      return { text, type: 'meta', old: '', next: '' }
-    const type = text.startsWith('+') ? 'add' : text.startsWith('-') ? 'remove' : 'context'
-    if (!inside) return { text, type: 'meta', old: '', next: '' }
-    if (text.startsWith('\\')) return { text, type: 'meta', old: '', next: '' }
-    return { text, type, old: type === 'add' ? '' : old++, next: type === 'remove' ? '' : next++ }
-  })
-})
+const lines = computed(() => presentDiff(diff.value))
 const stats = computed(() => ({
   add: lines.value.filter((l) => l.type === 'add').length,
   remove: lines.value.filter((l) => l.type === 'remove').length,
@@ -297,7 +271,15 @@ function retryDiff() {
         </span>
         <span class="line-number">{{ line.old }}</span
         ><span class="line-number">{{ line.next }}</span
-        ><code>{{ line.text || ' ' }}</code>
+        ><code
+          ><template v-if="line.change"
+            >{{ line.text.slice(0, line.change.start)
+            }}<mark class="diff-fragment">{{
+              line.text.slice(line.change.start, line.change.end)
+            }}</mark
+            >{{ line.text.slice(line.change.end) }}</template
+          ><template v-else>{{ line.text || ' ' }}</template></code
+        >
         <span
           v-if="partial.enabled.value && partial.hunkMap.value.has(i)"
           class="partial-hunk-actions"
@@ -357,7 +339,8 @@ function retryDiff() {
   line-height: 1.5;
 }
 .partial-mode .diff-line.is-partial-selected {
-  box-shadow: inset 3px 0 #72bfd2;
+  box-shadow: inset 3px 0 var(--focus-ring);
+  color: var(--view-selection-color);
   background-color: var(--view-selection-bg, #294b5b);
 }
 .partial-gutter {

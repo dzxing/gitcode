@@ -13,6 +13,77 @@ const {
 const { GitService } = require('../electron/git.cjs')
 const gitRuntime = require('../electron/git-runtime.cjs')
 
+test('discovery accepts runnable maintenance versions without a release cutoff', async () => {
+  for (const version of ['2.31.9', '2.39.6', '2.40.4', '2.43.7', '2.45.2.windows.1']) {
+    const found = await discover(async () => ({ code: 0, stdout: `git version ${version}` }), {
+      env: {},
+      selection: { mode: 'custom', path: '/selected/git' },
+    })
+    assert.equal(found.path, '/selected/git')
+    assert.equal(found.version, `git version ${version}`)
+  }
+  const invalid = await discover(async () => ({ code: 0, stdout: 'not Git' }), {
+    env: {},
+    selection: { mode: 'custom', path: '/selected/git' },
+  })
+  assert.equal(invalid.path, undefined)
+  assert.match(invalid.error, /未能检测到可运行的 Git/)
+})
+
+test('command capability help is cached per runtime, and failed probes can retry', async (t) => {
+  const git = new GitService()
+  t.after(() => git.shutdown())
+  git.discover = async () => {}
+  let calls = 0
+  git.git = async (_repo, args, options) => {
+    calls++
+    assert.deepEqual(args, ['hook', 'run', '-h'])
+    assert.equal(options.locale, 'C')
+    if (calls === 1) throw Error('cancelled probe')
+    return { code: 129, stdout: '', stderr: 'usage: git hook run --to-stdin=<path>' }
+  }
+  await assert.rejects(git.commandHelp('/repo', ['hook', 'run']), /cancelled probe/)
+  assert.match(await git.commandHelp('/repo', ['hook', 'run']), /--to-stdin/)
+  await git.commandHelp('/other-repo', ['hook', 'run'])
+  assert.equal(calls, 2)
+  git.runtimeRevision++
+  await git.commandHelp('/repo', ['hook', 'run'])
+  assert.equal(calls, 3)
+})
+
+test('negatable options in builtin usage are recognized as supported options', async (t) => {
+  const git = new GitService()
+  t.after(() => git.shutdown())
+  git.discover = async () => {}
+  git.git = async () => ({
+    code: 129,
+    stdout: '',
+    stderr: 'usage: git add --pathspec-from-file=<file> --[no-]pathspec-file-nul',
+  })
+  assert.match(await git.commandHelp('/repo', ['add']), /--pathspec-file-nul/)
+})
+
+test('missing builtin commands are capabilities, while real detection errors remain retryable', async (t) => {
+  const git = new GitService()
+  t.after(() => git.shutdown())
+  git.discover = async () => {}
+  let calls = 0
+  git.git = async () => {
+    calls++
+    return { code: 1, stdout: '', stderr: "git: 'hook' is not a git command. See 'git --help'." }
+  }
+  assert.equal(await git.commandHelp('/repo', ['hook', 'run']), '')
+  assert.equal(await git.commandHelp('/repo', ['hook', 'run']), '')
+  assert.equal(calls, 1)
+  git.git = async () => {
+    calls++
+    return { code: 1, stdout: '', stderr: 'temporary detection failure' }
+  }
+  await assert.rejects(git.commandHelp('/repo', ['add']), /temporary detection failure/)
+  await assert.rejects(git.commandHelp('/repo', ['add']), /temporary detection failure/)
+  assert.equal(calls, 3)
+})
+
 test('Windows ignores old bundled resources and uses installed Git', async () => {
   const calls = []
   const found = await discover(
@@ -27,7 +98,7 @@ test('Windows ignores old bundled resources and uses installed Git', async () =>
   assert.ok(calls.every((file) => !file.includes('resources')))
 })
 
-test('automatic search rejects outdated PATH Git and finds a suitable standard installation', async () => {
+test('automatic search accepts an older runnable PATH Git without replacing it', async () => {
   const found = await discover(
     async (file) => {
       if (file.includes('resources')) throw Object.assign(new Error('missing'), { code: 'ENOENT' })
@@ -43,7 +114,7 @@ test('automatic search rejects outdated PATH Git and finds a suitable standard i
     },
   )
   assert.equal(found.source, 'system')
-  assert.equal(found.path, 'C:\\Program Files\\Git\\cmd\\git.exe')
+  assert.equal(found.path, 'git.exe')
 })
 
 test('explicit custom Git and environment overrides never silently switch to another executable', async () => {
@@ -55,13 +126,13 @@ test('explicit custom Git and environment overrides never silently switch to ano
     const found = await discover(
       async (file) => {
         calls.push(file)
-        return { code: 0, stdout: 'git version 2.45.2' }
+        return { code: 1, stdout: '', stderr: 'cannot start Git' }
       },
       { env: {}, resourcesPath: '/resources', ...options },
     )
     assert.equal(calls.length, 1)
     assert.equal(found.path, undefined)
-    assert.match(found.error, /2\.45\.2/)
+    assert.match(found.error, /cannot start Git/)
   }
 })
 

@@ -403,7 +403,7 @@ class WslManager {
       client.runtime = await client.request('runtime-refresh')
       if (!client.runtime.gitAvailable)
         throw Error(
-          `WSL ${client.distribution}：请在该发行版中安装 Git 2.46 或更高版本，再重新打开仓库。\n${client.runtime.gitError || ''}`,
+          `WSL ${client.distribution}：请在该发行版中安装或配置可运行的 Git，再重新打开仓库。\n${client.runtime.gitError || ''}`,
         )
     }
     if (generation !== this.generation || this.closing)

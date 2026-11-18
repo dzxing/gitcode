@@ -2,6 +2,7 @@
 import { vOverflowTitle } from '../directives/overflowTitle'
 import { computed } from 'vue'
 import Icon from './Icon.vue'
+import { fileStatusPresentation } from '../fileStatus'
 import type { WorktreeChange, WorktreeNode } from '../worktree'
 import { stagingSelectionState } from '../worktree'
 import { useContextMenuStore } from '../stores/contextMenu'
@@ -37,15 +38,16 @@ const fullPath = computed(() =>
 const directory = computed(() =>
   props.node.path.includes('/') ? props.node.path.slice(0, props.node.path.lastIndexOf('/')) : '',
 )
-const statusText: Record<string, string> = {
-  M: '已修改',
-  A: '已添加',
-  D: '已删除',
-  R: '已重命名',
-  '?': '未跟踪',
-  U: '合并冲突',
-  T: '类型变更',
-}
+const status = computed(() =>
+  fileStatusPresentation(props.node.file?.conflict ? 'U' : props.node.file?.status || ''),
+)
+const folderStatus = computed(() =>
+  props.node.files.some((file) => file.conflict)
+    ? 'conflict'
+    : props.node.files.every((file) => file.status === '?')
+      ? 'untracked'
+      : 'modified',
+)
 function keydown(event: KeyboardEvent) {
   menu.keyboard(event, {
     kind: 'files',
@@ -107,6 +109,9 @@ function keydown(event: KeyboardEvent) {
         'is-detailed': detailed && node.kind === 'file',
         'is-conflict': node.file?.conflict,
       }"
+      :data-file-status="
+        node.file ? status.kind : node.kind === 'directory' ? folderStatus : undefined
+      "
       :data-worktree-key="node.key"
       :data-worktree-path="node.file ? node.path : undefined"
       :style="{ '--worktree-depth': depth }"
@@ -182,9 +187,9 @@ function keydown(event: KeyboardEvent) {
 
         <span
           class="worktree-file-status file-status"
-          :class="`status-${node.file.status}`"
-          :title="menu.hoverTitle(statusText[node.file.status])"
-          >{{ node.file.status === '?' ? 'U' : node.file.status }}</span
+          :class="`status-${status.code}`"
+          :title="menu.hoverTitle(status.label)"
+          >{{ status.code }}</span
         >
       </button>
       <button
@@ -360,26 +365,6 @@ function keydown(event: KeyboardEvent) {
   flex-shrink: 0;
   margin-left: auto;
   font: var(--ui-font-help)/1.5 var(--mono);
-}
-.status-A {
-  color: var(--git-added);
-}
-.status-M,
-.status-T {
-  color: var(--git-modified);
-}
-.status-D,
-.status-U {
-  color: var(--git-deleted);
-}
-.status-R {
-  color: var(--git-renamed);
-}
-.status-\? {
-  color: var(--muted);
-}
-.is-conflict .worktree-file-name {
-  color: var(--git-deleted);
 }
 .is-detailed.file-row {
   height: 40px;

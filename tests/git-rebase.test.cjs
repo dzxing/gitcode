@@ -98,6 +98,45 @@ test('ordinary rebase rewrites only the current branch, ignoring updateRefs conf
   assert.equal((await f.cmd('rev-parse', 'main')).trim(), f.base)
   assert.notEqual(await f.git.head(f.repo), f.original)
 })
+test('legacy rebase options preserve empty-stop and branch isolation behavior', async (t) => {
+  const f = await fixture(t),
+    p = await f.plan(),
+    help = f.git.commandHelp.bind(f.git),
+    command = f.git.git.bind(f.git)
+  await f.cmd('branch', 'other', f.original)
+  await f.cmd('config', 'rebase.updateRefs', 'true')
+  f.git.commandHelp = async (...args) =>
+    (await help(...args)).replace(/^.*update-refs.*$/gm, '').replace(/\bstop\b/g, 'ask')
+  let actual
+  f.git.git = async (repo, args, options) => {
+    if (args.includes('rebase') && args.includes('--interactive')) actual = args
+    return command(repo, args, options)
+  }
+  const result = await f.start(p.rebase.steps)
+  assert.equal(result.outcome, 'succeeded', result.error)
+  assert.ok(actual.includes('--empty=ask'))
+  assert.ok(!actual.includes('--no-update-refs'))
+  assert.equal((await f.cmd('rev-parse', 'other')).trim(), f.original)
+  assert.equal((await f.cmd('rev-parse', 'HEAD~2')).trim(), f.target)
+})
+
+test('missing interactive rebase capabilities fail before writing operation state', async (t) => {
+  const f = await fixture(t),
+    p = await f.plan(),
+    before = await f.cmd('status', '--porcelain'),
+    indexPath = (await f.git.gitPaths(f.repo, ['index'])).get('index'),
+    index = await fs.readFile(indexPath)
+  f.git.commandHelp = async () => 'usage: git rebase --interactive'
+  const result = await f.start(p.rebase.steps)
+  assert.equal(result.outcome, 'failed')
+  assert.match(result.error, /缺少交互式变基所需的选项/)
+  assert.equal(await f.git.head(f.repo), f.original)
+  assert.equal(await f.cmd('status', '--porcelain'), before)
+  assert.deepEqual(await fs.readFile(indexPath), index)
+  const metadata = await f.git.rebase.location(f.repo, 'gitcode-rebase.json')
+  assert.equal(await fs.stat(metadata).catch(() => null), null)
+})
+
 test('dirty tracked changes survive native autostash and untracked files remain', async (t) => {
   const f = await fixture(t, { dirty: true })
   await f.write('local draft.txt', 'draft\n')

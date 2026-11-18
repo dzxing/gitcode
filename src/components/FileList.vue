@@ -5,6 +5,7 @@ import { useFileViewStore } from '../stores/fileView'
 import { useRepositoryStore } from '../stores/repository'
 import type { FileChange } from '../types'
 import Icon from './Icon.vue'
+import { fileStatusPresentation } from '../fileStatus'
 import { useContextMenuStore } from '../stores/contextMenu'
 const menu = useContextMenuStore()
 
@@ -15,15 +16,6 @@ const mode = computed(() => view.modes[props.historical ? 'history' : 'worktree'
 const name = (path: string) => path.split('/').pop()
 const directory = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
 const fullPath = (file: FileChange) => (file.oldPath ? `${file.oldPath} → ${file.path}` : file.path)
-const statusTitle: Record<string, string> = {
-  M: '已修改',
-  A: '新增',
-  '?': '未跟踪',
-  D: '已删除',
-  R: '重命名',
-  U: '合并冲突',
-  T: '类型变更',
-}
 </script>
 
 <template>
@@ -35,6 +27,7 @@ const statusTitle: Record<string, string> = {
       v-for="file in files"
       :key="file.path"
       class="file-row"
+      :data-file-status="fileStatusPresentation(file.status).kind"
       :class="{
         selected:
           store.selectedFile?.path === file.path && (historical || store.fileStaged === !!staged),
@@ -88,9 +81,9 @@ const statusTitle: Record<string, string> = {
           >{{ fullPath(file) }}</span
         ><span
           class="file-status"
-          :class="`status-${file.status[0]}`"
-          :title="statusTitle[file.status[0]!] || file.status"
-          >{{ file.status === '?' ? 'U' : file.status[0] }}</span
+          :class="`status-${fileStatusPresentation(file.status).code}`"
+          :title="fileStatusPresentation(file.status).label"
+          >{{ fileStatusPresentation(file.status).code }}</span
         >
       </button>
       <button

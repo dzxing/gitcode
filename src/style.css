@@ -64,6 +64,22 @@
   --git-modified: #e5b45c;
   --git-deleted: #df7c82;
   --git-renamed: #8cb0df;
+  --file-status-modified: #9dc0ef;
+  --file-status-added: #a1cd94;
+  --file-status-deleted: #babec6;
+  --file-status-renamed: #91d0c9;
+  --file-status-untracked: #e0b795;
+  --file-status-conflict: #f5aaa5;
+  /* Diff colors describe content changes, independently of filename status colors. */
+  --diff-added-bg: color-mix(in srgb, var(--file-status-added) 9%, var(--bg));
+  --diff-removed-bg: color-mix(in srgb, var(--file-status-conflict) 9%, var(--bg));
+  --diff-added-fragment: color-mix(in srgb, var(--file-status-added) 23%, var(--bg));
+  --diff-removed-fragment: color-mix(in srgb, var(--file-status-conflict) 23%, var(--bg));
+  --conflict-highlight-bg: color-mix(
+    in srgb,
+    var(--file-status-conflict) 12%,
+    var(--surface-raised)
+  );
   --favorite-color: #e4bc7c;
   --font-ui: var(--font-ui-default, 'Cascadia Mono', 'Noto Sans SC', system-ui, sans-serif);
   --font-code: var(--font-code-default, 'Cascadia Mono', 'Noto Sans SC', monospace);
@@ -202,6 +218,8 @@ strong {
   height: 0;
 }
 .app-shell {
+  --titlebar-height: 38px;
+  --toolbar-height: 52px;
   display: flex;
   flex-direction: column;
   height: 100dvh;
@@ -303,7 +321,7 @@ strong {
 }
 .titlebar {
   display: flex;
-  height: 38px;
+  height: var(--titlebar-height);
   flex-shrink: 0;
   align-items: center;
   background: var(--surface-tabs);
@@ -515,7 +533,7 @@ strong {
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  height: 52px;
+  height: var(--toolbar-height);
   background: var(--surface-toolbar);
   border-bottom: 1px solid var(--line);
   gap: 16px;
@@ -2271,22 +2289,39 @@ strong {
 .file-status {
   margin-left: auto;
   font: var(--ui-font-help)/1.5 var(--mono);
-  color: var(--theme-caption, #7e93a7);
+  color: var(--file-status-color, var(--text-secondary));
   padding-left: 6px;
 }
-.status-M {
-  color: var(--git-modified);
+[data-file-status='modified'],
+[data-file-status='type-changed'] {
+  --file-status-color: var(--file-status-modified);
 }
-.status-A,
-.status-\? {
-  color: var(--git-added);
+[data-file-status='added'],
+[data-file-status='copied'] {
+  --file-status-color: var(--file-status-added);
 }
-.status-D,
-.status-U {
-  color: var(--git-deleted);
+[data-file-status='deleted'] {
+  --file-status-color: var(--file-status-deleted);
 }
-.status-R {
-  color: var(--git-renamed);
+[data-file-status='renamed'] {
+  --file-status-color: var(--file-status-renamed);
+}
+[data-file-status='untracked'] {
+  --file-status-color: var(--file-status-untracked);
+}
+[data-file-status='conflict'] {
+  --file-status-color: var(--file-status-conflict);
+}
+[data-file-status='unknown'] {
+  --file-status-color: var(--text);
+}
+[data-file-status] :is(.file-basename, .stash-file-name),
+[data-file-status] .worktree-folder-main > span {
+  color: var(--file-status-color, var(--text));
+}
+/* Selection uses its own readable ink; status letters still convey the type. */
+:is(.file-row.selected, .worktree-node-row.is-active, .stash-file.selected)[data-file-status] {
+  --file-status-color: var(--view-selection-color);
 }
 .file-action {
   width: var(--compact-button-size);
@@ -2646,16 +2681,31 @@ strong {
   tab-size: 4;
 }
 .diff-line.add {
-  background: var(--theme-success-fill, #4d9a6d12);
-}
-.diff-line.add code {
-  color: color-mix(in srgb, var(--theme-success-text, #8cc4a1) 80%, var(--bright));
+  background: var(--diff-added-bg);
+  box-shadow: inset 3px 0 var(--file-status-added);
 }
 .diff-line.remove {
-  background: var(--theme-danger-fill, #be657317);
+  background: var(--diff-removed-bg);
+  box-shadow: inset 3px 0 var(--file-status-conflict);
 }
-.diff-line.remove code {
-  color: color-mix(in srgb, var(--theme-danger-text, #c68d95) 80%, var(--bright));
+.diff-line :is(code, .diff-fragment) {
+  color: var(--text);
+}
+.diff-line .diff-fragment {
+  color: var(--bright);
+  padding: 0;
+  background: var(--diff-added-fragment);
+}
+.diff-line.remove .diff-fragment {
+  background: var(--diff-removed-fragment);
+}
+.diff-line.is-partial-selected :is(code, .line-number, .diff-fragment) {
+  color: var(--view-selection-color);
+}
+.diff-line.is-partial-selected .diff-fragment {
+  background: transparent;
+  text-decoration: underline;
+  text-decoration-style: dotted;
 }
 .diff-line.hunk {
   background: var(--theme-overlay, #4977a71a);
@@ -2872,7 +2922,7 @@ strong {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel);
-  box-shadow: 0 4px 16px #0003;
+  box-shadow: none;
   font-size: var(--ui-font-size);
   line-height: 1.5;
 }
@@ -3280,8 +3330,8 @@ strong {
 }
 .toast-stack {
   position: fixed;
-  right: 23px;
-  bottom: 45px;
+  right: 16px;
+  top: calc(var(--titlebar-height) + 12px);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -3295,10 +3345,9 @@ strong {
   pointer-events: none;
   container-type: inline-size;
 }
-/* Keep notices within the history column so the entire Inspector remains usable. */
-.app-shell:has(.workbench) .toast-stack {
-  right: calc(var(--inspector-width) + 24px);
-  width: min(360px, calc(100vw - var(--sidebar-width) - var(--inspector-width) - 48px));
+/* Anchor to the window, below its chrome, independent of resized panels. */
+.app-shell:has(.toolbar) .toast-stack {
+  top: calc(var(--titlebar-height) + var(--toolbar-height) + 12px);
 }
 .toast {
   display: grid;
@@ -3310,11 +3359,42 @@ strong {
   background: var(--theme-fill, #27362f);
   border: 1px solid var(--theme-border, #476b58);
   border-radius: 7px;
-  box-shadow: 0 6px 30px #0005;
+  box-shadow: none;
   padding: 10px 12px;
   color: var(--theme-text, #b4d3be);
-  animation: toast-in 0.18s ease-out;
   pointer-events: auto;
+}
+.notification-enter-active {
+  transition:
+    opacity 160ms ease-out,
+    transform 160ms ease-out;
+}
+.notification-leave-active {
+  position: absolute;
+  left: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease-in,
+    transform 120ms ease-in;
+}
+.notification-enter-from,
+.notification-leave-to {
+  opacity: 0;
+  transform: translateX(8px);
+}
+.notification-move {
+  transition: transform 160ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notification-enter-active,
+  .notification-leave-active,
+  .notification-move {
+    transition: none;
+  }
+  .notification-enter-from,
+  .notification-leave-to {
+    transform: none;
+  }
 }
 .toast > svg {
   margin-top: 4px;
@@ -3963,14 +4043,6 @@ strong {
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-@keyframes toast-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 @media (min-width: 1600px) {

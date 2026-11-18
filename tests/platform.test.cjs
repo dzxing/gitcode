@@ -37,7 +37,8 @@ for (const [platform, id] of [
       async () => ({ code: 0, stdout: 'git version 2.45.0', stderr: '' }),
       { platform, env: {}, selection: { mode: 'custom', path: '/selected/git' } },
     )
-    assert.match(old.error, /需要 Git 2.46/)
+    assert.equal(old.path, '/selected/git')
+    assert.equal(old.version, 'git version 2.45.0')
     if (platform !== 'win32') {
       const env = { PATH: '/my/bin', GIT_EXEC_PATH: '/my/git/core' }
       assert.equal(environmentForGit(env, '/selected/git', 'system', platform), env)

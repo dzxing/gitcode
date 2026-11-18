@@ -345,7 +345,7 @@ function returnToDraft() {
   text-align: left;
   font-size: var(--ui-font-size);
   min-height: 26px;
-  color: var(--git-modified);
+  color: var(--file-status-conflict);
 }
 .conflict-file-name span {
   overflow: hidden;
@@ -355,8 +355,8 @@ function returnToDraft() {
 .conflict-file-name svg {
   flex-shrink: 0;
 }
-.conflict-file-name:hover {
-  color: var(--text);
+.conflict-file-name:not(:disabled):hover {
+  background: var(--control-hover-bg);
 }
 .conflict-file-actions {
   display: flex;
@@ -385,7 +385,7 @@ function returnToDraft() {
   overflow-wrap: anywhere;
 }
 .resolved-files svg {
-  color: var(--git-added);
+  color: var(--file-status-added);
   flex-shrink: 0;
 }
 .merge-files-scroll > .secondary-button {

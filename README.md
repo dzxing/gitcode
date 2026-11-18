@@ -6,7 +6,7 @@
 
 ## 安装与启动
 
-开发需要 Node.js 22.12+、Bun 1.3.14+、Git 2.46+。桌面工具独立安装，避免浏览器预览和业务测试必须下载 Electron：
+开发需要 Node.js 22.12+、Bun 1.3.14+ 和可运行的 Git。桌面工具独立安装，避免浏览器预览和业务测试必须下载 Electron：
 
 ```bash
 bun install
@@ -171,7 +171,9 @@ bun run desktop:build
 
 安装包不再附带 Git，也不会在构建时下载 PortableGit。Windows 的 `beforePack` 只准备 WSL 核心所需的 Linux Node 运行时，校验固定 SHA256，并保留许可证；用户无须额外安装 Node。旧的本地 PortableGit 缓存不会进入新安装包。
 
-各平台均使用所在环境中的 Git（2.46 或更高），Windows 会检查 PATH 和常见安装位置。未找到时提供“安装 Git”“选择已有 Git”和“重新检测 Git”；安装链接打开对应平台的官方安装说明，不自动执行安装命令。**文件 → 设置 → Git** 显示当前来源、版本和路径，可选“自动查找”或“自定义 Git”，验证、保存后即时生效。检测或保存失败时保留原运行环境，有 Git 操作时禁止切换。旧的“系统 Git”选项兼容为自动查找。`GITCODE_GIT_PATH`（兼容旧名 `GITK_GIT_PATH`）作为显式环境变量覆盖，优先于界面设置。用户 Git 配置、SSH 密钥和凭证仍使用当前用户环境，不随安装包分发。
+各平台均使用所在环境中的 Git，不再按 2.46 统一拦截；勾选提交和变基按实际命令能力检查与适配，Windows 会检查 PATH 和常见安装位置。未找到时提供“安装 Git”“选择已有 Git”和“重新检测 Git”；安装链接打开对应平台的官方安装说明，不自动执行安装命令。**文件 → 设置 → Git** 显示当前来源、版本和路径，可选“自动查找”或“自定义 Git”，验证、保存后即时生效。检测或保存失败时保留原运行环境，有 Git 操作时禁止切换。旧的“系统 Git”选项兼容为自动查找。`GITCODE_GIT_PATH`（兼容旧名 `GITK_GIT_PATH`）作为显式环境变量覆盖，优先于界面设置。用户 Git 配置、SSH 密钥和凭证仍使用当前用户环境，不随安装包分发。
+
+已确认信任的仓库会向 GitCode 启动的 Git 进程传入该仓库规范路径的 `safe.directory` 例外，解决 Windows 目录归属 Administrators 组而当前账户为具体用户时的所有权检查。此例外不写入全局 Git 配置，不包含其他仓库；首次确认和已有信任记录均可使用。目录或执行相关配置变化仍需重新确认。
 
 macOS 会额外检查 Apple Command Line Tools、Xcode、`DEVELOPER_DIR` 指定的开发工具路径，常规位置失败后通过 `xcrun --find git` 定位。检测失败会保留实际标准错误输出，详细路径默认折叠；终端可运行但应用失败时，可用 `command -v git` 和 `xcrun --find git` 确认完整路径后配置自定义 Git。安装开发工具后可使用“重新检测 Git”或启动页“重试”，已有有效 Git 的运行会话不会被静默切换。
 
@@ -186,7 +188,7 @@ node scripts/package-desktop.mjs --win --x64
 
 公开分发前仍需准备 Windows 代码签名、macOS 签名/公证和更新策略，并完成实机测试。手动触发的 `.github/workflows/desktop-validation.yml` 提供 Windows x64、macOS arm64/x64 的未签名验证构建，不自动发布版本。
 
-**安装后的应用无需安装 Node、Bun、Python 或 Rust，也无需启动服务。** 各平台均需安装 Git 2.46+；WSL 仓库使用对应发行版中的 Git。
+**安装后的应用无需安装 Node、Bun、Python 或 Rust，也无需启动服务。** 各平台均需安装可运行的 Git；WSL 仓库使用对应发行版中的 Git。
 
 ## 浏览器预览与测试
 
@@ -359,7 +361,7 @@ Windows/Linux 支持 Alt/F10、Alt+F/E/V/R/H、方向键、Enter、Esc；快捷�
 
 Git 操作无论成功、失败或取消，都尝试在独立、限时信号下重读状态；分别报告操作错误、清理错误和刷新错误。刷新保留有效的历史详情、差异和草稿。推送通信失败不能证明远端毫无变化，应先获取核对。
 
-保留命名 remote，避免直接传有效URL造成二次重写及 hook 远程名变化；冻结 OID 推送会使 pre-push hook 输入的源引用显示为 OID，依赖分支名的脚本可能需要适配，失败不会绕过 hook。配置/HEAD 复核是变化检测，**不是对外部 Git 进程的跨进程锁**。Git最低版本调整为2.46（本环境验证版本2.53.0），仍需Windows/macOS实机验证。
+保留命名 remote，避免直接传有效URL造成二次重写及 hook 远程名变化；冻结 OID 推送会使 pre-push hook 输入的源引用显示为 OID，依赖分支名的脚本可能需要适配，失败不会绕过 hook。配置/HEAD 复核是变化检测，**不是对外部 Git 进程的跨进程锁**。Git 检测不再设置统一的 2.46 门槛；勾选提交在写入前检测 Hook stdin 和 pathspec 文件选项，变基根据命令能力使用 `--empty=stop` 或旧版 `--empty=ask`。能力检测结果按运行环境缓存，切换 Git 后失效。已使用 Windows Git 2.45.2 验证提交、钩子和变基；这不表示全部历史版本或 macOS 已通过验证。Git 来源、升级和安全补丁由用户或企业 IT 维护。
 
 本轮三轮质疑收敛：第一轮拆清界面承诺与 Git 配置；第二轮检查 refspec、URL重写、hook 和共享 FETCH_HEAD；第三轮确认命名远程、固定提交、独立恢复、部分成功与兼容限制。策略参考 [GitKraken 同步说明](https://help.gitkraken.com/gitkraken-desktop/pushing-and-pulling/)、[Git fetch](https://git-scm.com/docs/git-fetch)、[Git push](https://git-scm.com/docs/git-push)、[Git hooks](https://git-scm.com/docs/githooks)。
 
@@ -381,7 +383,7 @@ Windows 原生应用通过独立的 WSL 核心访问 `\\wsl.localhost\...` / `\\
 
 Windows 版支持从“文件 → 打开 WSL 仓库…”或新标签页的同名入口浏览已安装的发行版，也可直接输入 `\\wsl.localhost\Ubuntu-26.04\home\用户名\项目` 或 `\\wsl$\发行版\路径`。
 
-WSL 仓库的 Git、文件读写、冲突处理、Hook 和文件监听全部在所选发行版中执行；Windows 仓库继续使用 Windows Git。每个发行版需要安装 Git 2.46+。Windows 安装包附带校验 SHA256 的 Linux Node 运行时，无须用户额外安装 Node，也不启动网络服务。运行时架构随安装包架构匹配，目标发行版需兼容官方 Node Linux 运行时（glibc）。开发模式可执行 `node -e "require('./scripts/prepare-wsl-runtime.cjs').prepareRuntime(process.cwd(),process.arch)"` 准备同一运行时，未准备时使用发行版 PATH 中的 Node。
+WSL 仓库的 Git、文件读写、冲突处理、Hook 和文件监听全部在所选发行版中执行；Windows 仓库继续使用 Windows Git。每个发行版需要安装可运行的 Git。Windows 安装包附带校验 SHA256 的 Linux Node 运行时，无须用户额外安装 Node，也不启动网络服务。运行时架构随安装包架构匹配，目标发行版需兼容官方 Node Linux 运行时（glibc）。开发模式可执行 `node -e "require('./scripts/prepare-wsl-runtime.cjs').prepareRuntime(process.cwd(),process.arch)"` 准备同一运行时，未准备时使用发行版 PATH 中的 Node。
 
 WSL 核心通过受限的标准输入输出协议复用现有 Git 服务。Windows 主进程集中保存信任记录和活动日志；信任记录按发行版隔离，多浏览器会话共用保存队列，不修改 WSL 的全局 Git 配置。Linux 核心连接中断时不会自动重放写入操作。
 

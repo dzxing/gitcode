@@ -213,10 +213,10 @@ defineExpose({ dirty, pending, validate, apply: save })
         <p class="form-hint">
           {{
             platform === 'macos'
-              ? '自动检查 Homebrew、MacPorts、Apple Command Line Tools、Xcode 和系统 Git，需要 2.46 或更高版本。'
+              ? '自动检查 Homebrew、MacPorts、Apple Command Line Tools、Xcode 和系统 Git。'
               : platform === 'windows'
-                ? '检查 PATH 和常见安装位置，需要 Git 2.46 或更高版本。'
-                : '查找当前系统可用的 Git，需要 2.46 或更高版本。'
+                ? '检查 PATH 和常见安装位置。'
+                : '查找当前系统可用的 Git。'
           }}
         </p>
         <label class="git-runtime-choice"

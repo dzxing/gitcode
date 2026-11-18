@@ -4,7 +4,8 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const os = require('node:os')
-const { GitService } = require('../electron/git.cjs')
+const { GitService, execute } = require('../electron/git.cjs')
+const { TRUST_READ } = require('../electron/repository-trust.cjs')
 async function setup(t) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-trust-'))
   const repo = path.join(root, 'app')
@@ -69,6 +70,98 @@ test('first open and background reads cannot run local filters before consent', 
   assert.equal((await f.git.snapshot(f.repo)).unstaged.length, 1)
   assert.equal(await fs.readFile(marker, 'utf8'), 'yes')
 })
+test('approved repositories work with Git ownership checks without changing global safe directories', async (t) => {
+  const f = await setup(t)
+  const globalBefore = await f.setupGit.git(
+    f.repo,
+    ['config', '--global', '--null', '--get-all', 'safe.directory'],
+    { allowedCodes: [0, 1] },
+  )
+  const previous = process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER
+  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1'
+  t.after(() => {
+    if (previous === undefined) delete process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER
+    else process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = previous
+  })
+  // This invokes Git's real ownership check, rather than mocking an error.
+  await assert.rejects(f.setupGit.git(f.repo, ['status', '--porcelain']), /dubious ownership/)
+  const consent = await f.git.trust.inspect(f.repo)
+  assert.equal(consent.trusted, false)
+  await assert.rejects(f.git.snapshot(f.repo), /信任/)
+  await f.git.trust.approve(f.repo, consent.token)
+  assert.equal((await f.git.snapshot(f.repo)).branch, 'qa/base')
+  await fs.writeFile(path.join(f.repo, 'file.txt'), 'approved update\n')
+  await f.git.git(f.repo, ['add', 'file.txt'])
+  await f.git.git(f.repo, ['commit', '-m', 'approved commit'])
+  const restarted = new GitService({
+    enforceRepositoryTrust: true,
+    dataDirectory: path.join(f.root, 'log'),
+  })
+  t.after(() => restarted.shutdown())
+  assert.equal((await restarted.trust.inspect(f.repo)).trusted, true)
+  assert.equal((await restarted.snapshot(f.repo)).branch, 'qa/base')
+  const globalAfter = await restarted.git(
+    f.repo,
+    ['config', '--global', '--null', '--get-all', 'safe.directory'],
+    { allowedCodes: [0, 1] },
+  )
+  assert.equal(globalAfter, globalBefore)
+  await restarted.git(f.repo, ['config', 'core.editor', 'false'])
+  await assert.rejects(restarted.snapshot(f.repo), /配置已变化/)
+  assert.equal((await restarted.trust.inspect(f.repo)).trusted, false)
+})
+
+test('pre-existing trust remains valid with ownership mismatch, and the exception excludes other repositories', async (t) => {
+  const f = await setup(t),
+    second = path.join(f.root, 'app-other')
+  await fs.mkdir(second)
+  await f.setupGit.git(second, ['init', '-b', 'qa/base'])
+  // Create a saved grant using the previous release's unscoped config read.
+  const command = f.git.git.bind(f.git)
+  f.git.git = (repo, args, options) =>
+    options?.[TRUST_READ]
+      ? f.setupGit.git(repo, args, { signal: options.signal })
+      : command(repo, args, options)
+  await f.approve()
+  f.git.git = command
+  const previous = process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER
+  process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = '1'
+  t.after(() => {
+    if (previous === undefined) delete process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER
+    else process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = previous
+  })
+  assert.equal((await f.git.trust.inspect(f.repo)).trusted, true)
+  await fs.mkdir(path.join(f.repo, 'nested'))
+  assert.equal(await f.git.git(path.join(f.repo, 'nested'), ['status', '--porcelain']), '')
+  await assert.rejects(f.git.snapshot(second), /信任/)
+  const safe = process.platform === 'win32' ? f.repo.replaceAll('\\', '/') : f.repo
+  const probe = await execute(f.setupGit.gitPath, [
+    '-c',
+    'safe.directory=',
+    '-c',
+    `safe.directory=${safe}`,
+    '-C',
+    second,
+    'status',
+    '--porcelain',
+  ])
+  assert.notEqual(probe.code, 0)
+  assert.match(probe.stderr, /dubious ownership/)
+})
+
+test(
+  'literal wildcard directory names cannot expand ownership consent',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const f = await setup(t),
+      wildcard = path.join(f.root, '*')
+    await fs.rename(f.repo, wildcard)
+    const info = await f.git.trust.inspect(wildcard)
+    await assert.rejects(f.git.trust.approve(wildcard, info.token), /精确的安全例外/)
+    assert.equal((await f.git.trust.inspect(wildcard)).trusted, false)
+  },
+)
+
 test('included filter stays blocked; trusted conversion remains functional', async (t) => {
   const f = await setup(t),
     { marker, file } = await filter(f, true)

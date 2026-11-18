@@ -296,6 +296,7 @@ class GitService {
     this.gitVersion = ''
     this.discovery = null
     this.runtimeRevision = 0
+    this.commandHelpCache = new Map()
     this.tail = Promise.resolve()
     this.current = null
     this.generation = 0
@@ -406,6 +407,7 @@ class GitService {
       this.gitError = ''
       this.discovery = Promise.resolve()
       this.repositoryLocations.clear()
+      this.commandHelpCache.clear()
       this.flow.plans.clear()
       this.flow.validatedStateConfigs.clear()
       this.sync.plans.clear()
@@ -504,8 +506,15 @@ class GitService {
       returnCode = false,
     } = {},
   ) {
+    let trustedPath = typeof trustRead === 'string' ? trustRead : ''
     if (this.runtimeOptions.enforceRepositoryTrust && !trustRead && !creatingRepository)
-      await this.trust.assert(repo, signal)
+      trustedPath = (await this.trust.assert(repo, signal)).path
+    const safeDirectory =
+      process.platform === 'win32' ? trustedPath.replaceAll('\\', '/') : trustedPath
+    // Git interprets a terminal /* as a directory-wide wildcard. Do not turn a
+    // literal POSIX directory named * into consent for its siblings.
+    if (safeDirectory.endsWith('/*'))
+      throw Error('无法为目录名为 * 的仓库设置精确的安全例外，请重命名该目录后重新打开。')
     await this.discover()
     if (!this.gitPath) throw new Error((await this.runtime()).gitError)
     const env = {
@@ -584,6 +593,7 @@ class GitService {
       record &&
       !this.background &&
       !trustRead &&
+      !args.includes('-h') &&
       !quiet.has(args[0]) &&
       !(args[0] === 'remote' && (!args[1] || ['-v', 'get-url', 'show'].includes(args[1]))) &&
       !(args[0] === 'worktree' && args[1] === 'list') &&
@@ -609,6 +619,9 @@ class GitService {
       'core.fsmonitor=false',
       '-c',
       'protocol.ext.allow=never',
+      // Scope Git's ownership exception to the already-approved canonical root.
+      // Clear inherited lists for this process only; never edit global config.
+      ...(trustedPath ? ['-c', 'safe.directory=', '-c', `safe.directory=${safeDirectory}`] : []),
       ...(process.platform === 'win32' ? ['-c', 'core.longpaths=true'] : []),
       ...(hooksPath ? ['-c', `core.hooksPath=${hooksPath}`] : []),
       ...args,
@@ -641,7 +654,8 @@ class GitService {
     const result = diagnose
       ? await diagnoseCommand(env, run, (diagnostic) => this.journal.diagnostic(record, diagnostic))
       : await run(env)
-    if (!trustRead) this.journal.command(record, args, result, Date.now() - commandStarted)
+    if (!trustRead && !args.includes('-h'))
+      this.journal.command(record, args, result, Date.now() - commandStarted)
     if (!allowedCodes.includes(result.code)) {
       if (optional && result.code === 1) return ''
       throw new Error(
@@ -690,6 +704,31 @@ class GitService {
       }
     }
     return root
+  }
+
+  async commandHelp(repo, command, signal) {
+    await this.discover()
+    const key = JSON.stringify([this.runtimeRevision, this.gitPath, this.gitVersion, command])
+    if (this.commandHelpCache.has(key)) return this.commandHelpCache.get(key)
+    // -h prints builtin usage without executing the operation. Keep failures
+    // uncached so cancellation or a transient runtime error can be retried.
+    const result = await this.git(repo, [...command, '-h'], {
+      signal,
+      locale: 'C',
+      allowedCodes: [0, 1, 129],
+      returnCode: true,
+    })
+    const help = `${result.stdout}\n${result.stderr}`
+    // Older releases may not have the subcommand at all. Treat that as a
+    // missing capability, while preserving real probe failures for retry.
+    if (result.code === 1 && !/is not a git command/.test(help))
+      throw new Error(
+        this.safeError(result.stderr.trim() || result.stdout.trim() || '无法检测 Git 命令能力。'),
+      )
+    if (this.commandHelpCache.size >= 32) this.commandHelpCache.clear()
+    const supportedHelp = result.code === 1 ? '' : help.replaceAll('--[no-]', '--')
+    this.commandHelpCache.set(key, supportedHelp)
+    return supportedHelp
   }
 
   async gitPaths(repo, names, signal) {

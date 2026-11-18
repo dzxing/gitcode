@@ -21,15 +21,17 @@ class SelectedCommitOperations {
   }
 
   async supported(repo, signal) {
-    await this.git.discover()
-    const version = this.git.gitVersion.match(/git version (\d+)\.(\d+)/)
-    if (
-      !this.git.gitPath ||
-      !version ||
-      Number(version[1]) < 2 ||
-      (Number(version[1]) === 2 && Number(version[2]) < 46)
-    )
-      throw new Error('勾选提交需要 Git 2.46 或更高版本，请升级 Git 后重试。')
+    for (const [command, option] of [
+      [['hook', 'run'], '--to-stdin'],
+      [['add'], '--pathspec-from-file'],
+      [['add'], '--pathspec-file-nul'],
+      [['reset'], '--pathspec-from-file'],
+      [['reset'], '--pathspec-file-nul'],
+    ])
+      if (!(await this.git.commandHelp(repo, command, signal)).includes(option))
+        throw new Error(
+          `当前 Git 不支持勾选提交所需的 ${command.join(' ')} ${option}，请使用暂存模式或升级 Git。`,
+        )
     // New Git versions may run configured hooks in addition to file hooks.
     // Forwarding them through our wrapper could run them twice, so defer this
     // configuration to the explicit native staging workflow until supported.

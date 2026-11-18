@@ -264,6 +264,10 @@ class RebaseOperations {
           return { sha: step.sha, type: step.type, message }
         })
       }
+      const help = await this.git.commandHelp(repo, ['rebase'], signal)
+      const emptyChoices = help.match(/--empty[^\r\n]*/)?.[0] || ''
+      if (steps && (!help.includes('reapply-cherry-picks') || !/\b(stop|ask)\b/.test(emptyChoices)))
+        throw new Error('当前 Git 缺少交互式变基所需的选项，请升级 Git 后重试。')
       await this.git.checkContext(repo, request, signal)
       const latestInfo = await this.git.navigation.reference(repo, request, signal)
       if (request.fromHere) latestInfo.fromHere = true
@@ -293,12 +297,18 @@ class RebaseOperations {
         [
           ...this.args(),
           '--merge',
-          '--no-update-refs',
+          ...(help.includes('update-refs') ? ['--no-update-refs'] : []),
           '--no-autosquash',
           '--no-fork-point',
           '--no-rebase-merges',
           '--autostash',
-          ...(steps ? ['--interactive', '--reapply-cherry-picks', '--empty=stop'] : []),
+          ...(steps
+            ? [
+                '--interactive',
+                '--reapply-cherry-picks',
+                /\bstop\b/.test(emptyChoices) ? '--empty=stop' : '--empty=ask',
+              ]
+            : []),
           ...(plan.root ? ['--root'] : [plan.fromHere ? plan.upstream : info.oid]),
         ],
         signal,

@@ -188,17 +188,17 @@ test('reference-transaction hooks receive original ref-update stdin and can refu
   assert.equal(await fs.stat(path.join(f.repo, '.git', 'index.lock')).catch(() => null), null)
 })
 
-test('older Git and configured event hooks fail before altering HEAD or index', async (t) => {
+test('missing hook capabilities and configured event hooks fail before altering HEAD or index', async (t) => {
   const f = await fixture(t)
   await f.write('a.txt', 'selected\n')
   const head = await f.git.head(f.repo),
     index = await f.index(),
-    version = f.git.gitVersion
+    commandHelp = f.git.commandHelp
   try {
-    f.git.gitVersion = 'git version 2.45.2.windows.1'
-    await assert.rejects(f.plan(['a.txt']), /Git 2\.46/)
+    f.git.commandHelp = async () => 'usage: git hook run --ignore-missing <hook>'
+    await assert.rejects(f.plan(['a.txt']), /hook run --to-stdin/)
   } finally {
-    f.git.gitVersion = version
+    f.git.commandHelp = commandHelp
   }
   assert.equal(await f.git.head(f.repo), head)
   assert.deepEqual(await f.index(), index)

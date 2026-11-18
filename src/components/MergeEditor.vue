@@ -10,6 +10,26 @@ const merge = useMergeStore(),
   index = ref(0),
   confirmDiscard = ref(false)
 const editorRoot = ref<HTMLElement>()
+const conflictBackdrop = ref<HTMLElement>()
+function syncConflictScroll(event: Event) {
+  const input = event.target as HTMLTextAreaElement
+  if (conflictBackdrop.value) {
+    conflictBackdrop.value.scrollTop = input.scrollTop
+    conflictBackdrop.value.scrollLeft = input.scrollLeft
+  }
+}
+const conflictSegments = computed(() => {
+  const text = merge.session.draft
+  const segments: { text: string; conflict: boolean }[] = []
+  let offset = 0
+  for (const block of blocks.value) {
+    segments.push({ text: text.slice(offset, block.start), conflict: false })
+    segments.push({ text: text.slice(block.start, block.end), conflict: true })
+    offset = block.end
+  }
+  segments.push({ text: text.slice(offset), conflict: false })
+  return segments
+})
 onMounted(async () => {
   await nextTick()
   editorRoot.value?.querySelector<HTMLButtonElement>('[aria-label="返回冲突列表"]')?.focus()
@@ -180,14 +200,32 @@ function reloadFile() {
         }}</pre>
       </div>
       <div class="merge-pane merge-result">
-        <h3>合并结果 · {{ file.editable ? '可编辑' : '只读' }}</h3>
-        <textarea
-          autocomplete="off"
-          v-model="merge.session.draft"
-          aria-label="编辑合并结果"
-          spellcheck="false"
-          :readonly="disabled || !file.editable"
-        />
+        <h3>
+          合并结果 · {{ file.editable ? '可编辑' : '只读'
+          }}<span
+            v-if="file.editable"
+            class="merge-result-status"
+            :class="{ 'has-conflicts': blocks.length }"
+            role="status"
+            >{{ blocks.length ? `${blocks.length} 个冲突块` : '待检查并保存' }}</span
+          >
+        </h3>
+        <div class="merge-result-input">
+          <pre
+            ref="conflictBackdrop"
+            class="merge-conflict-backdrop"
+            aria-hidden="true"
+          ><template v-for="(segment, i) in conflictSegments" :key="i"><mark v-if="segment.conflict">{{ segment.text }}</mark><template v-else>{{ segment.text }}</template></template>{{ '\n' }}</pre>
+          <textarea
+            autocomplete="off"
+            v-model="merge.session.draft"
+            aria-label="编辑合并结果"
+            spellcheck="false"
+            wrap="off"
+            :readonly="disabled || !file.editable"
+            @scroll="syncConflictScroll"
+          />
+        </div>
         <details>
           <summary>查看共同基础版本</summary>
           <pre>{{ file.base.exists ? (file.base.text ?? '非文本内容') : '无共同文件版本' }}</pre>
@@ -381,8 +419,42 @@ function reloadFile() {
   tab-size: 4;
   resize: none;
 }
-.merge-result textarea {
+.merge-result-input {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   background: var(--surface-raised);
+}
+.merge-result-input .merge-conflict-backdrop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: transparent;
+  background: transparent;
+}
+.merge-conflict-backdrop mark {
+  color: transparent;
+  background: var(--conflict-highlight-bg);
+  border-radius: 2px;
+}
+.merge-result-input textarea {
+  position: relative;
+  width: 100%;
+  background: transparent;
+  color: var(--text);
+}
+.merge-result-status {
+  float: right;
+  margin-left: 12px;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-help);
+  font-weight: 400;
+}
+.merge-result-status.has-conflicts {
+  color: var(--file-status-conflict);
 }
 .merge-result details {
   flex-shrink: 0;

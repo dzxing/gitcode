@@ -1,7 +1,7 @@
 import { openFixtureRepository } from './repository-fixture.ts'
 import { expect, test } from '@playwright/test'
 
-test('notices align the first line and close control without width jumps or Inspector overlap', async ({
+test('notices stay at the window top right while panel widths change and preserve aligned controls', async ({
   page,
 }) => {
   await openFixtureRepository(page)
@@ -31,12 +31,15 @@ test('notices align the first line and close control without width jumps or Insp
         e.style.setProperty('--inspector-width', '540px')
       })
     await notify(true)
+    await expect(page.locator('.toast').filter({ hasText: '已取消暂存' })).toHaveCSS('opacity', '1')
     await expect(page.locator('.toast')).toHaveCount(1)
     const initial = await page.locator('.toast').boundingBox()
     await notify()
+    await expect(page.locator('.toast.error')).toHaveCSS('opacity', '1')
     await expect(page.locator('.toast')).toHaveCount(2)
     const geometry = await page.locator('.toast-stack').evaluate((stack) => {
-      const inspector = document.querySelector('.inspector').getBoundingClientRect()
+      const bounds = stack.getBoundingClientRect()
+      const toolbar = document.querySelector('.toolbar').getBoundingClientRect()
       return [...stack.querySelectorAll('.toast')].map((e) => {
         const r = e.getBoundingClientRect(),
           icon = e.querySelector(':scope > svg').getBoundingClientRect()
@@ -56,14 +59,17 @@ test('notices align the first line and close control without width jumps or Insp
           iconX: icon.x,
           textTop: textBox.y,
           closeBottom: close.bottom,
-          inspectorX: inspector.x,
+          stackRightGap: innerWidth - bounds.right,
+          stackTopGap: bounds.top - toolbar.bottom,
         }
       })
     })
     for (const item of geometry) {
       expect(Math.abs(item.width - initial.width)).toBeLessThan(0.01)
       expect(Math.abs(item.iconY - item.closeY)).toBeLessThan(0.01)
-      expect(item.right).toBeLessThanOrEqual(item.inspectorX - 24)
+      expect(Math.abs(item.stackRightGap - 16)).toBeLessThan(0.01)
+      expect(Math.abs(item.stackTopGap - 12)).toBeLessThan(0.01)
+      expect(item.width).toBeGreaterThanOrEqual(320)
       if (!item.narrow) expect(Math.abs(item.lineY - item.closeY)).toBeLessThan(0.01)
       else {
         expect(item.textX).toBe(item.iconX)

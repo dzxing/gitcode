@@ -40,6 +40,12 @@
   --git-modified: #886018;
   --git-deleted: #b13b50;
   --git-renamed: #3268a3;
+  --file-status-modified: #245b9e;
+  --file-status-added: #2d7037;
+  --file-status-deleted: #626972;
+  --file-status-renamed: #166e70;
+  --file-status-untracked: #90542d;
+  --file-status-conflict: #b73545;
   --favorite-color: #946419;
   --danger: #b13b50;
   --warning: #886018;

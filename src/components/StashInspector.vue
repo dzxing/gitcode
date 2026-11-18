@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { fileStatusPresentation } from '../fileStatus'
 import { vOverflowTitle } from '../directives/overflowTitle'
 import { useRepositoryStore } from '../stores/repository'
 import { useStashStore } from '../stores/stash'
@@ -74,6 +75,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
           v-for="file in stash.details?.files || []"
           :key="file.path"
           class="stash-file"
+          :data-file-status="fileStatusPresentation(file.status).kind"
           :class="{ selected: store.selectedFile?.path === file.path }"
           :data-stash-file-path="file.path"
           :aria-pressed="store.selectedFile?.path === file.path"
@@ -84,7 +86,7 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
           <Icon
             name="FileCode2"
             :size="14"
-          /><span>{{ file.path }}</span
+          /><span class="stash-file-name">{{ file.path }}</span
           ><small>{{
             file.status === '?'
               ? '未跟踪'
@@ -92,9 +94,12 @@ const shortMessage = (message: string) => message.replace(/^(?:On|WIP on) [^:]+:
                 ? '含暂存'
                 : ''
           }}</small
-          ><code :class="`status-${file.status}`">{{
-            file.status === '?' ? 'U' : file.status
-          }}</code>
+          ><code
+            class="file-status"
+            :class="`status-${fileStatusPresentation(file.status).code}`"
+            :title="fileStatusPresentation(file.status).label"
+            >{{ fileStatusPresentation(file.status).code }}</code
+          >
         </button>
         <p
           v-if="!stash.details?.files.length"

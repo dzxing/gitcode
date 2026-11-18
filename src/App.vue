@@ -45,6 +45,61 @@ import WorkbenchMenu, { type WorkbenchMenuItem } from './components/WorkbenchMen
 import { applicationBridge } from './services/application'
 
 const store = useRepositoryStore()
+const renderedNotices = ref<typeof store.notices>([])
+const orderedNotices = computed(() => [...renderedNotices.value].reverse())
+let notificationFrame: number | undefined
+watch(
+  () => [...store.notices],
+  () => {
+    // Coalesce terminal feedback with the progress removal in the same frame.
+    // Otherwise a result first enters below the progress card, then jumps up.
+    if (typeof requestAnimationFrame === 'undefined') {
+      renderedNotices.value = [...store.notices]
+      return
+    }
+    if (notificationFrame !== undefined) cancelAnimationFrame(notificationFrame)
+    notificationFrame = requestAnimationFrame(() => {
+      notificationFrame = undefined
+      renderedNotices.value = [...store.notices]
+    })
+  },
+  { immediate: true },
+)
+onUnmounted(() => {
+  if (notificationFrame !== undefined) cancelAnimationFrame(notificationFrame)
+})
+const operationFeedbackVisible = computed(
+  () =>
+    store.isWorking &&
+    !store.modal &&
+    ['clone', 'fetch', 'pull', 'push', 'pull-and-push', 'prepare-sync'].includes(
+      store.busy ? store.activeOperation : store.fetching ? 'fetch' : '',
+    ),
+)
+const leavingNotifications = new Map<Element, HTMLElement>()
+function pinLeavingNotification(element: Element) {
+  const card = element as HTMLElement
+  const stack = card.parentElement
+  if (!stack) return
+  // Keep the outgoing card at its old position while siblings fill its slot.
+  card.style.top = `${card.offsetTop}px`
+  card.style.width = `${card.offsetWidth}px`
+  stack.style.minHeight = `${Math.max(stack.offsetHeight, parseFloat(stack.style.minHeight) || 0)}px`
+  card.inert = true
+  card.setAttribute('aria-hidden', 'true')
+  leavingNotifications.set(element, stack)
+}
+function releaseLeavingNotification(element: Element) {
+  const card = element as HTMLElement
+  const stack = leavingNotifications.get(element)
+  leavingNotifications.delete(element)
+  card.style.removeProperty('top')
+  card.style.removeProperty('width')
+  card.inert = false
+  card.removeAttribute('aria-hidden')
+  if (stack && ![...leavingNotifications.values()].includes(stack))
+    stack.style.removeProperty('min-height')
+}
 const terminal = useTerminalStore()
 const historyTools = useHistoryToolsStore()
 watch(
@@ -1176,14 +1231,23 @@ onUnmounted(() => {
     <StashDeleteDialog />
     <ProtectedCheckoutDialog /><GitFlowFinishDialog />
     <ContextMenu /><NavigationDialog /><CommitActionsDialog />
-    <div
+    <TransitionGroup
+      name="notification"
+      tag="div"
       class="toast-stack"
       aria-live="polite"
+      @before-leave="pinLeavingNotification"
+      @after-leave="releaseLeavingNotification"
+      @leave-cancelled="releaseLeavingNotification"
+      @after-enter="releaseLeavingNotification"
     >
-      <OperationFeedback />
+      <OperationFeedback
+        v-if="operationFeedbackVisible"
+        key="operation-progress"
+      />
       <div
-        v-for="notice in store.notices"
-        :key="notice.id"
+        v-for="notice in orderedNotices"
+        :key="`notice-${notice.id}`"
         class="toast"
         :class="{ error: notice.error }"
       >
@@ -1220,6 +1284,6 @@ onUnmounted(() => {
           />
         </button>
       </div>
-    </div>
+    </TransitionGroup>
   </div>
 </template>

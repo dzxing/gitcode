@@ -122,7 +122,7 @@ test('missing or outdated Git offers installation and re-detection resumes witho
       gitVersion: '',
       gitPath: '',
       gitSource: '',
-      gitError: '未能检测到可运行的 Git（需要 2.46 或更高版本）。',
+      gitError: '未能检测到可运行的 Git。',
     }
     window.gitk!.runtime = async () => ({ ...runtime })
     window.gitk!.openResource = async (resource) => {

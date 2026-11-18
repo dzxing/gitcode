@@ -154,7 +154,9 @@ class RepositoryTrust {
     const raw = await this.git.git(
       info.path,
       ['config', '--includes', '--null', '--show-origin', '--list'],
-      { signal, [TRUST_READ]: true },
+      // This private capability is issued only after a validated challenge or
+      // a recorded grant. It authorizes inspection of this canonical root.
+      { signal, [TRUST_READ]: info.path },
     )
     const fields = raw.split('\0'),
       selected = []
@@ -162,6 +164,9 @@ class RepositoryTrust {
       const record = fields[i + 1],
         newline = record.indexOf('\n')
       const key = newline < 0 ? record : record.slice(0, newline)
+      // Our process-local ownership exception is derived from existing consent,
+      // not user configuration. Excluding it preserves pre-existing grants.
+      if (fields[i] === 'command line:' && key === 'safe.directory') continue
       if (!benign.test(key)) selected.push([fields[i], record])
     }
     return selected

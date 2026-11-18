@@ -79,20 +79,16 @@ async function discover(execute, options = {}) {
       const stdout = (result.stdout || '').replace(/^\uFEFF/, '').trim()
       const version = stdout.split(/\r?\n/).find((line) => /^git version /.test(line)) || ''
       const match = version.match(/^git version (\d+)\.(\d+)(?:\.|\s|$)/)
-      if (
-        result.code === 0 &&
-        match &&
-        (Number(match[1]) > 2 || (Number(match[1]) === 2 && Number(match[2]) >= 46))
-      )
+      // Discover an executable, not a release-policy cutoff. Operations check
+      // the capabilities they need before making changes.
+      if (result.code === 0 && match)
         return { path: candidate.path, source: candidate.source, version }
       const stderr = (result.stderr || '').trim()
       diagnostics.push(
         `${candidate.path}: ${
-          result.code === 0 && match
-            ? `${stdout}（需要 Git 2.46 或更高版本）`
-            : stderr ||
-              stdout ||
-              `未返回版本信息（退出码 ${result.code ?? '未知'}${result.termination ? `，信号 ${result.termination}` : ''}）`
+          stderr ||
+          stdout ||
+          `未返回版本信息（退出码 ${result.code ?? '未知'}${result.termination ? `，信号 ${result.termination}` : ''}）`
         }`,
       )
     } catch (error) {
@@ -119,7 +115,7 @@ async function discover(execute, options = {}) {
     if (found) return found
   }
   return {
-    error: `未能检测到可运行的 Git（需要 2.46 或更高版本）。请在“设置 → Git → Git 运行环境”中检查检测详情或选择 Git 可执行文件。\n${diagnostics.join('\n')}`,
+    error: `未能检测到可运行的 Git。请在“设置 → Git → Git 运行环境”中检查检测详情或选择 Git 可执行文件。\n${diagnostics.join('\n')}`,
   }
 }
 
