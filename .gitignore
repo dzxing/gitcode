@@ -12,6 +12,9 @@ legacy/tauri/target/
 legacy/tauri/gen/schemas/
 release/
 
+# Local research and visual verification artifacts.
+/design/
+
 # Local tool state, temporary references, and machine-specific secrets.
 /.tmp/
 /.agents/
