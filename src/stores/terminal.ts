@@ -24,7 +24,6 @@ export const useTerminalStore = defineStore('terminal', () => {
   const creating = ref(false)
   const error = ref('')
   const shells = ref<TerminalShell[]>([])
-  const shell = ref('')
   const focusVersion = ref(0)
   const focusShell = ref(true)
   const key = computed(() => `${repository.activeTabId}\0${repository.repo.path}`)
@@ -57,7 +56,6 @@ export const useTerminalStore = defineStore('terminal', () => {
     async () => {
       const version = ++shellVersion
       shells.value = []
-      shell.value = ''
       error.value = ''
       if (!available.value) return
       try {
@@ -69,7 +67,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     },
     { immediate: true },
   )
-  async function create() {
+  async function create(shellId = '') {
     if (!available.value || creating.value) return
     const repo = repository.repo.path,
       tabId = repository.activeTabId,
@@ -85,7 +83,7 @@ export const useTerminalStore = defineStore('terminal', () => {
         tabId,
         cols: 80,
         rows: 24,
-        ...(shell.value ? { shell: shell.value } : {}),
+        ...(shellId ? { shell: shellId } : {}),
       })
       if (!reply?.id) throw Error('终端服务未返回会话。')
       if (!repository.tabs.some((tab) => tab.id === tabId && tab.path === repo)) {
@@ -194,7 +192,6 @@ export const useTerminalStore = defineStore('terminal', () => {
     creating,
     error,
     shells,
-    shell,
     focusVersion,
     focusShell,
     available,

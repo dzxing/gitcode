@@ -10,8 +10,43 @@ function openConsole() {
   store.showConsole()
 }
 import Icon from './Icon.vue'
+import WorkbenchMenu from './WorkbenchMenu.vue'
 
 const store = useTerminalStore()
+const shellButton = ref<HTMLButtonElement>()
+const shellMenu = ref<{ x: number; y: number }>()
+const shellItems = computed(() => [
+  { id: 'default', label: '新建默认终端' },
+  ...store.shells
+    .filter((entry) => entry.id !== 'default')
+    .map((entry) => ({ id: `shell:${entry.id}`, label: `新建 ${entry.label}` })),
+])
+function openShellMenu() {
+  if (shellMenu.value) {
+    shellMenu.value = undefined
+    return
+  }
+  if (store.creating || !shellButton.value) return
+  const bounds = shellButton.value.getBoundingClientRect()
+  shellMenu.value = { x: bounds.left, y: bounds.bottom + 4 }
+}
+function closeShellMenu(restore = false) {
+  shellMenu.value = undefined
+  if (restore) shellButton.value?.focus()
+}
+function createShell(id: string) {
+  closeShellMenu()
+  if (id === 'default') void store.create()
+  else {
+    const entry = store.shells.find((shell) => `shell:${shell.id}` === id)
+    if (entry) void store.create(entry.id)
+  }
+}
+watch(
+  () => [store.visible, store.shells, store.creating],
+  () => closeShellMenu(),
+)
+
 watch(
   () => store.visible && store.tool === 'console',
   (active) => {
@@ -183,15 +218,21 @@ onUnmounted(() => {
             :aria-selected="store.tool === 'terminal' && session.id === store.active?.id"
             :aria-controls="`terminal-${session.id}`"
             :tabindex="store.tool === 'terminal' && session.id === store.active?.id ? 0 : -1"
-            v-overflow-title="`终端 ${session.number} · ${session.shell}`"
+            :aria-label="`终端 ${session.number} · ${session.shell}${session.state === 'exited' ? ' · 已退出' : ''}`"
+            v-overflow-title="{
+              text: `${session.shell} ${session.number}${session.state === 'exited' ? ' · 已退出' : ''}`,
+              target: '.terminal-tab-label',
+            }"
             @click="store.select(session.id)"
             @keydown="navigateTab($event, index + 1)"
           >
             <Icon
               name="Terminal"
               :size="14"
-            />终端 {{ session.number
-            }}<small>{{ session.state === 'exited' ? '已退出' : session.shell }}</small>
+            /><span class="terminal-tab-label"
+              >{{ session.shell }} {{ session.number
+              }}{{ session.state === 'exited' ? ' · 已退出' : '' }}</span
+            >
           </button>
           <button
             class="icon-button"
@@ -206,21 +247,6 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="terminal-actions">
-        <select
-          v-if="store.shells.length > 1"
-          v-model="store.shell"
-          aria-label="新终端使用的 Shell"
-          :disabled="store.creating"
-        >
-          <option value="">默认 Shell</option>
-          <option
-            v-for="entry in store.shells"
-            :key="entry.id"
-            :value="entry.id"
-          >
-            {{ entry.label }}
-          </option>
-        </select>
         <button
           class="icon-button"
           aria-label="新建终端"
@@ -233,6 +259,33 @@ onUnmounted(() => {
             :size="15"
           />
         </button>
+        <button
+          v-if="store.shells.length > 1"
+          ref="shellButton"
+          class="icon-button terminal-shell-menu-button"
+          aria-label="选择 Shell 新建终端"
+          aria-haspopup="menu"
+          :aria-expanded="!!shellMenu"
+          title="选择 Shell 新建终端"
+          :disabled="store.creating"
+          @click="openShellMenu"
+          @keydown.down.prevent="openShellMenu"
+        >
+          <Icon
+            name="ChevronDown"
+            :size="12"
+          />
+        </button>
+        <WorkbenchMenu
+          v-if="shellMenu"
+          label="新建终端类型"
+          :x="shellMenu.x"
+          :y="shellMenu.y"
+          :anchor="shellButton"
+          :items="shellItems"
+          @select="createShell"
+          @close="closeShellMenu"
+        />
         <button
           class="icon-button"
           :aria-label="expanded ? '还原工具窗口高度' : '展开工具窗口'"

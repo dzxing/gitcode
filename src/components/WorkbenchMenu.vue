@@ -9,7 +9,13 @@ export interface WorkbenchMenuItem {
   separator?: boolean
   hint?: string
 }
-const props = defineProps<{ label: string; x: number; y: number; items: WorkbenchMenuItem[] }>()
+const props = defineProps<{
+  label: string
+  x: number
+  y: number
+  items: WorkbenchMenuItem[]
+  anchor?: HTMLElement
+}>()
 const emit = defineEmits<{ select: [id: string]; close: [restore: boolean] }>()
 const element = ref<HTMLElement>()
 const left = ref(props.x),
@@ -38,7 +44,11 @@ function key(event: KeyboardEvent) {
   focusMenuItem(rows[next])
 }
 function outside(event: PointerEvent) {
-  if (!element.value?.contains(event.target as Node)) emit('close', false)
+  if (
+    !element.value?.contains(event.target as Node) &&
+    !props.anchor?.contains(event.target as Node)
+  )
+    emit('close', false)
 }
 function dismiss() {
   emit('close', false)

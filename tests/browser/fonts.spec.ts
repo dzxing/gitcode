@@ -412,7 +412,7 @@ test('冲突三方正文跟随编辑器字体，标题保持界面字体，关�
   const message = page.getByLabel('合并提交说明', { exact: true })
   await expect(message).toHaveCSS('font-size', '12px')
   await page.locator('.conflict-file-name').click()
-  const panes = page.locator('.merge-pane > pre, .merge-pane > textarea')
+  const panes = page.locator('.merge-pane > pre, .merge-result-input > textarea')
   await expect(panes).toHaveCount(3)
   const title = page.locator('.merge-pane h3').first()
   const before = await title.evaluate((el) => ({

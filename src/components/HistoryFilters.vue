@@ -67,7 +67,8 @@ onUnmounted(() => document.removeEventListener('pointerdown', outside))
       </summary>
       <div class="history-filter-popup">
         <label
-          >作者<input
+          ><span class="history-filter-label">作者</span
+          ><input
             v-model="query.filters.author"
             autocomplete="off"
             placeholder="姓名或邮箱"
@@ -93,12 +94,14 @@ onUnmounted(() => document.removeEventListener('pointerdown', outside))
       </summary>
       <div class="history-filter-popup">
         <label
-          >开始<input
+          ><span class="history-filter-label">开始</span
+          ><input
             v-model="query.filters.since"
             type="date"
             aria-label="开始日期" /></label
         ><label
-          >结束<input
+          ><span class="history-filter-label">结束</span
+          ><input
             v-model="query.filters.until"
             type="date"
             aria-label="结束日期"
@@ -119,7 +122,8 @@ onUnmounted(() => document.removeEventListener('pointerdown', outside))
       </summary>
       <div class="history-filter-popup">
         <label
-          >路径<input
+          ><span class="history-filter-label">路径</span
+          ><input
             v-model="query.filters.path"
             autocomplete="off"
             placeholder="文件或目录"
@@ -219,7 +223,13 @@ onUnmounted(() => document.removeEventListener('pointerdown', outside))
 .history-filter[open] summary {
   background: var(--control-hover-bg);
 }
+.history-filter-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 .history-filter-popup {
+  width: max-content;
+  max-width: calc(100vw - 24px);
   position: absolute;
   top: calc(100% + 4px);
   left: 0;

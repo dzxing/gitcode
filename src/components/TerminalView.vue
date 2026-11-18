@@ -5,14 +5,12 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { desktop } from '../services/desktop'
 import { useAppearanceStore } from '../stores/appearance'
-import { useFontStore } from '../stores/fonts'
 import { useRepositoryStore } from '../stores/repository'
 import { useTerminalStore, type TerminalSession } from '../stores/terminal'
 import WorkbenchMenu, { type WorkbenchMenuItem } from './WorkbenchMenu.vue'
 
 const props = defineProps<{ session: TerminalSession; active: boolean }>()
 const appearance = useAppearanceStore(),
-  fonts = useFontStore(),
   repository = useRepositoryStore(),
   store = useTerminalStore()
 const element = ref<HTMLElement>()
@@ -23,9 +21,11 @@ const terminal = new Terminal({
   cursorBlink: true,
   cursorStyle: 'bar',
   allowProposedApi: false,
+  letterSpacing: 0,
 })
 const fit = new FitAddon()
 terminal.loadAddon(fit)
+let fontVersion = 0
 let alive = true,
   cursor = 0,
   complete = false,
@@ -119,12 +119,28 @@ function style() {
   if (!element.value) return
   const css = getComputedStyle(element.value)
   const value = (key: string) => css.getPropertyValue(key).trim()
-  terminal.options.fontFamily = css.fontFamily
-  terminal.options.fontSize = parseFloat(value('--code-font-size')) || 12
-  terminal.options.lineHeight = Math.max(
-    1.2,
-    Math.min(1.8, parseFloat(value('--code-line-height')) || 1.4),
-  )
+  const family = css.fontFamily,
+    size = parseFloat(value('--terminal-font-size')) || 13,
+    lineHeight = parseFloat(value('--terminal-line-height')) || 1.3,
+    version = ++fontVersion
+  // xterm measures and caches cell sizes independently of CSS. Apply a newly selected
+  // bundled font after it loads so its first measurement does not use the fallback font.
+  void (async () => {
+    try {
+      await Promise.all([
+        document.fonts.load(`${size}px ${family}`, 'Wm0123 中文'),
+        document.fonts.load(`bold ${size}px ${family}`, 'Wm0123 中文'),
+      ])
+    } catch {
+      // Missing/unavailable fonts still use the configured system fallback stack.
+    }
+    if (!alive || version !== fontVersion) return
+    terminal.options.fontFamily = family
+    terminal.options.fontSize = size
+    terminal.options.lineHeight = lineHeight
+    terminal.refresh(0, terminal.rows - 1)
+    resize()
+  })()
   const theme: ITheme = {
     background: value('--panel'),
     foreground: value('--text'),
@@ -191,7 +207,6 @@ function style() {
     theme[name] = colors[index]
   })
   terminal.options.theme = theme
-  resize()
 }
 async function copy() {
   try {
@@ -230,9 +245,8 @@ function select(action: string) {
   terminal.focus()
 }
 watch(
-  () => [appearance.palette, fonts.settings] as const,
+  () => appearance.palette,
   () => void nextTick(style),
-  { deep: true },
 )
 watch(
   () => [props.active, store.focusVersion] as const,
@@ -276,6 +290,7 @@ onMounted(() => {
   void poll()
 })
 onUnmounted(() => {
+  fontVersion++
   alive = false
   clearTimeout(timer)
   clearTimeout(resizeTimer)
