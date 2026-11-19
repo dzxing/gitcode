@@ -293,16 +293,26 @@ function move(index: number, offset: number) {
           ><span>{{ step.subject }}</span
           ><button
             type="button"
+            class="icon-button"
+            :aria-label="`上移提交 ${step.sha.slice(0, 7)}`"
             :disabled="repo.busy || !index"
             @click="move(index, -1)"
           >
-            ↑</button
+            <Icon
+              name="ArrowUp"
+              :size="14"
+            /></button
           ><button
             type="button"
+            class="icon-button"
+            :aria-label="`下移提交 ${step.sha.slice(0, 7)}`"
             :disabled="repo.busy || index === action.steps.length - 1"
             @click="move(index, 1)"
           >
-            ↓
+            <Icon
+              name="ArrowDown"
+              :size="14"
+            />
           </button>
           <textarea
             autocomplete="off"

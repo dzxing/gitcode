@@ -33,7 +33,8 @@
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
-    "perMachine": false
+    "perMachine": false,
+    "include": "scripts/installer.nsh"
   },
   "mac": {
     "target": ["dmg", "zip"],

@@ -7,6 +7,7 @@ import type { Branch } from '../types'
 import { useRepositoryStore } from '../stores/repository'
 import { useContextMenuStore } from '../stores/contextMenu'
 import Icon from './Icon.vue'
+import BranchSyncBadge from './BranchSyncBadge.vue'
 import { useSidebarStore } from '../stores/sidebar'
 
 const props = withDefaults(
@@ -191,16 +192,11 @@ function openBranchMenu(event: MouseEvent) {
           name="Check"
           :size="14"
         />
-        <span
-          v-if="tracking.ahead"
-          class="branch-sync-count is-ahead"
-          >↑{{ tracking.ahead }}</span
-        >
-        <span
-          v-if="tracking.behind"
-          class="branch-sync-count is-behind"
-          >↓{{ tracking.behind }}</span
-        >
+        <BranchSyncBadge
+          v-if="tracking.ahead || tracking.behind"
+          :ahead="tracking.ahead"
+          :behind="tracking.behind"
+        />
         <span
           v-if="tracking.label && !tracking.ahead && !tracking.behind"
           class="branch-sync-state"

@@ -29,6 +29,30 @@ try {
       : process.argv.includes('--linux')
         ? 'linux'
         : process.platform
+  if (targetPlatform === 'win32') {
+    if (process.platform !== 'win32') throw new Error('请在 Windows 上构建 Windows 安装包。')
+    await new Promise((resolve, reject) => {
+      const child = spawn(
+        'powershell.exe',
+        [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          fileURLToPath(new URL('./prepare-installer.ps1', import.meta.url)),
+          '-ProjectRoot',
+          root,
+        ],
+        { cwd: root, windowsHide: true, stdio: 'inherit' },
+      )
+      child.once('error', reject)
+      child.once('close', (code) =>
+        code === 0 ? resolve() : reject(new Error('安装器启动器编译失败。')),
+      )
+    })
+  }
   directory = await stageDesktopApp(root, { arch: targetArch, platform: targetPlatform })
   const { version } = JSON.parse(
     await readFile(new URL('../package.json', import.meta.url), 'utf8'),

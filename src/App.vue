@@ -17,6 +17,7 @@ import ActivityLog from './components/ActivityLog.vue'
 import StartupScreen from './components/StartupScreen.vue'
 import RepositoryTrustDialog from './components/RepositoryTrustDialog.vue'
 import Icon from './components/Icon.vue'
+import BranchSyncBadge from './components/BranchSyncBadge.vue'
 import AppBrand from './components/AppBrand.vue'
 import NewTab from './components/NewTab.vue'
 import WindowControls from './components/WindowControls.vue'
@@ -758,13 +759,23 @@ onUnmounted(() => {
             <Icon
               name="GitBranch"
               :size="18"
-            /><span
-              ><small>当前分支</small><strong>{{ store.repo.branch }}</strong></span
-            ><span
-              v-if="currentTracking.label"
-              class="tracking"
-              :title="contextMenu.hoverTitle(currentTracking.description)"
-              >{{ currentTracking.label }}</span
+            /><span>
+              <small>当前分支</small>
+              <span class="branch-selector-name">
+                <strong>{{ store.repo.branch }}</strong>
+                <span
+                  v-if="currentTracking.label"
+                  class="tracking"
+                  :title="contextMenu.hoverTitle(currentTracking.description)"
+                >
+                  <BranchSyncBadge
+                    v-if="currentTracking.ahead || currentTracking.behind"
+                    :ahead="currentTracking.ahead"
+                    :behind="currentTracking.behind"
+                  />
+                  <span v-else>{{ currentTracking.label }}</span>
+                </span>
+              </span> </span
             ><Icon
               name="ChevronDown"
               class="disclosure-chevron"

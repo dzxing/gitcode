@@ -315,12 +315,13 @@ strong {
   align-items: center;
   justify-content: center;
   min-width: 22px;
-  height: 18px;
+  height: max(18px, calc(var(--ui-font-help) * 1.2 + 2px));
   padding: 0 5px;
   background: var(--theme-overlay, #ffffff07);
   border: 1px solid var(--theme-border, #373e48);
   border-radius: 4px;
-  font: var(--ui-font-help)/1.5 var(--mono);
+  font: var(--ui-font-help)/1.2 var(--font-ui);
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 .titlebar {
@@ -625,9 +626,22 @@ strong {
 .branch-selector[open] summary .disclosure-chevron {
   transform: rotate(180deg);
 }
+.branch-selector-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .tracking {
-  color: var(--accent);
-  font: var(--ui-font-help)/1.5 var(--mono);
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 18px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  color: var(--text-secondary);
+  font: var(--ui-font-help)/1.4 var(--font-ui);
   white-space: nowrap;
 }
 .branch-dropdown {
@@ -1215,15 +1229,33 @@ strong {
   flex-shrink: 0;
   color: var(--current-branch-color);
 }
-.branch-sync-count {
+.branch-sync-badge {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
+  gap: 6px;
+  font: var(--ui-font-help)/1.4 var(--font-ui);
+}
+.branch-sync-count {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 1px;
+  min-height: 18px;
+  white-space: nowrap;
+}
+.branch-sync-number {
+  min-width: 1ch;
   font-variant-numeric: tabular-nums;
 }
 .branch-sync-count.is-ahead {
-  color: var(--git-added);
+  color: var(--file-status-added);
 }
 .branch-sync-count.is-behind {
-  color: var(--accent-hover);
+  color: var(--file-status-modified);
+}
+.branch-row.current .branch-sync-count {
+  color: var(--current-branch-color);
 }
 .branch-sync-state {
   font-size: var(--ui-font-help);
@@ -2505,7 +2537,7 @@ strong {
 .detail-hash > span {
   font-size: var(--ui-font-help);
   color: var(--muted);
-  letter-spacing: 1.6px;
+  letter-spacing: normal;
 }
 .detail-hash > button {
   color: var(--accent);
