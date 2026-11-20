@@ -354,7 +354,7 @@ onUnmounted(() => {
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: 5px;
-  box-shadow: 0 8px 24px #0006;
+  box-shadow: 0 8px 24px var(--popup-shadow-color);
 }
 .font-picker-popup > input {
   flex-shrink: 0;

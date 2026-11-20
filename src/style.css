@@ -31,6 +31,9 @@
   --dialog-font-help: var(--ui-font-help);
   --dialog-scrim: #080d171f;
   --dialog-confirmation-scrim: #080d174d;
+  --popup-shadow-color: #0006;
+  --dialog-shadow-color: #0008;
+  --drawer-shadow-color: #0004;
   --panel: #272a31;
   --surface-tabs: #2a2d34;
   --surface-toolbar: #33373f;
@@ -658,7 +661,7 @@ strong {
   background: var(--theme-fill, #242a33);
   border: 1px solid var(--theme-border, #424b58);
   border-radius: 7px;
-  box-shadow: 0 12px 30px #0006;
+  box-shadow: 0 12px 30px var(--popup-shadow-color);
 }
 .branch-dropdown > small {
   padding: 6px 10px 10px;
@@ -823,7 +826,7 @@ strong {
   border-radius: 4px;
   background: var(--panel);
   font-size: var(--ui-font-help);
-  box-shadow: 0 5px 14px #0005;
+  box-shadow: 0 5px 14px var(--popup-shadow-color);
 }
 .inline-branch-options label {
   display: flex;
@@ -1286,7 +1289,7 @@ strong {
   border-radius: 4px;
   background: var(--surface-raised);
   color: var(--bright);
-  box-shadow: 0 4px 14px #0005;
+  box-shadow: 0 4px 14px var(--popup-shadow-color);
   font: var(--ui-font-size)/1.5 var(--font-ui);
   overflow-wrap: anywhere;
   pointer-events: none;
@@ -1576,7 +1579,7 @@ strong {
   width: 100%;
   padding: 0;
   text-align: left;
-  box-shadow: inset 0 -1px #ffffff03;
+  box-shadow: inset 0 -1px var(--line-soft);
   gap: 0;
   align-items: center;
   position: relative;
@@ -1724,7 +1727,7 @@ strong {
   max-width: var(--ref-expanded-limit, 640px);
   background: var(--bg);
   border-radius: 3px;
-  box-shadow: 0 3px 12px #0005;
+  box-shadow: 0 3px 12px var(--popup-shadow-color);
 }
 .reference-badge {
   display: inline-flex;
@@ -1935,7 +1938,7 @@ strong {
   border-radius: 8px;
   background: var(--surface-tabs);
   color: var(--theme-text, #d0d3d8);
-  box-shadow: 0 18px 70px #0008;
+  box-shadow: 0 18px 70px var(--popup-shadow-color);
 }
 .refs-popover header,
 .refs-popover header > div {
@@ -2400,7 +2403,7 @@ strong {
 }
 .commit-editor:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px #22b8d006;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 2%, transparent);
 }
 .commit-editor input {
   display: block;
@@ -2872,7 +2875,7 @@ strong {
   border-radius: 12px;
   background: var(--theme-dialog, #202730);
   color: var(--text);
-  box-shadow: 0 32px 100px #0008;
+  box-shadow: 0 32px 100px var(--dialog-shadow-color);
 }
 /* Short decisions stay beside the toolbar; complex editors retain their panels. */
 .dialog.prompt-bar[open] {
@@ -2886,7 +2889,7 @@ strong {
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   background: var(--theme-fill, #303e59);
-  box-shadow: 0 5px 16px #0004;
+  box-shadow: 0 5px 16px var(--popup-shadow-color);
 }
 .dialog.prompt-bar::backdrop {
   background: var(--theme-prompt-scrim, #080d1720);
@@ -2992,7 +2995,7 @@ strong {
   border: 1px solid var(--line);
   border-radius: 4px;
   background: var(--panel);
-  box-shadow: 0 5px 14px #0005;
+  box-shadow: 0 5px 14px var(--popup-shadow-color);
 }
 .toolbar-actions .sync-options-menu button {
   width: 100%;
@@ -3221,7 +3224,7 @@ strong {
 }
 .form-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px #22b8d00a;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 4%, transparent);
 }
 .path-picker {
   display: flex;
@@ -3812,7 +3815,7 @@ strong {
   border-radius: 10px;
   background: var(--theme-fill, #1a2028);
   color: var(--theme-text, #bac8d8);
-  box-shadow: 0 25px 100px #0009;
+  box-shadow: 0 25px 100px var(--dialog-shadow-color);
 }
 .directory-dialog[open] {
   display: flex;
@@ -4246,7 +4249,7 @@ strong {
   white-space: normal;
   overflow-wrap: anywhere;
   pointer-events: none;
-  box-shadow: 0 4px 12px #0005;
+  box-shadow: 0 4px 12px var(--popup-shadow-color);
 }
 .file-main:hover .file-full-path,
 .file-main:focus-visible .file-full-path {
@@ -4268,7 +4271,7 @@ strong {
   border-radius: 6px;
   background: var(--surface-raised);
   color: var(--text);
-  box-shadow: 0 8px 32px #0008;
+  box-shadow: 0 8px 32px var(--popup-shadow-color);
   font-family: var(--font-ui);
   font-size: var(--ui-font-size);
   line-height: 1.5;
@@ -4681,8 +4684,9 @@ strong {
   width: 400px;
   max-width: calc(100% - var(--sidebar-width));
   background: var(--panel);
+  color: var(--text);
   border-right: 1px solid var(--line);
-  box-shadow: 8px 0 24px #0004;
+  box-shadow: 8px 0 24px var(--drawer-shadow-color);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -5369,7 +5373,7 @@ strong {
   background: var(--panel, #25282f);
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 20px 70px #0008;
+  box-shadow: 0 20px 70px var(--dialog-shadow-color);
 }
 .activity-log-dialog[open] {
   display: flex;
@@ -5695,7 +5699,7 @@ strong {
   border-radius: 4px;
   background: var(--panel);
   color: var(--text);
-  box-shadow: 0 4px 16px #0005;
+  box-shadow: 0 4px 16px var(--popup-shadow-color);
   display: grid;
   gap: 3px;
   font-size: var(--ui-font-size);

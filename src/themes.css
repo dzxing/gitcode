@@ -3,6 +3,9 @@
   color-scheme: light;
   --dialog-scrim: #24374f10;
   --dialog-confirmation-scrim: #24374f29;
+  --popup-shadow-color: #24374f1a;
+  --dialog-shadow-color: #24374f33;
+  --drawer-shadow-color: #24374f1f;
   --brand-ink: #253044;
   --bg: #f6f7f9;
   --panel: #ffffff;
@@ -187,4 +190,18 @@
   top: 6px;
   bottom: 6px;
   border-radius: 4px;
+}
+
+/* GitFlow is a floating repository panel and shares the Islands frame and gutters. */
+:root[data-palette^='islands-'] .gitflow-panel {
+  top: 6px;
+  bottom: 6px;
+  left: calc(var(--sidebar-width) + 3px);
+  max-width: calc(100% - var(--sidebar-width) - 9px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+:root[data-palette^='islands-'] .gitflow-panel.gitflow-settings {
+  right: 6px;
 }

@@ -481,7 +481,7 @@ onBeforeUnmount(clearMenuListeners)
   line-height: 1.5;
   border: 1px solid var(--line);
   border-radius: 5px;
-  box-shadow: 0 6px 22px #0005;
+  box-shadow: 0 6px 22px var(--popup-shadow-color);
   background: var(--surface-raised);
 }
 .worktree-menu-content strong {

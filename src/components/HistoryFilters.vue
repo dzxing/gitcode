@@ -240,7 +240,7 @@ onUnmounted(() => document.removeEventListener('pointerdown', outside))
   background: var(--surface-raised);
   border: 1px solid var(--line);
   border-radius: 4px;
-  box-shadow: 0 6px 18px #0003;
+  box-shadow: 0 6px 18px var(--popup-shadow-color);
   z-index: 12;
 }
 </style>

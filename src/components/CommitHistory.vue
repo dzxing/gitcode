@@ -1511,7 +1511,7 @@ function clearHistoryFilters() {
   text-align: left;
   font-size: var(--ui-font-size);
   color: var(--text);
-  box-shadow: inset 0 -1px #ffffff03;
+  box-shadow: inset 0 -1px var(--line-soft);
   position: relative;
   background: var(--theme-purple-fill, #bd93d704);
 }
