@@ -214,6 +214,11 @@ watch(
   font-size: var(--dialog-font-body);
   line-height: 1.5;
 }
+.flow-finish-field :is(input, textarea, select):focus {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+}
 .flow-finish-targets {
   display: flex;
   flex-direction: column;

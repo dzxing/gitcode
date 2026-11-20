@@ -109,6 +109,10 @@ for (const [theme, preset] of Object.entries(themePresets)) {
       'border-color',
       await tokenColor(page, '--theme-border, #3e4c5c'),
     )
+    const branchChoice = originalFinish.getByLabel('要完成的 GitFlow 分支', { exact: true })
+    await expect(branchChoice).toBeFocused()
+    await expect(branchChoice).toHaveCSS('outline-color', await tokenColor(page, '--accent'))
+    await expect(branchChoice).toHaveCSS('border-color', await tokenColor(page, '--accent'))
     await originalFinish.screenshot({ path: `${dir}/finish-original.png`, animations: 'disabled' })
     await originalFinish.getByRole('button', { name: '取消', exact: true }).click()
     await page.getByRole('button', { name: '打开 GitFlow 操作面板', exact: true }).click()
