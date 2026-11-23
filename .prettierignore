@@ -1,6 +1,5 @@
 node_modules/
-**/node_modules/
-dist/
+dist
 release/
 legacy/
 design/
@@ -10,7 +9,14 @@ playwright-report/
 .git/
 .agents/
 .codex/
+.aws/
+.ssh/
+.idea/
+.gitcode-local/
+.gitk-local/
+.nuxt/
+.output/
+.data/
 package-lock.json
 bun.lock
-**/bun.lock
 *.tsbuildinfo

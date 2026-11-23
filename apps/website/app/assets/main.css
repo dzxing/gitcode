@@ -1,0 +1,260 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: #e9eef8;
+  background: #10131a;
+  font-synthesis: none;
+  line-height: 1.7;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+a {
+  color: #70deea;
+  text-underline-offset: 0.25em;
+}
+button,
+input {
+  font: inherit;
+}
+a:focus-visible {
+  outline: 2px solid #70deea;
+  outline-offset: 5px;
+}
+.wrap {
+  width: min(1120px, calc(100% - 48px));
+  margin-inline: auto;
+}
+.site-header {
+  min-height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid #293040;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #f7f9ff;
+  text-decoration: none;
+  font-size: 24px;
+  font-weight: 650;
+}
+.site-header nav {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.site-header nav a {
+  text-decoration: none;
+  color: #c5cddd;
+}
+.site-header nav .router-link-exact-active {
+  color: #70deea;
+}
+.button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 48px;
+  padding: 10px 24px;
+  border-radius: 8px;
+  background: #70deea;
+  color: #101b21 !important;
+  text-decoration: none;
+  font-weight: 650;
+  border: 1px solid transparent;
+}
+.button:hover {
+  background: #98eaf2;
+}
+.button.secondary {
+  color: #e9eef8 !important;
+  border-color: #404c62;
+  background: transparent;
+}
+.button.secondary:hover {
+  background: #202838;
+}
+.button.small {
+  min-height: 38px;
+  padding: 6px 18px;
+}
+.hero {
+  padding-block: 112px 88px;
+  max-width: 920px;
+}
+.eyebrow {
+  color: #70deea;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+h1,
+h2 {
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+h1 {
+  font-size: clamp(36px, 5.5vw, 64px);
+  font-weight: 650;
+  margin: 0 0 28px;
+}
+h1 span {
+  color: #8aabd9;
+}
+h2 {
+  font-size: 24px;
+  margin: 0 0 16px;
+}
+.lead {
+  color: #b7c3d8;
+  font-size: 20px;
+  max-width: 720px;
+}
+.actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-block: 32px 20px;
+}
+.muted {
+  color: #a5b2c9;
+  font-size: 14px;
+}
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+.card {
+  padding: 32px;
+  border: 1px solid #333d50;
+  border-radius: 12px;
+  background: #181e2a;
+}
+.card p {
+  color: #bbc5d8;
+  margin-bottom: 0;
+}
+.doc-link {
+  color: inherit;
+  text-decoration: none;
+}
+.doc-link:hover {
+  border-color: #70deea;
+}
+.callout {
+  padding-block: 80px;
+}
+.page-heading {
+  padding-block: 72px 40px;
+}
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding-block: 30px;
+  margin-top: 80px;
+  border-top: 1px solid #293040;
+  color: #a5b2c9;
+  font-size: 14px;
+}
+.docs-layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 60px;
+  padding-top: 64px;
+}
+.docs-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.docs-nav a {
+  color: #b7c3d8;
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.docs-nav .router-link-exact-active {
+  color: #70deea;
+  background: #1b2b38;
+}
+.prose {
+  max-width: 780px;
+  font-size: 17px;
+}
+.prose h1 {
+  font-size: 40px;
+}
+.prose h2 {
+  margin-top: 40px;
+}
+.prose p,
+.prose li {
+  color: #c5cddd;
+}
+.prose code {
+  font-size: 0.9em;
+  background: #212c3f;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.standalone {
+  padding-top: 72px;
+}
+.checksum {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.checksum code {
+  display: block;
+}
+.skip-link {
+  position: absolute;
+  top: -100px;
+  padding: 8px 16px;
+  background: #10131a;
+}
+.skip-link:focus {
+  top: 8px;
+}
+@media (max-width: 760px) {
+  .wrap {
+    width: calc(100% - 32px);
+  }
+  .site-header {
+    padding-block: 20px;
+    flex-wrap: wrap;
+  }
+  .site-header nav {
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 14px;
+  }
+  .hero {
+    padding-block: 64px 48px;
+  }
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+  .docs-layout {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding-top: 36px;
+  }
+  .docs-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .card {
+    padding: 24px;
+  }
+}

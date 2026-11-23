@@ -1,0 +1,29 @@
+{
+  "name": "@gitcode/website",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "dev": "nuxt dev --host 127.0.0.1 --port 43189",
+    "build": "nuxt generate",
+    "preview": "nuxt preview --host 127.0.0.1 --port 43189",
+    "check": "nuxt prepare && nuxt typecheck && bun run format:check",
+    "format": "prettier --write app content nuxt.config.ts tsconfig.json package.json README.md",
+    "format:check": "prettier --check app content nuxt.config.ts tsconfig.json package.json README.md"
+  },
+  "dependencies": {
+    "@gitcode/brand": "workspace:*",
+    "marked": "17.0.0",
+    "nuxt": "4.6.4",
+    "vue": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vue-tsc": "catalog:",
+    "@vue/server-renderer": "catalog:",
+    "prettier": "catalog:"
+  }
+}

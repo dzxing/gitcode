@@ -1,0 +1,16 @@
+{
+  "name": "@gitcode/brand",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./assets/*": "./assets/*",
+    "./generate": "./scripts/generate.mjs"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "catalog:"
+  }
+}

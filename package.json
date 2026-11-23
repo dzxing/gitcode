@@ -1,57 +1,62 @@
 {
-  "name": "gitcode-workbench",
-  "version": "1.0.1",
+  "name": "gitcode-workspace",
   "private": true,
-  "description": "A local Git workbench built with Electron and Vue",
   "type": "module",
-  "main": "electron/main.cjs",
-  "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "bun run check && vite build",
-    "preview": "vite preview --host 127.0.0.1",
-    "start": "node scripts/desktop.mjs",
-    "desktop": "node scripts/desktop.mjs",
-    "desktop:wsl": "node scripts/desktop.mjs --wsl",
-    "desktop:build:win": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1",
-    "desktop:build": "bun run build && node scripts/package-desktop.mjs",
-    "test": "node tests/desktop-package.test.cjs && node tests/installer-processes.test.cjs && node tests/lifecycle.test.cjs && node tests/window-state.test.cjs && node tests/window-appearance.test.cjs && node tests/window-recovery.test.cjs && node tests/repository-watch.test.cjs && node tests/repository-trust.test.cjs && node tests/history.test.cjs && node tests/history-tools.test.cjs && node tests/history-tools-view.test.mjs && node tests/read-performance.test.cjs && node tests/history-filter.test.mjs && node tests/recovery.test.cjs && node tests/partial-stage.test.cjs && node tests/command-diagnostics.test.cjs && node tests/activity-log.test.cjs && node tests/fetch-settings.test.cjs && node tests/git-runtime.test.cjs && node tests/terminal.test.cjs && node tests/git-console.test.cjs && node tests/platform.test.cjs && node tests/wsl.test.cjs && node tests/wsl-windows.test.cjs && node tests/progress.test.cjs && node tests/git.test.cjs && node tests/git-publish.test.cjs && node tests/git-sync-recovery.test.cjs && node tests/git-checkout.test.cjs && node tests/git-selected.test.cjs && node tests/git-stash.test.cjs && node tests/git-auto-stash.test.cjs && node tests/git-merge.test.cjs && node tests/git-conflict-boundaries.test.cjs && node tests/git-rebase.test.cjs && node tests/git-navigation.test.cjs && node tests/gitflow.test.cjs && node tests/gitflow-finish.test.cjs && node tests/preload.test.cjs && node tests/fonts.test.cjs && node tests/preferences-session.test.mjs && node tests/repository-location.test.cjs && node tests/context-menu.test.cjs && node tests/git-commit-operations.test.cjs && node tests/commit-menu.test.mjs && node tests/application-menu.test.cjs && node tests/theme-presets.test.cjs && node tests/local-core.test.cjs && node tests/frontend.mjs && node tests/graph-view.test.mjs && node tests/idea-graph.test.mjs && node tests/worktree.test.mjs && node tests/staging.test.mjs && node tests/stash-view.test.mjs && node tests/stash-graph.test.mjs && node tests/merge-view.test.mjs && node tests/diff-presentation.test.mjs && bun run test:icons",
-    "test:ui": "playwright test",
-    "test:wsl": "node tests/wsl.test.cjs && node tests/wsl-windows.test.cjs",
-    "test:core-reload": "node tests/local-core-reload.test.mjs",
-    "icons:generate": "node scripts/prepare-brand-ui.mjs && node scripts/generate-icons.mjs",
-    "fonts:install": "node scripts/install-fonts.mjs",
-    "typecheck": "vue-tsc --noEmit",
-    "lint": "eslint src scripts/local-core-plugin.ts vite.config.ts playwright.config.ts eslint.config.js --max-warnings 0",
-    "lint:fix": "bun run lint --fix",
-    "check": "bun run typecheck && bun run lint && bun run format:check",
-    "format": "prettier --write \"{src,electron,scripts,tests}/**/*.{vue,ts,js,cjs,mjs,css,json}\" \"*.{ts,js,cjs,mjs,json,html}\" .prettierrc.json",
-    "format:check": "prettier --check \"{src,electron,scripts,tests}/**/*.{vue,ts,js,cjs,mjs,css,json}\" \"*.{ts,js,cjs,mjs,json,html}\" .prettierrc.json",
-    "test:icons": "node tests/brand-assets.test.mjs && node tests/material-symbols.test.mjs"
+  "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0"
   },
-  "dependencies": {
-    "@xterm/addon-fit": "0.11.0",
-    "@xterm/xterm": "6.0.0",
-    "node-pty": "1.1.0",
-    "pinia": "3.0.4",
-    "vue": "3.5.40"
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "vue": "3.5.44",
+      "@vue/server-renderer": "3.5.44",
+      "typescript": "5.9.3",
+      "vue-tsc": "3.3.8",
+      "@resvg/resvg-js": "2.6.2",
+      "prettier": "3.9.10"
+    }
+  },
+  "scripts": {
+    "dev": "bun run --cwd apps/desktop dev",
+    "dev:desktop": "bun run --cwd apps/desktop dev",
+    "build": "bun run --cwd apps/desktop build",
+    "build:desktop": "bun run --cwd apps/desktop build",
+    "preview": "bun run --cwd apps/desktop preview",
+    "start": "bun run --cwd apps/desktop desktop",
+    "desktop": "bun run --cwd apps/desktop desktop",
+    "desktop:wsl": "bun run --cwd apps/desktop desktop:wsl",
+    "desktop:build": "bun run --cwd apps/desktop desktop:build",
+    "desktop:build:win": "bun run --cwd apps/desktop desktop:build:win",
+    "test": "bun run --cwd apps/desktop test",
+    "test:ui": "bun run --cwd apps/desktop test:ui",
+    "test:wsl": "bun run --cwd apps/desktop test:wsl",
+    "test:core-reload": "bun run --cwd apps/desktop test:core-reload",
+    "test:icons": "bun run --cwd apps/desktop test:icons",
+    "icons:generate": "bun run --cwd apps/desktop icons:generate",
+    "fonts:install": "bun run --cwd apps/desktop fonts:install",
+    "typecheck": "bun run --cwd apps/desktop typecheck",
+    "lint": "bun run --cwd apps/desktop lint",
+    "lint:fix": "bun run --cwd apps/desktop lint:fix",
+    "dev:website": "bun run --cwd apps/website dev",
+    "build:website": "bun run --cwd apps/website build",
+    "preview:website": "bun run --cwd apps/website preview",
+    "check:website": "bun run --cwd apps/website check",
+    "check:boundaries": "node scripts/check-boundaries.mjs",
+    "check": "bun run check:boundaries && bun run --cwd apps/desktop check && bun run check:website && bun run format:check",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "package:desktop": "bun run --cwd apps/desktop desktop:build"
   },
   "devDependencies": {
-    "@eslint/js": "9.39.5",
-    "@playwright/test": "1.58.2",
-    "@resvg/resvg-js": "2.6.2",
-    "@types/node": "22.20.1",
-    "@vitejs/plugin-vue": "6.0.8",
-    "@vue/server-renderer": "3.5.40",
-    "eslint": "9.39.5",
-    "eslint-plugin-vue": "10.12.0",
-    "globals": "17.13.0",
-    "prettier": "3.9.10",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.72.1",
-    "vite": "7.3.6",
-    "vite-plugin-vue-devtools": "8",
-    "vue-eslint-parser": "^10.3.0",
-    "vue-tsc": "3.3.8"
+    "prettier": "catalog:"
   },
-  "productName": "GitCode"
+  "trustedDependencies": [
+    "electron",
+    "node-pty",
+    "esbuild"
+  ]
 }

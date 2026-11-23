@@ -1,5 +1,6 @@
 node_modules/
-dist/
+# Nuxt may expose dist as a symlink; ignore both directories and links.
+dist
 __pycache__/
 *.pyc
 *.tsbuildinfo
@@ -13,10 +14,10 @@ legacy/tauri/gen/schemas/
 release/
 
 # Local research and visual verification artifacts.
-/design/
+design/
 
 # Local tool state, temporary references, and machine-specific secrets.
-/.tmp/
+.tmp/
 /.agents/
 /.codex/
 /.aws/
@@ -28,3 +29,8 @@ release/
 *.log
 .DS_Store
 Thumbs.db
+
+# Workspace-generated Nuxt files.
+.nuxt/
+.output/
+.data/
