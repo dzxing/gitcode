@@ -10,11 +10,12 @@ useHead({ title: () => document.value?.title || '文档' })
 </script>
 
 <template>
-  <div class="docs-layout">
+  <div class="docs-layout wrap">
     <nav
       class="docs-nav"
       aria-label="文档目录"
     >
+      <span class="docs-nav-title">使用文档</span>
       <NuxtLink
         v-for="(doc, slug) in documents"
         :key="slug"

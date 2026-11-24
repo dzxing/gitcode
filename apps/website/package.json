@@ -19,8 +19,11 @@
   },
   "dependencies": {
     "@gitcode/brand": "workspace:*",
+    "@iconify-json/lucide": "1.2.158",
+    "@nuxt/ui": "4.13.0",
     "marked": "17.0.0",
     "nuxt": "4.6.4",
+    "tailwindcss": "4.3.5",
     "vue": "catalog:"
   },
   "devDependencies": {

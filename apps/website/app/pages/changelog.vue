@@ -7,7 +7,7 @@ const html = marked.parse(markdown, { async: false })
 
 <template>
   <article
-    class="prose standalone"
+    class="prose standalone wrap"
     v-html="html"
   />
 </template>
