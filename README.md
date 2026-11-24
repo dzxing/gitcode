@@ -1,95 +1,121 @@
-# GitCode
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="packages/brand/assets/logo-glyph-transparent-256.png" />
+    <img src="packages/brand/assets/logo-glyph-light-256.png" alt="GitCode Logo" width="100" height="100" />
+  </picture>
+</p>
 
-GitCode 是使用 Vue 3、TypeScript 和 Electron 开发的本地 Git 工作台。此仓库使用 Bun Workspaces 管理桌面应用、独立门户网站和共享品牌资源。
+<h1 align="center">GitCode</h1>
+
+<p align="center"><strong>看清每次变更，掌控每条分支。</strong></p>
+<p align="center">提交关系、工作区变更与 GitFlow，连接在同一个本地工作台。</p>
+
+<p align="center">
+  <img src="docs/assets/badges/version.svg" alt="Version 1.0.1" />
+  <img src="docs/assets/badges/electron.svg" alt="Electron 45" />
+  <img src="docs/assets/badges/vue.svg" alt="Vue 3" />
+  <img src="docs/assets/badges/typescript.svg" alt="TypeScript" />
+  <a href="LICENSE"><img src="docs/assets/badges/license.svg" alt="Custom non-commercial, no-derivatives license" /></a>
+</p>
+
+<p align="center">
+  <a href="http://8.138.163.129/">在线预览</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="apps/desktop/README.md">桌面文档</a> ·
+  <a href="https://github.com/dzxing/gitcode/issues">问题反馈</a>
+</p>
+
+> [!IMPORTANT]
+> 本项目采用自定义的**非商业、禁止修改与衍生作品许可**，属于源码可见项目，并非 OSI 定义的开源软件。允许个人非商业学习、研究、测试和原样使用；未经著作权人另行书面授权，禁止商业使用及二次改造。完整条款见 [LICENSE](LICENSE)，第三方材料遵循其各自许可。
+
+## 本地 Git 工作台
+
+GitCode 使用 **Electron + Vue 3 + TypeScript** 构建，直接调用本机 Git，无需运行远程业务服务器。桌面应用面向 Windows、macOS 和 Linux；仓库同时包含独立的 Nuxt 产品网站。
+
+<p align="center">
+  <img src="apps/website/public/product/workbench.png" alt="GitCode 主界面：仓库导航、提交关系图与工作区变更" width="1200" />
+</p>
+
+<p align="center"><sub>实际产品界面，使用测试用示例仓库。</sub></p>
+
+| 功能                  | 在工作台中完成                                           |
+| --------------------- | -------------------------------------------------------- |
+| **提交关系图**        | 查看分支与合并关系、提交详情，搜索和定位历史提交         |
+| **仓库与分支**        | 打开、创建与克隆仓库，管理本地分支、远程分支、标签和收藏 |
+| **工作区变更**        | 查看文件差异、暂存、提交，以及贮藏和恢复未提交的更改     |
+| **GitFlow**           | 初始化基础分支，管理 Feature、Release 与 Hotfix 流程     |
+| **同步与冲突**        | 获取、拉取和推送，查看冲突文件并使用冲突编辑器处理       |
+| **历史与比较**        | 查看文件历史、比较文件版本及 HEAD／暂存区／工作区        |
+| **终端与 Git 控制台** | 使用终端会话，在 Git 控制台查看应用执行的命令与结果      |
+| **主题与字体**        | 切换主题，分别调整界面和编辑器字体，保存工作区布局       |
+
+<details>
+  <summary><strong>查看 GitFlow 界面</strong></summary>
+
+  <p><img src="apps/website/public/product/gitflow.png" alt="GitCode GitFlow 操作面板" width="1200" /></p>
+</details>
+
+## 快速开始
+
+需要 **Node.js 22.22.3、Bun 1.3.14 和 Git 2.30+**。也支持 Node.js 24.15+ 的 24.x 版本；其他受支持版本见根目录 `package.json`。应用使用系统安装的 Git，不自带 Git。
+
+```bash
+git clone https://github.com/dzxing/gitcode.git
+cd gitcode
+bun install --frozen-lockfile
+bun run desktop
+```
+
+仅在浏览器中体验开发界面：
+
+```bash
+bun run dev
+```
+
+打开 <http://localhost:43187>。浏览器模式会连接本机 Git 核心，操作的是真实仓库；初次体验建议使用测试仓库。
+
+| 场景                     | 命令                        |
+| ------------------------ | --------------------------- |
+| 启动桌面应用             | `bun run desktop`           |
+| WSL 桌面开发             | `bun run desktop:wsl`       |
+| 启动产品网站             | `bun run dev:website`       |
+| 检查整个工作区           | `bun run check`             |
+| 构建当前系统的桌面安装包 | `bun run desktop:build`     |
+| 在 Windows 构建安装包    | `bun run desktop:build:win` |
+| 构建静态网站             | `bun run build:website`     |
+
+Windows、WSL 和 macOS 应分别安装依赖，不共用 `node_modules`。macOS 打包需要 macOS 构建环境，签名与公证需另行配置。详细平台说明见[桌面文档](apps/desktop/README.md)。
+
+安装包将在 [GitHub Releases](https://github.com/dzxing/gitcode/releases) 提供；当前 README 不代表已有公开安装包或已完成平台签名。
+
+## 项目结构
 
 ```text
 apps/
-  desktop/           Electron + Vue 桌面应用及浏览器开发预览
-  website/           Nuxt 静态门户网站
+  desktop/       Electron + Vue 桌面应用与本机 Git 核心
+  website/       Nuxt + Nuxt UI 静态产品网站
 packages/
-  brand/             共享 Logo 源文件与派生资源
-scripts/             工作区边界检查
-legacy/              已归档的 Tauri、Python 原型，不参与运行和打包
-release/
-  desktop/<版本号>/   桌面安装包及同版本历史产物（不提交）
-bun.lock             唯一依赖锁文件
-.prettierrc          统一 Prettier 配置，YAML 格式
+  brand/         共享品牌资源
+scripts/         工作区公共检查
+docs/            开发与工作区说明
+legacy/          历史原型，不参与运行和打包
 ```
 
-## 环境与安装
+开发环境、完整命令和模块边界见[开发与工作区](docs/DEVELOPMENT.md)；网站维护见[门户文档](apps/website/README.md)。
 
-统一开发环境使用 Node.js 22.22.3（见 `.node-version`）和 Bun 1.3.14，也支持 Node.js 24.15 或更高的 24.x 版本。`.node-version` 供版本管理工具和 CI 读取，不会自动升级或切换系统 Node；安装依赖前请确认 `node --version`。桌面 Git 操作需要系统 Git 2.30 或更高版本，应用不自带 Git。
+## 反馈与许可
 
-```bash
-bun install --frozen-lockfile
-```
+欢迎通过 [Issues](https://github.com/dzxing/gitcode/issues) 提交问题、复现步骤与功能建议。修改或衍生版本需先获得书面授权；开放 Issues 不代表授予二次开发许可。
 
-Windows、WSL、macOS 应各自安装依赖，不要跨系统复用 `node_modules` 或终端原生模块。
-只开发官网时可以安装官网及其依赖，不安装 Electron、node-pty 等桌面工具：
+| 行为                                           | 本项目原创部分的许可范围       |
+| ---------------------------------------------- | ------------------------------ |
+| 个人非商业学习、研究、测试及原样使用           | 允许                           |
+| 克隆、备份与按文档原样编译                     | 允许，需保留许可和声明         |
+| 免费、完整地分享未修改的源码或原样构建产物     | 允许，需附完整许可和第三方声明 |
+| 商业使用，包括企业内部业务、收费分发与付费服务 | 未经另行书面授权，禁止         |
+| 修改源码、二次开发、换皮及发布衍生版本         | 未经另行书面授权，禁止         |
+| 独立使用第三方组件                             | 以该组件自身许可为准           |
 
-```bash
-bun install --filter '@gitcode/website' --frozen-lockfile
-```
+完整条款：[GitCode Source-Available Non-Commercial No-Derivatives License 1.0](LICENSE)。本许可不限制 GitHub 平台条款所允许的浏览和 Fork，也不限制第三方材料原有许可授予的权利。
 
-## 常用命令
-
-所有命令都可在仓库根目录运行：
-
-| 命令                                      | 用途                                             |
-| ----------------------------------------- | ------------------------------------------------ |
-| `bun run dev`                             | 桌面界面的浏览器预览，`http://127.0.0.1:43187`   |
-| `bun run desktop`                         | 启动 Electron 桌面应用                           |
-| `bun run desktop:wsl`                     | WSL 桌面开发，软件渲染                           |
-| `bun run dev:website`                     | 门户开发，`http://127.0.0.1:43189`               |
-| `bun run build`                           | 检查并构建桌面前端                               |
-| `bun run build:website`                   | 静态生成官网，输出 `apps/website/.output/public` |
-| `bun run check`                           | 全仓库检查：边界、两个应用检查及全仓格式检查     |
-| `bun run typecheck`                       | 桌面与官网的 TypeScript 类型检查                 |
-| `bun run lint`                            | 桌面、官网及公共脚本的 ESLint 检查               |
-| `bun run lint:shared`                     | 根目录与品牌生成脚本的 ESLint 检查               |
-| `bun run test`                            | 桌面 Git、IPC、组件等回归测试                    |
-| `bun run test:ui`                         | 桌面浏览器交互测试                               |
-| `bun run test:core-reload`                | 本机 Git 核心热重载测试                          |
-| `bun run format` / `bun run format:check` | 全仓库格式化 / 检查                              |
-| `bun run icons:generate`                  | 从共享品牌源文件生成桌面图标                     |
-| `bun run desktop:build`                   | 在当前系统构建桌面安装包                         |
-| `bun run desktop:build:win`               | 从 Windows 调用完整 Windows 构建脚本             |
-
-为兼容原有命令，`dev`、`build`、`preview` 和 `test` 默认针对桌面应用。根目录 `typecheck` 与 `lint` 检查整个工作区，也可用 `typecheck:desktop`、`typecheck:website`、`lint:desktop`、`lint:website` 单独检查应用；整仓质量检查使用 `bun run check`。Vue／TypeScript 执行严格类型检查；Electron、开发脚本及 JS 测试执行对应的 JavaScript ESLint 检查。
-
-首次执行浏览器测试前，在根目录运行 `bunx playwright install chromium` 安装当前 Playwright 版本对应的浏览器。Linux 若缺少浏览器系统依赖，可按 Playwright 的提示安装；已有其他版本的 Chromium 不一定能被默认测试配置复用。
-
-Windows 可从仓库根目录运行 `bun run desktop:build:win`，也可双击 `apps/desktop/build-windows.cmd`。该脚本安装锁定的桌面依赖、构建并打包，产物输出到 `release/desktop/<版本号>/`。macOS 安装包需要 macOS 构建环境，签名与公证需要另行配置。
-
-桌面的功能、平台支持与验证说明见 [桌面文档](apps/desktop/README.md)。官网维护说明见 [官网文档](apps/website/README.md)。
-
-## 模块边界
-
-- `apps/desktop` 自行管理 Electron 主进程、preload、Vue renderer、Git 核心和原生终端模块。
-- `apps/website` 仅依赖 Nuxt、Vue、Markdown 渲染和共享品牌资源，不访问桌面 IPC 或本机 Git 接口。
-- `packages/brand` 只提供品牌资源和离线生成工具，不依赖任何应用。
-- 应用间不能直接导入源码。只有出现第二个真实消费者时才提取新的共享包，避免空泛的 `shared/utils` 层。
-- Vue、SSR renderer 和 TypeScript 等公共工具版本集中在根 `workspaces.catalog`，避免 Vue peer dependency 产生两份不兼容的响应式类型。各应用仍自行声明实际使用的依赖。
-- 每个应用保留自己的构建、类型检查、版本和发布流程；根目录负责命令转发与公共格式规范。暂不引入额外任务编排工具。
-
-`bun run check:boundaries` 检查包依赖与跨应用源码导入。桌面打包使用明确的暂存文件清单，不扫描整个工作区，因此不会将官网、Nuxt 或开发依赖带入安装包。
-
-`.gitattributes` 保证 Git 在各平台检出 LF 文本，`.editorconfig` 约束编辑器行为，`.prettierrc` 统一代码格式；三者各有用途。PowerShell 文件使用带 BOM 的 UTF-8，兼容 Windows PowerShell 5.1。
-
-`.github/workflows/` 是 GitHub Actions 验证配置。当前远程仓库位于 GitLab，尚未配置 GitLab CI；这些工作流需要在 GitHub 仓库中运行，不能视为已接入 GitLab 的自动验证。
-
-## 发布与迁移说明
-
-桌面应用版本由 `apps/desktop/package.json` 管理，官网可独立构建、部署。公开下载地址与校验信息由官网自己的发布清单维护，不读取本地安装包或私有 GitLab 地址。
-
-本次迁移保留桌面内部目录结构与运行时路径，仅调整工作区层级。根目录原有 `dev`、`desktop:wsl`、`build`、`test` 等入口继续可用。旧 `release/1.0.1` 产物已移动至 `release/desktop/1.0.1`，同版本重打包仍自动归档。
-
-新增模块时，在 `apps/` 或 `packages/` 创建独立 `package.json`，通过 `workspace:*` 引用共享包，并更新边界检查、检查命令和对应 CI。依赖变更在仓库根目录执行，只提交根 `bun.lock`。
-
-## 本地资料与产物
-
-品牌原始图稿保存在 `packages/brand/source/`，正式资源在 `packages/brand/assets/`。研究截图和验收记录放在根目录 `design/`，临时验证资料放在 `.tmp/`；这些本地资料不参与应用运行和打包。
-
-`release/` 保存安装包与历史归档，不提交 Git。保留需要分发、回退的版本即可，旧安装包和可重新生成的解包目录可按需清理。`legacy/` 只保留旧实现源码；其 `target/`、Python 缓存等编译产物无需保留。
-
-`node_modules/` 是工作区安装的本地依赖，`.idea/` 是本地 IDEA 配置；均不提交 Git。`.agents/`、`.codex/`、`.aws/` 等工具环境目录由对应工具管理，不属于应用源码。根目录 `scripts/` 只放工作区公共脚本，应用专属脚本放入对应 `apps/<应用>/scripts/`。
+Copyright © 2026 dzxing. 第三方著作权与许可见[第三方声明](THIRD_PARTY_NOTICES.md)。

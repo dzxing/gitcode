@@ -1,0 +1,115 @@
+GitCode Source-Available Non-Commercial No-Derivatives License 1.0
+Short name: GitCode-NC-ND-1.0
+
+Copyright (c) 2026 dzxing.
+All rights reserved except as expressly granted below.
+
+This is a custom source-available license. It is not an OSI-approved
+open-source license and is not the Creative Commons BY-NC-ND license.
+
+1. Scope and definitions
+
+"Licensor" means dzxing and any other copyright holder who expressly
+licenses their original contributions under this License.
+
+"Software" means the original GitCode source code, documentation, artwork
+and other materials made available under this License, excluding Third-Party
+Materials as defined in section 5.
+
+"Non-Commercial Use" means use by a natural person solely for their own
+personal study, research, evaluation, testing or personal activities that
+are not directed toward business operations, commercial advantage or
+monetary compensation. Use for an employer, client, business, paid service
+or revenue-generating activity is not Non-Commercial Use, including use
+inside an organization even when the Software itself is not sold.
+
+"Modified Work" means an altered version of the Software or a work derived
+from it, including changes to source code, features or branding, ports,
+translations of the Software, and incorporation of its original material
+into another product. Compiling unchanged source using documented build
+steps, installing dependencies, and changing ordinary runtime preferences
+do not by themselves create a Modified Work. Independently created files
+or Git repositories managed with the Software do not become Modified Works
+merely through that use; the commercial-use restriction still applies to
+the use of the Software itself.
+
+2. Limited permission
+
+Subject to this License, Licensor grants you a non-exclusive, worldwide,
+royalty-free permission to:
+
+(a) view, download, clone and retain unchanged copies of the Software for
+    Non-Commercial Use;
+(b) compile unchanged source and install and run the resulting unmodified
+    Software for Non-Commercial Use; and
+(c) share complete, unchanged copies of the source code or builds compiled
+    from unchanged source, without charge, for the uses permitted here,
+    provided this License and all copyright, attribution and Third-Party
+    Materials notices accompany those copies.
+
+3. Restrictions
+
+Without separate prior written permission from the relevant copyright
+holder, you may not:
+
+(a) use the Software commercially, including for internal business use,
+    consulting, client work, paid support, paid services or sale;
+(b) alter the Software or create, use, distribute or otherwise exploit
+    Modified Works, even without charge or solely for private use;
+(c) sell, sublicense, rent or charge for the Software; or
+(d) remove required copyright, attribution or license notices or suggest
+    that a copy or derivative is an official GitCode release.
+
+No trademark, branding or endorsement rights are granted except the
+incidental display necessary to exercise the permissions above. No
+permission to create or submit code modifications is implied by public
+repository access or the availability of an issue tracker.
+
+4. Platform rights and separately granted rights
+
+Nothing in this License limits non-waivable rights under applicable law,
+rights validly granted separately by a copyright holder, or the rights to
+view and fork a public repository through GitHub's platform as provided by
+the applicable GitHub Terms of Service. Those platform rights do not by
+themselves grant broader commercial-use or modification permission under
+this License. A later license change does not revoke rights validly
+granted under an earlier license.
+
+5. Third-Party Materials
+
+Third-party code, adapted upstream portions, dependencies, icons, fonts
+and other separately licensed materials are "Third-Party Materials".
+They remain subject to their respective copyright notices and licenses.
+This License does not replace those licenses or restrict rights they grant,
+including rights to use, modify or redistribute the third-party portions.
+
+See THIRD_PARTY_NOTICES.md, component-specific LICENSE and NOTICE files,
+source headers, dependency packages and font license files for the relevant
+notices. The restrictions in this License apply only to material that the
+Licensor has the right to license under these terms.
+
+6. Termination
+
+Permissions under this License terminate automatically if you violate its
+conditions. After termination you must stop exercising the permissions
+granted by this License. Termination does not affect independently held
+rights to Third-Party Materials or rights preserved by section 4.
+
+7. No warranty; limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE
+AND NON-INFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW,
+LICENSOR SHALL NOT BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY
+ARISING FROM THE SOFTWARE OR ITS USE, WHETHER IN CONTRACT, TORT OR OTHERWISE.
+
+8. Additional permission and language
+
+Requests for commercial use, modification or other permissions outside
+this License may be directed to the GitHub account dzxing at
+https://github.com/dzxing. A request, issue or unanswered message is not
+permission; permission must be expressly granted in writing.
+
+This English text is the operative License. Any summaries or translations,
+including the Chinese summary in README.md, are provided for convenience.
