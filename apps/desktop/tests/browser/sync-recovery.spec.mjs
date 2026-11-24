@@ -1,4 +1,5 @@
 import { test } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
 import { verifySyncDivergence } from '../../scripts/verify-sync-divergence-ui.mjs'
 for (const sameLine of [false, true])
   test(
@@ -11,7 +12,9 @@ for (const sameLine of [false, true])
         url: baseURL,
         sameLine,
         recoverPush: true,
-        screenshotDirectory: '/home/dzxing/projects/GitK/design/sync-recovery',
+        screenshotDirectory: fileURLToPath(
+          new URL('../../../../design/sync-recovery/', import.meta.url),
+        ),
       })
     },
   )

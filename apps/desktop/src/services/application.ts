@@ -36,9 +36,9 @@ export interface ApplicationBridge {
 }
 declare global {
   interface Window {
-    gitkApp?: ApplicationBridge
+    gitcodeApp?: ApplicationBridge
   }
 }
 export function applicationBridge() {
-  return typeof window === 'undefined' ? null : window.gitkApp || null
+  return typeof window === 'undefined' ? null : window.gitcodeApp || null
 }

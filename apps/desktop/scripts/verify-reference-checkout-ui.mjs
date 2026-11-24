@@ -60,7 +60,7 @@ export async function verifyReferenceCheckout(
       beforeIndex = await readFile(indexPath)
     await page.goto(url)
     await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
-    assert.equal(await page.evaluate(() => typeof window.gitk), 'undefined')
+    assert.equal(await page.evaluate(() => typeof window.gitcode), 'undefined')
     await page.keyboard.press('Control+o')
     await page.getByLabel('仓库路径', { exact: true }).fill(repo)
     await page.getByRole('dialog').getByRole('button', { name: '打开仓库', exact: true }).click()

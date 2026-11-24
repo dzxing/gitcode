@@ -414,9 +414,9 @@ legacy/                   已归档的 Tauri/Rust 和 Python 原型
 
 ## 名称与旧版本兼容
 
-项目与桌面应用现名为 **GitCode**，包名为 `gitcode-workbench`，应用标识为 `dev.gitcode.workbench`。窗口、菜单、关于、构建产物和 CI 名称已同步更新。工作区目录仍可叫 `GitK`，不影响启动；历史实现保留在 `legacy/`。
+项目与桌面应用现名为 **GitCode**，包名为 `gitcode-workbench`，应用标识为 `dev.gitcode.workbench`。窗口、菜单、关于、构建产物和 CI 名称已同步更新。工作区目录名称不影响启动；历史实现保留在 `legacy/`。
 
-最近仓库使用 `gitcode.recent`，首次启动会从旧 `gitk.recent` 读取迁移。若已有旧 Electron 用户配置目录且尚无 GitCode 配置，会继续使用旧目录，避免复制运行中的 Chromium 配置。旧 `GITK_GIT_PATH`、`GITK_DEV_URL`、`GITK_SOFTWARE_RENDERING` 仍作为兼容别名；新名称为 `GITCODE_GIT_PATH`、`GITCODE_DEV_URL`、`GITCODE_SOFTWARE_RENDERING`。`gitk` preload/IPC 标识保留为内部稳定协议，GitKraken 的引用名称保持不变。
+最近仓库使用 `gitcode.recent`，首次启动会从旧 `gitk.recent` 读取迁移。若已有旧 Electron 用户配置目录且尚无 GitCode 配置，会继续使用旧目录，避免复制运行中的 Chromium 配置。旧 `GITK_GIT_PATH`、`GITK_DEV_URL`、`GITK_SOFTWARE_RENDERING` 仍作为兼容别名；新名称为 `GITCODE_GIT_PATH`、`GITCODE_DEV_URL`、`GITCODE_SOFTWARE_RENDERING`。当前 preload 对象统一为 `window.gitcode`、`window.gitcodeApp`、`window.gitcodeWindow`、`window.gitcodeContextMenu`，IPC 通道统一使用 `gitcode:` 前缀。主进程、preload 与前端随同一应用版本发布；更新本机核心后需重启桌面应用。GitKraken 的引用名称保持不变。
 
 ### 操作反馈与确认方式
 

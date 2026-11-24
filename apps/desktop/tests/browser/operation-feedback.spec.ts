@@ -17,10 +17,10 @@ test('Fetch allows cached tab browsing and never applies its result to another r
     let finish: () => void
     const controls = window as unknown as { finishFetch: () => void }
     controls.finishFetch = () => finish()
-    window.gitk!.snapshot = async (repo) => fixture(repo)
-    window.gitk!.chooseDirectory = async () => '/test-fixtures/second'
-    window.gitk!.syncPlan = async () => ({ id: 'fetch-plan' }) as SyncPlan
-    window.gitk!.activity = async () => ({
+    window.gitcode!.snapshot = async (repo) => fixture(repo)
+    window.gitcode!.chooseDirectory = async () => '/test-fixtures/second'
+    window.gitcode!.syncPlan = async () => ({ id: 'fetch-plan' }) as SyncPlan
+    window.gitcode!.activity = async () => ({
       id: 'fetch-job',
       operation: 'fetch',
       repo: source,
@@ -28,7 +28,7 @@ test('Fetch allows cached tab browsing and never applies its result to another r
       percent: null,
       state: 'running',
     })
-    window.gitk!.action = async (repo, request) => {
+    window.gitcode!.action = async (repo, request) => {
       if (request.action !== 'fetch') throw new Error('Unexpected write during fetch')
       await new Promise<void>((resolve) => {
         finish = resolve
@@ -65,8 +65,8 @@ test('Fetch allows cached tab browsing and never applies its result to another r
 test('Fetch All shows successful and failed remote results together', async ({ page }) => {
   await openFixtureRepository(page)
   await page.addInitScript((snapshot) => {
-    window.gitk!.syncPlan = async () => ({ id: 'partial-fetch' }) as SyncPlan
-    window.gitk!.action = async () => ({
+    window.gitcode!.syncPlan = async () => ({ id: 'partial-fetch' }) as SyncPlan
+    window.gitcode!.action = async () => ({
       outcome: 'partial',
       output: '',
       error: 'backup 连接失败',
@@ -108,9 +108,9 @@ test('clone closes its parameter dialog, reports phase progress and waits after 
       state: 'running',
     }
     controls.finishClone = () => finish()
-    window.gitk!.activity = async () => controls.cloneProgress
-    window.gitk!.cancel = async () => {}
-    window.gitk!.create = async () => {
+    window.gitcode!.activity = async () => controls.cloneProgress
+    window.gitcode!.cancel = async () => {}
+    window.gitcode!.create = async () => {
       await new Promise<void>((resolve) => {
         finish = resolve
       })

@@ -35,7 +35,7 @@ for (const state of states)
     }
     await openFixtureRepository(page, false, snapshot)
     await page.evaluate(() => {
-      window.gitk!.commit = async () => ({
+      window.gitcode!.commit = async () => ({
         body: 'feat: 优化仓库工作台的交互体验\n\n提交说明 Commit details\n核对字体、行距与边框层级。',
         files: [{ path: 'README.md', status: 'M' }],
       })
@@ -43,7 +43,7 @@ for (const state of states)
     await page.evaluate(() => document.fonts.ready)
     await expect(page.locator('html')).toHaveAttribute('data-theme', state.mode)
     await page.evaluate(() => {
-      window.gitk!.operationLog = async () => ({
+      window.gitcode!.operationLog = async () => ({
         records: [
           {
             id: 'audit-fetch',

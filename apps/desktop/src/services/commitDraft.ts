@@ -34,6 +34,6 @@ export function writeCommitDraft(path: string, draft: CommitDraft) {
   // Chromium batches DOMStorage disk writes. Request a flush after the
   // renderer update so a desktop crash can recover recent keystrokes too.
   return Promise.resolve(
-    typeof window !== 'undefined' ? window.gitkApp?.flushDraftStorage?.() : undefined,
+    typeof window !== 'undefined' ? window.gitcodeApp?.flushDraftStorage?.() : undefined,
   )
 }

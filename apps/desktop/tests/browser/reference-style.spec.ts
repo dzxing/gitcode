@@ -112,7 +112,7 @@ test('原生菜单命令更新同一渲染状态和持久化选择', async ({ pa
       styleCommand: (id: string) => void
       styleMenuState: { labelStyle?: string }
     }
-    window.gitkApp = {
+    window.gitcodeApp = {
       setMenuState: async (state) => {
         host.styleMenuState = state
       },

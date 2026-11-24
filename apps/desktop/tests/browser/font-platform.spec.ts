@@ -16,7 +16,7 @@ async function platform(page: Page, browser: string, desktop?: string) {
         },
       })
       if (desktop)
-        window.gitkWindow = {
+        window.gitcodeWindow = {
           platform: desktop,
           minimize: async () => {},
           toggleMaximize: async () => {},

@@ -393,7 +393,7 @@ test('冲突三方正文跟随编辑器字体，标题保持界面字体，关�
   state.unstaged = [{ path: 'README.md', status: 'U' }]
   await openFixtureRepository(page, false, state)
   await page.evaluate((state) => {
-    window.gitk!.mergeRead = async () => ({
+    window.gitcode!.mergeRead = async () => ({
       state: state.merge!,
       file: {
         path: 'README.md',

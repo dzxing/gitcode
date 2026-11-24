@@ -59,7 +59,7 @@ test('file density preserves selections and drafts, distinguishes paths and pers
         throw new Error('No Git writes in display checks')
       }
       window.__fileViewWrites = 0
-      window.gitk = {
+      window.gitcode = {
         runtime: async () => ({
           platform: 'windows',
           gitAvailable: true,

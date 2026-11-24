@@ -51,7 +51,7 @@ test('中文组合输入期间不提交、不关闭标签或打开菜单，结�
     const state = structuredClone(initial)
     state.path = '/test-fixtures/repository'
     Object.assign(window, { compositionActions: [] })
-    window.gitk!.action = async (_repo, request) => {
+    window.gitcode!.action = async (_repo, request) => {
       ;(window as unknown as { compositionActions: string[] }).compositionActions.push(
         request.action,
       )

@@ -41,7 +41,7 @@ let quitting = false
 const closing = new CloseCoordinator({
   send: (id) => {
     if (mainWindow && !mainWindow.webContents.isDestroyed())
-      mainWindow.webContents.send('gitk:close-request', id)
+      mainWindow.webContents.send('gitcode:close-request', id)
   },
   fallback: async () => {
     const response = await dialog.showMessageBox(mainWindow, {
@@ -68,7 +68,7 @@ function sendCommand(id) {
   if (!isCommand(id)) return
   if (id === 'file.quit') closing.request()
   else if (mainWindow && !mainWindow.webContents.isDestroyed())
-    mainWindow.webContents.send('gitk:app-command', id)
+    mainWindow.webContents.send('gitcode:app-command', id)
 }
 
 app.setName('GitCode')
@@ -110,7 +110,7 @@ function authorized(event) {
 }
 
 function handle(name, work) {
-  ipcMain.handle(`gitk:${name}`, async (event, ...args) => {
+  ipcMain.handle(`gitcode:${name}`, async (event, ...args) => {
     authorized(event)
     return git.wsl ? git.wsl.route(name, args, () => work(...args)) : work(...args)
   })
@@ -421,7 +421,7 @@ function createWindow() {
   const state = () => {
     windowAppearance.apply()
     if (!mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed())
-      mainWindow.webContents.send('gitk:window-state', {
+      mainWindow.webContents.send('gitcode:window-state', {
         maximized: mainWindow.isMaximized(),
         fullscreen: mainWindow.isFullScreen(),
         focused: mainWindow.isFocused(),

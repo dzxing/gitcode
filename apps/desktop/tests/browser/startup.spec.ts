@@ -25,7 +25,7 @@ async function setup(page: import('@playwright/test').Page, mode: 'fast' | 'slow
           ],
         }),
       )
-      window.gitk!.snapshot = async (path) => {
+      window.gitcode!.snapshot = async (path) => {
         host.restoreCalls.push(path)
         if (host.restoreFailure) throw new Error('仓库目录暂时无法访问')
         if (mode === 'slow' && host.restoreCalls.length === 1)

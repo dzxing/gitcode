@@ -67,7 +67,7 @@ for (const [id, name] of [
     await page.mouse.up()
     expect((await sidebar.boundingBox())!.width).toBe(after!.width + 20)
     await page.evaluate(() => {
-      window.gitk!.historyTools = async () => ({
+      window.gitcode!.historyTools = async () => ({
         versions: [0, 1, 2].map((i) => ({ exists: true, binary: false, text: `version ${i}` })),
       })
     })

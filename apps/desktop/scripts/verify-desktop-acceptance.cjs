@@ -144,7 +144,7 @@ async function launch(name, existingProfile, { resetSettings = true, startupShot
     document.querySelector('#operation-status')?.textContent.includes('已连接'),
   )
   assert.ok(page.url().startsWith('file:'))
-  const runtime = await page.evaluate(() => window.gitk.runtime())
+  const runtime = await page.evaluate(() => window.gitcode.runtime())
   assert.ok(['system', 'environment'].includes(runtime.gitSource))
   assert.ok(
     !runtime.gitPath.startsWith(resourcesPath),
@@ -224,7 +224,7 @@ async function open(state, repo) {
 async function action(state, repo, operation, click, outcomes = ['succeeded']) {
   const old = await state.page.evaluate(
     async (repo) =>
-      (await window.gitk.operationLog({ scope: 'repository', repo })).records.map(
+      (await window.gitcode.operationLog({ scope: 'repository', repo })).records.map(
         (record) => record.id,
       ),
     repo,
@@ -234,7 +234,7 @@ async function action(state, repo, operation, click, outcomes = ['succeeded']) {
   const deadline = Date.now() + 60000
   while (Date.now() < deadline) {
     const records = await state.page.evaluate(
-      async (repo) => (await window.gitk.operationLog({ scope: 'repository', repo })).records,
+      async (repo) => (await window.gitcode.operationLog({ scope: 'repository', repo })).records,
       repo,
     )
     result = records.find(
@@ -250,11 +250,11 @@ async function action(state, repo, operation, click, outcomes = ['succeeded']) {
       return {
         repo,
         displayed,
-        expected: await window.gitk.operationLog({ scope: 'repository', repo }),
+        expected: await window.gitcode.operationLog({ scope: 'repository', repo }),
         actual: displayed
-          ? await window.gitk.operationLog({ scope: 'repository', repo: displayed })
+          ? await window.gitcode.operationLog({ scope: 'repository', repo: displayed })
           : null,
-        activity: await window.gitk.activity(),
+        activity: await window.gitcode.activity(),
         warning: document.querySelector('.partial-warning')?.textContent,
       }
     }, repo)
@@ -579,7 +579,8 @@ async function terminalSuite() {
         ).slice('terminal-'.length)
         const read = async (id) =>
           page.evaluate(
-            async ({ repo, id }) => window.gitk.terminal(repo, { action: 'read', id, cursor: 0 }),
+            async ({ repo, id }) =>
+              window.gitcode.terminal(repo, { action: 'read', id, cursor: 0 }),
             { repo: f.repo, id },
           )
         const waitForOutput = async (id, marker) => {
@@ -980,7 +981,7 @@ async function authSuite() {
           {},
           { timeout: 90000 },
         )
-        const status = await page.evaluate((repo) => window.gitk.fetchStatus(repo), second.repo)
+        const status = await page.evaluate((repo) => window.gitcode.fetchStatus(repo), second.repo)
         assert.equal(status.remotes.origin.paused, true)
         assert.ok(server.control.events.some((event) => event.status === 401))
         assert.equal(await page.locator('dialog[open]').count(), 0)
@@ -1000,7 +1001,7 @@ async function authSuite() {
             .getByRole('button', { name: '手动获取', exact: true })
             .click(),
         )
-        const status = await page.evaluate((repo) => window.gitk.fetchStatus(repo), second.repo)
+        const status = await page.evaluate((repo) => window.gitcode.fetchStatus(repo), second.repo)
         assert.equal(status.remotes.origin.paused, false)
         assert.equal(status.error, '')
         await settings(state, 0)
@@ -1036,7 +1037,7 @@ async function authSuite() {
             .click(),
         )
         assert.equal(
-          (await page.evaluate((repo) => window.gitk.fetchStatus(repo), second.repo)).error,
+          (await page.evaluate((repo) => window.gitcode.fetchStatus(repo), second.repo)).error,
           '',
         )
       },
@@ -1101,11 +1102,11 @@ async function lifecycleSuite() {
       console.log('RESTART launch application')
       restored = await launch('lifecycle-restored', profile, { resetSettings: false })
       assert.equal(
-        (await restored.page.evaluate(() => window.gitk.activitySettings())).autoFetchInterval,
+        (await restored.page.evaluate(() => window.gitcode.activitySettings())).autoFetchInterval,
         4,
       )
       const appLog = await restored.page.evaluate(() =>
-        window.gitk.operationLog({ scope: 'application' }),
+        window.gitcode.operationLog({ scope: 'application' }),
       )
       assert.ok(appLog.records.some((record) => record.operation === 'activity-settings'))
       await settings(restored, 0)
@@ -1393,7 +1394,7 @@ async function boundarySuite() {
         const sub = path.join(f.repo, 'deps', 'child')
         await configure(sub)
         await open(state, f.repo)
-        await page.evaluate((repo) => window.gitk.repositoryChanges(repo), f.repo)
+        await page.evaluate((repo) => window.gitcode.repositoryChanges(repo), f.repo)
         await commit(sub, 'file.txt', 'externally updated\n', 'module external commit')
         await page
           .locator('.file-main[data-file-path="deps/child"][data-file-staged="false"]')
@@ -1442,7 +1443,7 @@ async function releaseRegressionSuite() {
       },
     )
     await check('packaged Windows normal graph excludes Notes and prefetch commits', async () => {
-      const snapshot = await page.evaluate((repo) => window.gitk.snapshot(repo), f.repo)
+      const snapshot = await page.evaluate((repo) => window.gitcode.snapshot(repo), f.repo)
       assert.equal(snapshot.total, 2)
       assert.ok(!snapshot.commits.some((c) => c.hash === hidden))
       assert.ok(!(await page.locator('body').innerText()).includes('Notes added'))
@@ -1871,7 +1872,7 @@ async function observationSuite() {
   try {
     await open(state, f.repo)
     await state.page.waitForFunction(
-      async (repo) => (await window.gitk.repositoryChanges(repo)).watched > 0,
+      async (repo) => (await window.gitcode.repositoryChanges(repo)).watched > 0,
       f.repo,
     )
     const input = state.page.getByRole('textbox', { name: '提交说明', exact: true })
@@ -1991,13 +1992,13 @@ async function startupSuite() {
         )
         assert.equal(await restored.page.locator('.repo-tab').count(), 2)
         const log = await restored.page.evaluate(async () => {
-          const summary = await window.gitk.operationLog({ scope: 'application' })
+          const summary = await window.gitcode.operationLog({ scope: 'application' })
           return {
             records: await Promise.all(
               summary.records
                 .filter((record) => record.operation.startsWith('application-'))
                 .map(async (record) => {
-                  const detail = await window.gitk.operationLog({
+                  const detail = await window.gitcode.operationLog({
                     scope: 'application',
                     id: record.id,
                   })

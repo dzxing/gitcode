@@ -128,8 +128,8 @@ test('a completed fetch replaces the progress position with its newest result', 
   await notify(page, [])
   await expect(page.locator('.toast')).toHaveCount(0)
   await page.evaluate(() => {
-    window.gitk!.syncPlan = async () => ({ id: 'motion-fetch' }) as SyncPlan
-    window.gitk!.activity = async () => ({
+    window.gitcode!.syncPlan = async () => ({ id: 'motion-fetch' }) as SyncPlan
+    window.gitcode!.activity = async () => ({
       id: 'motion-fetch',
       operation: 'fetch',
       repo: '/test-fixtures/repository',
@@ -137,14 +137,14 @@ test('a completed fetch replaces the progress position with its newest result', 
       percent: 50,
       state: 'running',
     })
-    window.gitk!.action = async () => {
+    window.gitcode!.action = async () => {
       await new Promise<void>((resolve) => {
         ;(window as unknown as { finishMotionFetch: () => void }).finishMotionFetch = resolve
       })
       return {
         outcome: 'succeeded',
         output: '',
-        snapshot: await window.gitk!.snapshot('/test-fixtures/repository'),
+        snapshot: await window.gitcode!.snapshot('/test-fixtures/repository'),
       }
     }
   })

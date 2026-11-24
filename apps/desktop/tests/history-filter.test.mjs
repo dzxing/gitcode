@@ -143,12 +143,12 @@ try {
       /quota/,
     )
     globalThis.localStorage = original
-    window.gitkApp = { flushDraftStorage: () => Promise.reject(Error('flush failed')) }
+    window.gitcodeApp = { flushDraftStorage: () => Promise.reject(Error('flush failed')) }
     await assert.rejects(
       writeHistoryFilter(repo.path, { fullRef: 'refs/heads/main', section: null }),
       /flush failed/,
     )
-    delete window.gitkApp
+    delete window.gitcodeApp
   })
 } finally {
   await vite.close()

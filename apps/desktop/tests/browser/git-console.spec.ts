@@ -7,7 +7,7 @@ async function fixture(page: Page) {
   await page.evaluate(() => {
     const requests: GitConsoleRequest[] = []
     Object.assign(window, { consoleRequests: requests })
-    window.gitk!.gitConsole = async (repo, request) => {
+    window.gitcode!.gitConsole = async (repo, request) => {
       requests.push(request)
       const entries = [
         { sequence: 1, kind: 'start' as const, text: 'git fetch --progress origin' },

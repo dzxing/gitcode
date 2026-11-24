@@ -23,7 +23,7 @@ const section = ref<'appearance' | 'fonts' | 'repository' | 'git'>(
 )
 const canConfigureGit = computed(
   () =>
-    typeof window.gitk?.gitSettings === 'function' || (store.connected && canConnectLocalCore()),
+    typeof window.gitcode?.gitSettings === 'function' || (store.connected && canConnectLocalCore()),
 )
 const gitSettings = ref<InstanceType<typeof GitRuntimeSettings>>()
 const gitVisited = ref(section.value === 'git')

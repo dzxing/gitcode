@@ -18,7 +18,7 @@ async function installBridge(page: Page) {
     host.nativeClosed = []
     host.nativeOpenedAt = []
     host.nativeTooltipTitles = []
-    window.gitkContextMenu = {
+    window.gitcodeContextMenu = {
       popup: (request) => {
         host.nativeTooltipTitles.push(
           [
@@ -148,7 +148,7 @@ test('a stale native selection cannot execute after opening another menu', async
 
 test('unavailable native menus fall back to the browser menu', async ({ page }) => {
   await page.addInitScript(() => {
-    window.gitkContextMenu = {
+    window.gitcodeContextMenu = {
       popup: async () => {
         throw new Error('unavailable')
       },
@@ -186,7 +186,7 @@ test('native checkout directly attempts the named branch with frozen reference g
   await installBridge(page)
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.action = async (_repo, request) => {
+    window.gitcode!.action = async (_repo, request) => {
       document.documentElement.dataset.nativeCheckout = JSON.stringify(request)
       throw new Error('Read-only fixture rejects the attempt')
     }
@@ -229,7 +229,7 @@ test('remote-only branch menu does not wait for Git rebase planning', async ({ p
   await openFixtureRepository(page, false, snapshot)
   await page.evaluate(() => {
     document.documentElement.dataset.rebaseReads = '0'
-    window.gitk!.rebaseMenuRead = async () => {
+    window.gitcode!.rebaseMenuRead = async () => {
       document.documentElement.dataset.rebaseReads = String(
         Number(document.documentElement.dataset.rebaseReads) + 1,
       )
@@ -301,11 +301,11 @@ test('interactive rebase menu uses history eligibility; full preflight stays on 
   await openFixtureRepository(page, false, snapshot)
   await page.evaluate(() => {
     document.documentElement.dataset.rebaseReads = ''
-    window.gitk!.rebaseMenuRead = async () => {
+    window.gitcode!.rebaseMenuRead = async () => {
       document.documentElement.dataset.rebaseReads += 'rebase-menu,'
       return { canInteractive: true }
     }
-    window.gitk!.navigationRead = async (_repo, request) => {
+    window.gitcode!.navigationRead = async (_repo, request) => {
       document.documentElement.dataset.rebaseReads += request.kind + ','
       throw new Error('测试：工作区已变化，完整预检阻止变基')
     }
@@ -352,7 +352,7 @@ test('ineligible history hides interactive rebase without removing ordinary reba
   await installBridge(page)
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.rebaseMenuRead = async () => ({ canInteractive: false })
+    window.gitcode!.rebaseMenuRead = async () => ({ canInteractive: false })
   })
   await develop(page).click({ button: 'right' })
   await expect
@@ -378,7 +378,7 @@ test('slow history read cannot block remote tracking menus or mutate an already 
   await openFixtureRepository(page, false, snapshot)
   await page.evaluate(() => {
     document.documentElement.dataset.historyStarted = 'false'
-    window.gitk!.rebaseMenuRead = () =>
+    window.gitcode!.rebaseMenuRead = () =>
       new Promise((resolve) => {
         document.documentElement.dataset.historyStarted = 'true'
         document.addEventListener('resolve-menu-history', () => resolve({ canInteractive: true }), {
@@ -445,7 +445,7 @@ test('native commit menu opens before optional slow Git eligibility reads and ke
   snapshot.commits.pop()
   await openFixtureRepository(page, false, snapshot)
   await page.evaluate(() => {
-    window.gitk!.rebaseMenuRead = async () => {
+    window.gitcode!.rebaseMenuRead = async () => {
       document.documentElement.dataset.commitMenuOpenedFirst = String(
         (window as unknown as NativeTestWindow).nativeRequests.length > 0,
       )

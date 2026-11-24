@@ -26,7 +26,7 @@ const nativeRuntime = {
 }
 let nativeHandler = async () => nativeRuntime
 globalThis.window = {
-  gitk: {
+  gitcode: {
     repositoryTrust: async (path) => ({ path, gitDir: path + '/.git', trusted: true, token: '' }),
     historyRead: (repo, request) => nativeHandler('history-read', { repo, request }),
     runtime: () => nativeHandler('runtime'),
@@ -501,7 +501,7 @@ try {
   await test('Operation notices collapse IPC stacks without losing the original error or operation outcome', async () => {
     const { noticePresentation } = await vite.ssrLoadModule('/src/noticePresentation.ts')
     const raw =
-      "Error invoking remote method 'gitk:snapshot': Error: 读取仓库失败。\n    at GitService.snapshot (C:\\GitCode\\app.asar\\electron\\git.cjs:42:7)\n    at async invoke (node:internal/process/task_queues:95:5)"
+      "Error invoking remote method 'gitcode:snapshot': Error: 读取仓库失败。\n    at GitService.snapshot (C:\\GitCode\\app.asar\\electron\\git.cjs:42:7)\n    at async invoke (node:internal/process/task_queues:95:5)"
     const store = freshStore()
     store.notify(raw, true)
     assert.equal(store.notices[0].text, '读取仓库失败。')
@@ -515,7 +515,7 @@ try {
     assert.ok(success.text.startsWith('操作已完成。'))
     assert.ok(success.details)
     const auth = noticePresentation(
-      "Error invoking remote method 'gitk:action': Error: fatal: Authentication failed for https://qa:private-password@git.example/repo?token=private-token\n    at push (file:///app.js:42:1)",
+      "Error invoking remote method 'gitcode:action': Error: fatal: Authentication failed for https://qa:private-password@git.example/repo?token=private-token\n    at push (file:///app.js:42:1)",
       true,
     )
     assert.match(auth.text, /认证或权限检查失败/)
@@ -600,14 +600,14 @@ try {
 
   await test('Startup retry rechecks a previously unavailable Git and recovers after developer tools installation', async () => {
     storage.delete('gitcode.workspaceSession.v1')
-    const previous = window.gitk.refreshGitRuntime
+    const previous = window.gitcode.refreshGitRuntime
     let checks = 0
     nativeHandler = async () => ({
       ...nativeRuntime,
       gitAvailable: false,
       gitError: '开发工具不可用。',
     })
-    window.gitk.refreshGitRuntime = async () => {
+    window.gitcode.refreshGitRuntime = async () => {
       if (++checks === 1) throw new Error('开发工具仍不可用。')
       return { selection: { mode: 'auto' }, runtime: nativeRuntime }
     }
@@ -624,7 +624,7 @@ try {
       assert.equal(store.startupPhase, 'ready')
       assert.equal(store.runtime.gitAvailable, true)
     } finally {
-      window.gitk.refreshGitRuntime = previous
+      window.gitcode.refreshGitRuntime = previous
     }
   })
 
@@ -3891,10 +3891,10 @@ try {
   await test('Operation entry waits for reference refresh and freezes the original action DTO', async () => {
     const store = freshStore()
     store.connected = true
-    const original = window.gitk.refreshReferences
+    const original = window.gitcode.refreshReferences
     let release,
       actions = []
-    window.gitk.refreshReferences = () =>
+    window.gitcode.refreshReferences = () =>
       new Promise((resolve) => {
         release = resolve
       })
@@ -3923,16 +3923,16 @@ try {
       assert.equal(actions[0].name, 'feature/original')
       assert.deepEqual(actions[0].nested, { value: 'original' })
     } finally {
-      window.gitk.refreshReferences = original
+      window.gitcode.refreshReferences = original
     }
   })
 
   await test('A changed HEAD found during operation entry updates the view without executing the old intent', async () => {
     const store = freshStore()
     store.connected = true
-    const original = window.gitk.refreshReferences
+    const original = window.gitcode.refreshReferences
     const next = { ...JSON.parse(JSON.stringify(store.repo)), head: 'f'.repeat(40) }
-    window.gitk.refreshReferences = async () => next
+    window.gitcode.refreshReferences = async () => next
     let actions = 0
     nativeHandler = async (method) => {
       if (method === 'action') actions++
@@ -3944,17 +3944,17 @@ try {
       assert.equal(store.repo.head, next.head)
       assert.ok(store.notices.some((n) => n.error && n.text.includes('HEAD 已变化')))
     } finally {
-      window.gitk.refreshReferences = original
+      window.gitcode.refreshReferences = original
     }
   })
 
   await test('Cancellation during operation-entry refresh cannot start a Git mutation after the read returns', async () => {
     const store = freshStore()
     store.connected = true
-    const original = window.gitk.refreshReferences
+    const original = window.gitcode.refreshReferences
     let release,
       actions = 0
-    window.gitk.refreshReferences = () =>
+    window.gitcode.refreshReferences = () =>
       new Promise((resolve) => {
         release = resolve
       })
@@ -3970,7 +3970,7 @@ try {
       assert.equal(actions, 0)
       assert.equal(store.busy, false)
     } finally {
-      window.gitk.refreshReferences = original
+      window.gitcode.refreshReferences = original
     }
   })
 
@@ -4224,8 +4224,8 @@ try {
 
   await test('A static preview without a local origin explains the missing core without a developer command', async () => {
     const store = freshStore()
-    const bridge = window.gitk
-    delete window.gitk
+    const bridge = window.gitcode
+    delete window.gitcode
     try {
       await store.init()
       assert.equal(store.connected, false)
@@ -4234,7 +4234,7 @@ try {
       assert.equal(store.modal, 'open')
       assert.ok(store.notices.every((n) => !n.text.includes('bun run desktop')))
     } finally {
-      window.gitk = bridge
+      window.gitcode = bridge
     }
   })
 
@@ -4366,7 +4366,7 @@ try {
       isFullscreen: async () => false,
       isFocused: async () => true,
     }
-    window.gitkWindow = native
+    window.gitcodeWindow = native
     try {
       const pinia = createPinia()
       let chrome
@@ -4398,18 +4398,18 @@ try {
         ),
       )
     } finally {
-      delete window.gitkWindow
+      delete window.gitcodeWindow
     }
   })
 
   await test('Windows native controls reserve caption space before runtime connects and omit duplicate DOM buttons', async () => {
-    window.gitkWindow = { nativeControls: true }
+    window.gitcodeWindow = { nativeControls: true }
     try {
       const html = await renderToString(createSSRApp(App).use(createPinia()))
       assert.ok(html.includes('native-window-controls'))
       assert.ok(!html.includes('aria-label="窗口控制"'))
     } finally {
-      delete window.gitkWindow
+      delete window.gitcodeWindow
     }
   })
 
@@ -4418,13 +4418,13 @@ try {
     setActivePinia(pinia)
     const store = seedRepository(useRepositoryStore())
     store.runtime = { ...nativeRuntime, platform: 'macos' }
-    window.gitkWindow = { platform: 'darwin' }
+    window.gitcodeWindow = { platform: 'darwin' }
     try {
       const html = await renderToString(createSSRApp(App).use(pinia))
       assert.ok(html.includes('platform-macos'))
       assert.ok(!html.includes('aria-label="窗口控制"'))
     } finally {
-      delete window.gitkWindow
+      delete window.gitcodeWindow
     }
     const html = await renderToString(createSSRApp(App).use(createPinia()))
     assert.ok(!html.includes('aria-label="窗口控制"'))
@@ -4819,9 +4819,9 @@ try {
     nativeHandler = async (method) => (method === 'runtime' ? nativeRuntime : structuredClone(live))
     await store.open(live.path)
     const pending = deferred(),
-      previous = window.gitkApp
+      previous = window.gitcodeApp
     let flushes = 0
-    window.gitkApp = {
+    window.gitcodeApp = {
       ...previous,
       flushDraftStorage: () => (++flushes === 1 ? pending.promise : Promise.resolve()),
     }
@@ -4834,8 +4834,8 @@ try {
       assert.equal(store.branchFilter, 'refs/heads/main')
       assert.equal(store.historyPreferenceWarning, '')
     } finally {
-      if (previous) window.gitkApp = previous
-      else delete window.gitkApp
+      if (previous) window.gitcodeApp = previous
+      else delete window.gitcodeApp
     }
   })
   await test('SHA location is temporary and never overwrites the remembered branch; explicit return clears it', async () => {
@@ -4932,8 +4932,8 @@ try {
       path = '/tmp/filter-untrusted'
     await writeHistoryFilter(path, { fullRef: 'refs/heads/missing', section: 'local' })
     const raw = storage.get(historyFilterKey(path)),
-      original = window.gitk.repositoryTrust
-    window.gitk.repositoryTrust = async () => ({
+      original = window.gitcode.repositoryTrust
+    window.gitcode.repositoryTrust = async () => ({
       path,
       gitDir: path + '/.git',
       trusted: false,
@@ -4954,7 +4954,7 @@ try {
       assert.equal(storage.get(historyFilterKey(path)), raw)
       assert.deepEqual(calls, ['runtime'])
     } finally {
-      window.gitk.repositoryTrust = original
+      window.gitcode.repositoryTrust = original
     }
   })
 } finally {

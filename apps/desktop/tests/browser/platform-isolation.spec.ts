@@ -60,7 +60,7 @@ for (const host of ['macOS', 'Windows']) {
 test('原生窗口平台优先于浏览器标识和 Git 平台，避免出现重复窗口按钮', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Linux x86_64' })
-    window.gitkWindow = {
+    window.gitcodeWindow = {
       platform: 'darwin',
       nativeControls: false,
       minimize: async () => {},

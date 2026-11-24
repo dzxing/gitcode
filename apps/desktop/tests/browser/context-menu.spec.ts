@@ -135,13 +135,13 @@ test('stash pop with unstaged changes asks for consent inline and cancel perform
   ]
   await openFixtureRepository(page, false, snapshot)
   await page.evaluate(() => {
-    window.gitk!.stashRead = async () => ({
+    window.gitcode!.stashRead = async () => ({
       files: [],
       stagedPaths: [],
       base: 'a'.repeat(40),
       diff: null,
     })
-    window.gitk!.action = async () => {
+    window.gitcode!.action = async () => {
       document.documentElement.dataset.unexpectedStashWrite = 'true'
       throw new Error('Unexpected write')
     }
@@ -270,7 +270,7 @@ test('comparison and undo entries invoke existing preflight with the frozen comm
   snapshot.branches = snapshot.branches.filter((b) => b.kind !== 'remote')
   await openFixtureRepository(page, false, snapshot)
   await page.evaluate(() => {
-    window.gitk!.navigationRead = async (_repo, request) => {
+    window.gitcode!.navigationRead = async (_repo, request) => {
       document.documentElement.dataset.commitCompare = JSON.stringify(request)
       return {
         fullRef: request.fullRef,
@@ -285,7 +285,7 @@ test('comparison and undo entries invoke existing preflight with the frozen comm
         diff: null,
       }
     }
-    window.gitk!.commitOperationRead = async () => {
+    window.gitcode!.commitOperationRead = async () => {
       throw new Error('Read-only fixture confirms preflight was requested')
     }
   })
@@ -315,7 +315,7 @@ test('undo preview rejects a HEAD that moved after the commit menu was clicked',
   snapshot.branches = snapshot.branches.filter((branch) => branch.kind !== 'remote')
   await openFixtureRepository(page, false, snapshot)
   await page.evaluate(() => {
-    window.gitk!.commitOperationRead = async () => ({
+    window.gitcode!.commitOperationRead = async () => ({
       id: 'stale-plan',
       head: 'f'.repeat(40),
       branch: 'main',
@@ -349,7 +349,7 @@ test('parent navigation loads an unloaded SHA and leaves the target clear of the
   await openFixtureRepository(page, false, snapshot)
   await page.evaluate(
     ({ parent, history }) => {
-      window.gitk!.historyRead = async (_repo, request) => {
+      window.gitcode!.historyRead = async (_repo, request) => {
         document.documentElement.dataset.menuLocatedSha = request.sha
         return { commits: [parent], history: { ...history, focus: parent.hash, nextOffset: null } }
       }

@@ -63,7 +63,7 @@ test('sidebar full names escape clipping without moving rows or adding checkout 
     const blocked = async () => {
       throw new Error('No Git writes in sidebar name check')
     }
-    window.gitk = {
+    window.gitcode = {
       runtime: async () => ({
         platform: 'windows',
         gitAvailable: true,

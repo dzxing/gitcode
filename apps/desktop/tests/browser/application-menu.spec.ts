@@ -5,7 +5,7 @@ async function mockApplication(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     const calls: unknown[] = []
     ;(window as any).appCalls = calls
-    window.gitkApp = {
+    window.gitcodeApp = {
       setMenuState: async () => {},
       edit: async (command) => {
         calls.push(['edit', command])

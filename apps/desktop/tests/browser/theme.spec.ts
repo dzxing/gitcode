@@ -124,7 +124,7 @@ test('无效主题安全回退，保存失败仍可切换并提示', async ({ pa
 
 test('主题选择与系统变化同步发布给桌面原生菜单', async ({ page }) => {
   await page.addInitScript(() => {
-    window.gitkApp = {
+    window.gitcodeApp = {
       setMenuState: async (state) => {
         Object.assign(window, { appearanceMenuState: state })
       },

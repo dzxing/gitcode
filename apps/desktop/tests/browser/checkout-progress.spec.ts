@@ -11,8 +11,8 @@ for (const outcome of ['succeeded', 'failed', 'cancelled', 'protected'] as const
         const controls = window as unknown as { finishCheckout: () => void; checkoutCalls: number }
         controls.checkoutCalls = 0
         controls.finishCheckout = () => finish()
-        window.gitk!.cancel = async () => {}
-        window.gitk!.action = async (_repo, request) => {
+        window.gitcode!.cancel = async () => {}
+        window.gitcode!.action = async (_repo, request) => {
           if (request.action !== 'checkout') throw new Error('Unexpected action')
           controls.checkoutCalls++
           await new Promise<void>((resolve) => {

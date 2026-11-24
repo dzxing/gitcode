@@ -10,7 +10,7 @@ for (const width of [720, 1280]) {
       await page.setViewportSize({ width, height: 800 })
       await page.addInitScript((theme) => {
         localStorage.setItem('gitcode.theme', theme)
-        window.gitkWindow = {
+        window.gitcodeWindow = {
           nativeControls: true,
           minimize: async () => {},
           toggleMaximize: async () => {},

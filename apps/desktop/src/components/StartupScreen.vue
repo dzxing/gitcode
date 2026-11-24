@@ -63,15 +63,15 @@ async function install() {
   }
 }
 async function chooseGit() {
-  if (!window.gitk?.chooseGit || !window.gitk.gitSettings) {
+  if (!window.gitcode?.chooseGit || !window.gitcode.gitSettings) {
     emit('configureGit')
     return
   }
   configuring.value = true
   try {
-    const path = await window.gitk.chooseGit()
+    const path = await window.gitcode.chooseGit()
     if (!path) return
-    store.runtime = (await window.gitk.gitSettings({ mode: 'custom', path })).runtime
+    store.runtime = (await window.gitcode.gitSettings({ mode: 'custom', path })).runtime
     await store.retryStartup()
   } catch (error) {
     store.notify((error as Error).message, true)

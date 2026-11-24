@@ -10,7 +10,7 @@ const savedWindow = globalThis.window
 let handler
 try {
   globalThis.window = {
-    gitk: { runtime: async () => ({}), historyTools: (...args) => handler(...args) },
+    gitcode: { runtime: async () => ({}), historyTools: (...args) => handler(...args) },
   }
   const { alignVersions } = await vite.ssrLoadModule('/src/versionComparison.ts')
   const { useHistoryToolsStore } = await vite.ssrLoadModule('/src/stores/historyTools.ts')

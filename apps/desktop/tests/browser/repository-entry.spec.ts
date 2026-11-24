@@ -15,7 +15,7 @@ test('desktop Open goes straight to picker; cancellation stays quiet; errors ret
   await page.evaluate(() => {
     const state = window as unknown as { picks: unknown[][] }
     state.picks = []
-    window.gitk!.chooseDirectory = async (...args) => {
+    window.gitcode!.chooseDirectory = async (...args) => {
       state.picks.push(args)
       return null
     }
@@ -26,8 +26,8 @@ test('desktop Open goes straight to picker; cancellation stays quiet; errors ret
     .toBe(1)
   await expect(page.getByRole('dialog')).not.toBeVisible()
   await page.evaluate(() => {
-    window.gitk!.chooseDirectory = async () => '/not-a-repository'
-    window.gitk!.snapshot = async () => {
+    window.gitcode!.chooseDirectory = async () => '/not-a-repository'
+    window.gitcode!.snapshot = async () => {
       throw new Error('所选目录不是 Git 仓库')
     }
   })
@@ -40,7 +40,7 @@ test('desktop Open goes straight to picker; cancellation stays quiet; errors ret
   await expect(dialog.getByRole('alert')).not.toBeVisible()
   await dialog.getByRole('button', { name: '取消', exact: true }).click()
   await page.evaluate(() => {
-    window.gitk!.chooseDirectory = async () => {
+    window.gitcode!.chooseDirectory = async () => {
       throw new Error('系统选择器不可用')
     }
   })
@@ -54,11 +54,11 @@ test('clone suggests name after parent selection, respects edits and restores fa
 }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.chooseDirectory = async (_initial, purpose) => {
+    window.gitcode!.chooseDirectory = async (_initial, purpose) => {
       if (purpose !== 'parent') throw new Error('wrong purpose')
       return '/projects'
     }
-    window.gitk!.create = async () => {
+    window.gitcode!.create = async () => {
       throw new Error('目标目录已存在')
     }
   })
@@ -83,7 +83,7 @@ test('clone suggests name after parent selection, respects edits and restores fa
   await dialog.getByLabel('仓库名称', { exact: true }).fill('retry-copy')
   await expect(dialog.getByRole('alert')).not.toBeVisible()
   await page.evaluate(() => {
-    window.gitk!.create = async (kind, path, url) => {
+    window.gitcode!.create = async (kind, path, url) => {
       ;(window as unknown as { creation: unknown[] }).creation = [kind, path, url]
       throw new Error('验证重试参数')
     }
@@ -99,10 +99,10 @@ test('create uses parent and folder name; native picker errors keep manual input
 }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.chooseDirectory = async () => {
+    window.gitcode!.chooseDirectory = async () => {
       throw new Error('选择目录失败')
     }
-    window.gitk!.create = async (kind, path) => {
+    window.gitcode!.create = async (kind, path) => {
       ;(window as unknown as { creation: unknown[] }).creation = [kind, path]
       throw new Error('创建失败')
     }
@@ -191,7 +191,7 @@ test('compatibility directory browser selects parent without submitting or closi
 }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.listDirectory = async () => ({
+    window.gitcode!.listDirectory = async () => ({
       path: '/projects',
       parent: '/',
       home: '/home/test',

@@ -34,7 +34,7 @@ for (const size of [11, 16])
       const useRepositoryStore=()=>document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('repository');
       const useCommitActionsStore=()=>document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('commit-actions');
       const repo=useRepositoryStore(), action=useCommitActionsStore(), c=repo.repo.commits[0];
-      window.gitk.commitOperationRead=async()=>({id:'font-plan',head:repo.repo.head,branch:repo.repo.branch,commits:[{sha:c.hash,message:'提交说明 commit message'}]});
+      window.gitcode.commitOperationRead=async()=>({id:'font-plan',head:repo.repo.head,branch:repo.repo.branch,commits:[{sha:c.hash,message:'提交说明 commit message'}]});
       await action.open('reword',[c]);
     })()`)
     const dialog = page.getByRole('dialog', { name: '编辑提交说明', exact: true })
@@ -52,7 +52,7 @@ for (const size of [11, 16])
       const useRepositoryStore=()=>document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('repository');
       const useNavigationStore=()=>document.querySelector('#app').__vue_app__.config.globalProperties.$pinia._s.get('navigation');
       const repo=useRepositoryStore(), nav=useNavigationStore();
-      window.gitk.navigationRead=async()=>({fullRef:'refs/heads/main',referenceOid:repo.repo.head,oid:repo.repo.head,head:repo.repo.head,branch:repo.repo.branch,canFastForward:false,alreadyMerged:true,related:true,files:[{path:'README.md',status:'M'}],diff:{diff:'+ comparison code',truncated:false}});
+      window.gitcode.navigationRead=async()=>({fullRef:'refs/heads/main',referenceOid:repo.repo.head,oid:repo.repo.head,head:repo.repo.head,branch:repo.repo.branch,canFastForward:false,alreadyMerged:true,related:true,files:[{path:'README.md',status:'M'}],diff:{diff:'+ comparison code',truncated:false}});
       await nav.open('compare-head',repo.repo.branches[0]);
       nav.file='README.md';
     })()`)

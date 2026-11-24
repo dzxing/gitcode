@@ -134,7 +134,7 @@ test('unloaded arrow destination explains the limit without loading history or c
   await openFixtureRepository(page, false, fixture(true))
   await page.evaluate(() => {
     ;(window as unknown as { metadataReads: number }).metadataReads = 0
-    window.gitk!.historyMetadata = async (_repo, hash) => {
+    window.gitcode!.historyMetadata = async (_repo, hash) => {
       ;(window as unknown as { metadataReads: number }).metadataReads++
       return {
         hash,
@@ -143,7 +143,7 @@ test('unloaded arrow destination explains the limit without loading history or c
         date: '2026-11-09T00:00:00Z',
       }
     }
-    window.gitk!.historyRead = async () => {
+    window.gitcode!.historyRead = async () => {
       throw new Error('Arrow must not implicitly change loaded history')
     }
   })

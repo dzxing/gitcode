@@ -54,7 +54,7 @@ test('浮层中右键沿用分支菜单，Esc 返回原 +N，点击本地分支�
   await page.keyboard.press('Escape')
   await expect(trigger).toBeFocused()
   await page.evaluate(() => {
-    window.gitk!.action = async (_repo, request) => {
+    window.gitcode!.action = async (_repo, request) => {
       document.documentElement.dataset.popupCheckout = JSON.stringify(request)
       return {
         snapshot: null,

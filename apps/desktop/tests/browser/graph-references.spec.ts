@@ -52,7 +52,7 @@ test('reference leaders connect the complete badge group to its node without add
     const blocked = async () => {
       throw new Error('No writes in graph reference checks')
     }
-    window.gitk = {
+    window.gitcode = {
       runtime: async () => ({
         platform: 'windows',
         gitAvailable: true,
@@ -233,7 +233,7 @@ test('refreshing a different HEAD leaves every rendered commit and ancestry trac
       mutable.branch = branch.name
       for (const item of mutable.branches) item.current = item === branch
     }
-    window.gitk = {
+    window.gitcode = {
       runtime: async () => ({
         platform: 'windows',
         gitAvailable: true,
@@ -325,7 +325,7 @@ for (const labelsAfterMessage of [false, true]) {
       const blocked = async () => {
         throw new Error('Reference inspection must not mutate Git')
       }
-      window.gitk = {
+      window.gitcode = {
         runtime: async () => ({
           platform: 'windows',
           gitAvailable: true,
@@ -470,7 +470,7 @@ test('WIP appears only for real changes and removing it keeps every graph node a
     const blocked = async () => {
       throw new Error('No Git writes in WIP checks')
     }
-    window.gitk = {
+    window.gitcode = {
       runtime: async () => ({
         platform: 'windows',
         gitAvailable: true,
@@ -509,7 +509,7 @@ test('WIP appears only for real changes and removing it keeps every graph node a
     if (mode === 'unstaged') next.unstaged = [{ path: 'tracked.txt', status: 'M' }]
     if (mode === 'untracked') next.unstaged = [{ path: 'new.txt', status: '?' }]
     await page.evaluate((next) => {
-      window.gitk!.snapshot = async () => next
+      window.gitcode!.snapshot = async () => next
     }, next)
     await page
       .locator('.toolbar-actions')

@@ -6,10 +6,10 @@ test('macOS Git 检测失败显示准确说明与折叠详情，允许选择自�
 }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.gitSettings = async (value) => {
+    window.gitcode!.gitSettings = async (value) => {
       if (value)
         throw new Error(
-          "Error invoking remote method 'gitk:git-settings': Error: Git 检测失败。\n/usr/bin/git: xcrun: invalid active developer path",
+          "Error invoking remote method 'gitcode:git-settings': Error: Git 检测失败。\n/usr/bin/git: xcrun: invalid active developer path",
         )
       return {
         selection: { mode: 'auto' },
@@ -44,7 +44,7 @@ test('macOS Git 检测失败显示准确说明与折叠详情，允许选择自�
 test('Git 安装后可以重新检测，成功结果同步至应用并保留未保存的自定义路径', async ({ page }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.gitSettings = async () => ({
+    window.gitcode!.gitSettings = async () => ({
       selection: { mode: 'auto' },
       runtime: {
         platform: 'macos',
@@ -54,7 +54,7 @@ test('Git 安装后可以重新检测，成功结果同步至应用并保留未�
         gitError: 'Git 未找到。\n/usr/bin/git: xcrun: tools unavailable',
       },
     })
-    window.gitk!.refreshGitRuntime = async () => ({
+    window.gitcode!.refreshGitRuntime = async () => ({
       selection: { mode: 'auto' },
       runtime: {
         platform: 'macos',

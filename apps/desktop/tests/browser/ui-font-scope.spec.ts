@@ -113,7 +113,7 @@ test('提交详情说明跟随编辑器，父提交等界面技术标签保持�
   )
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.commit = async () => ({
+    window.gitcode!.commit = async () => ({
       body: '提交标题\n\n这是提交说明正文 Commit description',
       files: [],
     })

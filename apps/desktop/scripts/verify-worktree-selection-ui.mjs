@@ -109,7 +109,7 @@ export async function verifyWorktreeSelection(
 
     await page.goto(url)
     await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
-    assert.equal(await page.evaluate(() => typeof window.gitk), 'undefined')
+    assert.equal(await page.evaluate(() => typeof window.gitcode), 'undefined')
     await open(repo)
     const initialIndex = await readFile(path.join(repo, '.git/index'))
     await expect(choose('src/selected.txt')).not.toBeChecked()

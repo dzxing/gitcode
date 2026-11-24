@@ -39,11 +39,11 @@ for (const [name, kind] of [
     await page.evaluate(() => {
       const calls: string[][] = []
       Object.assign(window, { menuSyncCalls: calls, menuWriteCalls: 0 })
-      window.gitk!.syncPlan = async (repo, kind) => {
+      window.gitcode!.syncPlan = async (repo, kind) => {
         calls.push([repo, kind])
         throw new Error('菜单验证：前置检查未通过')
       }
-      window.gitk!.action = async () => {
+      window.gitcode!.action = async () => {
         Object.assign(window, { menuWriteCalls: 1 })
         throw new Error('不应执行')
       }
@@ -68,8 +68,8 @@ for (const [name, kind] of [
 test('读取仓库状态时允许修改显示设置，仓库操作仍拦截', async ({ page }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    const original = window.gitk!.snapshot
-    window.gitk!.snapshot = async (...args) => {
+    const original = window.gitcode!.snapshot
+    window.gitcode!.snapshot = async (...args) => {
       await new Promise<void>((resolve) => Object.assign(window, { finishMenuRefresh: resolve }))
       return original(...args)
     }

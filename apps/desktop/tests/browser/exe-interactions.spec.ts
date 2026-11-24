@@ -6,7 +6,7 @@ test('分支选择器支持筛选、方向键与 Esc，只有确认后才执行�
   await openFixtureRepository(page)
   await page.evaluate((initial) => {
     Object.assign(window, { pickerActions: [] })
-    window.gitk!.action = async (_repo, request) => {
+    window.gitcode!.action = async (_repo, request) => {
       if (request.action !== 'checkout') throw new Error('unexpected action')
       ;(window as unknown as { pickerActions: string[] }).pickerActions.push(request.name!)
       const snapshot = structuredClone(initial)
@@ -140,7 +140,7 @@ test('桌面位置入口传递当前仓库与限定动作', async ({ page }) => 
   await page.addInitScript(() => {
     const calls: string[][] = []
     Object.assign(window, { locationCalls: calls })
-    window.gitkApp = {
+    window.gitcodeApp = {
       repositoryLocation: async (repo, action) => {
         calls.push([repo, action])
       },

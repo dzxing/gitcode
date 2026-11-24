@@ -8,9 +8,9 @@ async function wslFixture(page: Page) {
     const root = '\\\\wsl.localhost\\'
     const distro = root + 'Ubuntu-26.04\\'
     const repo = distro + 'home\\用户\\项目'
-    const runtime = window.gitk!.runtime
-    window.gitk!.runtime = async () => ({ ...(await runtime()), platform: 'windows' })
-    window.gitk!.listDirectory = async (path = root) => ({
+    const runtime = window.gitcode!.runtime
+    window.gitcode!.runtime = async () => ({ ...(await runtime()), platform: 'windows' })
+    window.gitcode!.listDirectory = async (path = root) => ({
       path,
       parent: path === root ? null : root,
       home: 'C:\\Users\\Tester',
@@ -22,8 +22,8 @@ async function wslFixture(page: Page) {
       truncated: false,
       locations: [{ name: 'Linux (WSL)', path: root }],
     })
-    const original = window.gitk!.snapshot
-    window.gitk!.snapshot = async (path) => ({
+    const original = window.gitcode!.snapshot
+    window.gitcode!.snapshot = async (path) => ({
       ...(await original(path)),
       path,
       name: '项目',
@@ -93,7 +93,7 @@ test('WSL discovery failure remains visible and allows cancellation without sele
 }) => {
   await wslFixture(page)
   await page.evaluate(() => {
-    window.gitk!.listDirectory = async () => {
+    window.gitcode!.listDirectory = async () => {
       throw Error('无法读取 WSL 发行版')
     }
   })
@@ -116,14 +116,14 @@ test('saved WSL repository restores and GitFlow remains usable without Windows G
       'gitcode.workspaceSession.v1',
       JSON.stringify({ version: 1, active: 0, tabs: [{ kind: 'repository', path, name: '项目' }] }),
     )
-    window.gitk!.runtime = async () => ({
+    window.gitcode!.runtime = async () => ({
       platform: 'windows',
       gitAvailable: false,
       gitVersion: '',
       gitPath: '',
       gitError: '未找到 Windows Git',
     })
-    window.gitk!.snapshot = async () => ({
+    window.gitcode!.snapshot = async () => ({
       ...fixture,
       path,
       name: '项目',

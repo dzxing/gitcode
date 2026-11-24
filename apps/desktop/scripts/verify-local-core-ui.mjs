@@ -23,7 +23,7 @@ export async function verifyLocalCore(
     await page.goto(url)
     await expect(page.locator('#operation-status')).toContainText(/(?:本机核心|Git 服务)已连接/)
     assert.equal(
-      await page.evaluate(() => typeof window.gitk),
+      await page.evaluate(() => typeof window.gitcode),
       'undefined',
       'Must exercise browser HTTP, not preload mocks',
     )

@@ -38,7 +38,7 @@ for (const state of states)
     snapshot.unstaged = [{ path: 'README.md', status: 'U' }]
     await openFixtureRepository(page, false, snapshot)
     await page.evaluate((state) => {
-      window.gitk!.mergeRead = async () => ({
+      window.gitcode!.mergeRead = async () => ({
         state: state.merge!,
         file: {
           path: 'README.md',

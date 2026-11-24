@@ -31,9 +31,10 @@ const dirty = computed(() => {
 })
 const canRefresh = computed(
   () =>
-    typeof window.gitk?.refreshGitRuntime === 'function' || (!isDesktop() && canConnectLocalCore()),
+    typeof window.gitcode?.refreshGitRuntime === 'function' ||
+    (!isDesktop() && canConnectLocalCore()),
 )
-const canBrowse = computed(() => typeof window.gitk?.chooseGit === 'function')
+const canBrowse = computed(() => typeof window.gitcode?.chooseGit === 'function')
 const platform = computed(() => info.value?.runtime.platform || store.runtime?.platform || '')
 function presentFailure(message: string) {
   const result = noticePresentation(message, true)
@@ -68,7 +69,7 @@ onMounted(async () => {
 async function browse() {
   pending.value = true
   try {
-    const selected = await window.gitk!.chooseGit!()
+    const selected = await window.gitcode!.chooseGit!()
     if (selected) customPath.value = selected
   } catch (e) {
     error.value = e instanceof Error ? e.message : '无法选择 Git。'

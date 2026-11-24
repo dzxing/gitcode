@@ -61,11 +61,11 @@ async function prepare(page: Page, interval = 0) {
           truncated: false,
         },
       ]
-      window.gitk!.activitySettings = async (value) => {
+      window.gitcode!.activitySettings = async (value) => {
         if (value) settings = { ...value }
         return { ...settings }
       }
-      window.gitk!.operationLog = async (query) => ({
+      window.gitcode!.operationLog = async (query) => ({
         records: records
           .filter((r) => (query.scope === 'application' ? !r.repo : r.repo === query.repo))
           .map((r) => ({
@@ -76,13 +76,13 @@ async function prepare(page: Page, interval = 0) {
         settings: { ...settings },
         storageError: '',
       })
-      window.gitk!.clearOperationLog = async (query) => {
+      window.gitcode!.clearOperationLog = async (query) => {
         for (let i = records.length - 1; i >= 0; i--)
           if (query.scope === 'application' ? !records[i].repo : records[i].repo === query.repo)
             records.splice(i, 1)
       }
-      window.gitk!.fetchStatus = async () => ({ ...remoteStatus })
-      window.gitk!.automaticFetch = async (repo) => {
+      window.gitcode!.fetchStatus = async () => ({ ...remoteStatus })
+      window.gitcode!.automaticFetch = async (repo) => {
         if (
           !settings.autoFetchInterval ||
           Date.now() - remoteStatus.lastAttempt < settings.autoFetchInterval * 60000
@@ -102,7 +102,7 @@ async function prepare(page: Page, interval = 0) {
           snapshot: { ...structuredClone(snapshot), path: repo, total: 777 },
         }
       }
-      window.gitk!.snapshot = async (repo) => ({
+      window.gitcode!.snapshot = async (repo) => ({
         ...structuredClone(snapshot),
         path: repo,
         name: repo.split('/').at(-1)!,
@@ -230,7 +230,7 @@ test('a delayed automatic fetch never changes the newly active repository and do
     await page.evaluate(() => (window as unknown as { autoCalls: string[] }).autoCalls.length),
   ).toBe(1)
   await page.evaluate(() => {
-    window.gitk!.chooseDirectory = async () => '/test-fixtures/other'
+    window.gitcode!.chooseDirectory = async () => '/test-fixtures/other'
   })
   await page.keyboard.press('Control+o')
   await expect(
@@ -250,7 +250,7 @@ test('a delayed automatic fetch never changes the newly active repository and do
 test('a failed Fetch log provides an explicit manual retry', async ({ page }) => {
   await prepare(page)
   await page.evaluate(() => {
-    const bridge = window.gitk!
+    const bridge = window.gitcode!
     const original = bridge.operationLog!
     bridge.operationLog = async (query) => {
       const value = await original(query)
@@ -282,7 +282,7 @@ async function prepareFetchFailure(page: Page, withFetch = true) {
   await prepare(page)
   await page.evaluate(
     ({ withFetch }) => {
-      const bridge = window.gitk!
+      const bridge = window.gitcode!
       const previous = bridge.operationLog!
       bridge.fetchStatus = async () => ({
         lastAttempt: Date.now(),

@@ -85,7 +85,7 @@ test('GitFlow Start uses the desktop bridge once and reports local-only success'
         writeError: '',
       },
     }
-    window.gitk = {
+    window.gitcode = {
       runtime: async () => ({
         platform: 'windows',
         gitAvailable: true,

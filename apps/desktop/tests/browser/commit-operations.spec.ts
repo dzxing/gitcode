@@ -4,9 +4,9 @@ import { openFixtureRepository } from './repository-fixture'
 
 async function planFixture(page: import('@playwright/test').Page) {
   await page.evaluate(() => {
-    window.gitk!.commitOperationRead = async (_path, request) => {
+    window.gitcode!.commitOperationRead = async (_path, request) => {
       document.documentElement.dataset.commitRequest = JSON.stringify(request)
-      const repo = await window.gitk!.snapshot(_path)
+      const repo = await window.gitcode!.snapshot(_path)
       const commits = request.oids.map((sha) => {
         const c = repo.commits.find((c) => c.hash === sha)!
         return { sha, parents: c.parents, subject: c.subject, message: c.subject }
@@ -34,9 +34,9 @@ async function planFixture(page: import('@playwright/test').Page) {
         },
       }
     }
-    window.gitk!.action = async (path, request) => {
+    window.gitcode!.action = async (path, request) => {
       document.documentElement.dataset.commitWrite = JSON.stringify(request)
-      return { snapshot: await window.gitk!.snapshot(path), output: '', outcome: 'succeeded' }
+      return { snapshot: await window.gitcode!.snapshot(path), output: '', outcome: 'succeeded' }
     }
   })
 }
@@ -151,10 +151,10 @@ test('没有托管平台时给出明确说明；检出默认分离 HEAD 并说�
 test('按提交推送计划固定源末端；分支源和原 HEAD 分开验证', async ({ page }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.commitOperationRead = async (_path, request) => ({
+    window.gitcode!.commitOperationRead = async (_path, request) => ({
       sources: [{ fullRef: 'refs/heads/main', oid: request.expectedHead }],
     })
-    window.gitk!.syncPlan = async (_path, _kind, request) => {
+    window.gitcode!.syncPlan = async (_path, _kind, request) => {
       document.documentElement.dataset.pushCommit = JSON.stringify(request)
       return {
         id: 'push-commit-plan',
@@ -189,7 +189,7 @@ test('按提交推送计划固定源末端；分支源和原 HEAD 分开验证',
 test('历史目录能展开折叠；Ctrl 取消多选后不能压缩两条提交', async ({ page }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.commitOperationRead = async () => ({
+    window.gitcode!.commitOperationRead = async () => ({
       entries: [
         { mode: '100644', type: 'blob', oid: 'a'.repeat(40), path: 'src/components/A.vue' },
       ],
@@ -219,7 +219,7 @@ test('新建标记入口同时提供轻量和附注标签，附注模式要求�
   await openFixtureRepository(page)
   await planFixture(page)
   await page.evaluate(() => {
-    window.gitk!.navigationRead = async (_repo, request) => ({
+    window.gitcode!.navigationRead = async (_repo, request) => ({
       fullRef: request.fullRef,
       referenceOid: request.expectedOid,
       oid: request.expectedOid,

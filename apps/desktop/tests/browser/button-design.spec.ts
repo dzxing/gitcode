@@ -29,8 +29,8 @@ for (const palette of ['dark', 'light', 'islands-dark', 'islands-light']) {
             gitError: 'Git 未找到',
           },
         }
-        window.gitk!.gitSettings = async () => info
-        window.gitk!.refreshGitRuntime = async () => info
+        window.gitcode!.gitSettings = async () => info
+        window.gitcode!.refreshGitRuntime = async () => info
       })
       const compact = page.locator('.sidebar-heading-actions .icon-button').first()
       await expect(compact).toHaveCSS('width', '24px')

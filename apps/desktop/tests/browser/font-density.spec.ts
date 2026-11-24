@@ -19,7 +19,7 @@ for (const scale of [1.25, 1.5, 2]) {
             size,
           )
           await page.addInitScript(() => {
-            window.gitkWindow = {
+            window.gitcodeWindow = {
               nativeControls: true,
               minimize: async () => {},
               toggleMaximize: async () => {},

@@ -15,7 +15,7 @@ const metadata = {
 }
 const flush = () => new Promise(setImmediate)
 globalThis.window = {
-  gitk: {
+  gitcode: {
     runtime: async () => ({}),
     stashRead: (...args) => read(...args),
     action: (...args) => action(...args),

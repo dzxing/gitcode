@@ -114,7 +114,7 @@ export const useRepositoryStore = defineStore('repository', () => {
   let restoringSession = false
   let sessionWriteFailed = false
   function startupTrace(phase: StartupPhase) {
-    void window.gitkApp
+    void window.gitcodeApp
       ?.startupPhase?.(phase)
       .catch((error) => console.warn('[GitCode] 启动阶段记录失败', error))
   }

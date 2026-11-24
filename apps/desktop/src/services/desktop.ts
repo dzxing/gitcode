@@ -23,14 +23,14 @@ import { createLocalCoreClient } from './localCore'
 
 declare global {
   interface Window {
-    gitk?: DesktopBridge
-    gitkWindow?: NativeWindow
+    gitcode?: DesktopBridge
+    gitcodeWindow?: NativeWindow
   }
 }
 
 // A narrow preload bridge; the Vue renderer never receives Node.js or raw IPC.
 export function isDesktop() {
-  return typeof window !== 'undefined' && typeof window.gitk?.runtime === 'function'
+  return typeof window !== 'undefined' && typeof window.gitcode?.runtime === 'function'
 }
 
 export function canConnectLocalCore() {
@@ -49,7 +49,7 @@ export function onLocalCoreDisconnected(listener: () => void) {
   }
 }
 function bridge() {
-  if (isDesktop()) return window.gitk!
+  if (isDesktop()) return window.gitcode!
   if (!canConnectLocalCore()) throw new Error('管理本地仓库需要连接 GitCode 本地 Git 服务。')
   if (!local) {
     local = createLocalCoreClient(

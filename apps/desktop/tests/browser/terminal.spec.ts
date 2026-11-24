@@ -9,7 +9,7 @@ async function fixture(page: Page) {
     let next = 0
     const events: TerminalRequest[] = []
     Object.assign(window, { terminalEvents: events })
-    window.gitk!.gitConsole = async () => ({
+    window.gitcode!.gitConsole = async () => ({
       epoch: 'test-console',
       cursor: 0,
       entries: [],
@@ -18,7 +18,7 @@ async function fixture(page: Page) {
       reset: false,
       dropped: false,
     })
-    window.gitk!.terminal = async (repo, request) => {
+    window.gitcode!.terminal = async (repo, request) => {
       events.push(request)
       if (request.action === 'shells') return { shells: [{ id: 'default', label: 'Bash' }] }
       if (request.action === 'create') {

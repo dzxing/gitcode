@@ -64,5 +64,5 @@ export function writeWorkspaceSession(tabs: WorkspaceTab[], activeId: number) {
   if (entries.length > 100 || encoded.length > 250_000)
     throw new Error('仓库标签数量或路径长度超过本机保存上限。')
   localStorage.setItem(key, encoded)
-  return window.gitkApp?.flushDraftStorage?.()
+  return window.gitcodeApp?.flushDraftStorage?.()
 }

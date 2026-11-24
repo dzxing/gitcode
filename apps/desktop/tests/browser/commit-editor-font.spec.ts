@@ -35,7 +35,7 @@ for (const after of [false, true])
     })
     await openFixtureRepository(page, false, snapshot)
     await page.evaluate(() => {
-      window.gitk!.commit = async () => ({ body: '提交标题\n\n提交详细说明', files: [] })
+      window.gitcode!.commit = async () => ({ body: '提交标题\n\n提交详细说明', files: [] })
     })
     const content = page.locator('.commit-row .commit-message').first()
     const label = page.locator('.ref-tag .ref-primary').first()

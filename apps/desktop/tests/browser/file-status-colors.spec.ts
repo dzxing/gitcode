@@ -85,7 +85,7 @@ for (const [theme, preset] of Object.entries(themePresets)) {
     await mkdir(out, { recursive: true })
     await page.locator('.inspector').screenshot({ path: `${out}/worktree.png` })
     await page.evaluate((files) => {
-      window.gitk!.commit = async () => ({ body: 'File status colors', files })
+      window.gitcode!.commit = async () => ({ body: 'File status colors', files })
     }, files)
     await page.locator('.commit-row[data-commit-hash]').first().click()
     for (const file of files) {
@@ -105,7 +105,7 @@ for (const [theme, preset] of Object.entries(themePresets)) {
         branch: store.repo.branch,
         base: store.repo.head,
       }
-      window.gitk!.stashRead = async () => ({
+      window.gitcode!.stashRead = async () => ({
         files,
         stagedPaths: [],
         base: store.repo.head,

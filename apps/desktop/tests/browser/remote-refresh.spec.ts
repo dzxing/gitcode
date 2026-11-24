@@ -4,7 +4,7 @@ import { openFixtureRepository } from './repository-fixture'
 test('本地刷新不访问远端，获取后更新远程列表且保留本地分支', async ({ page }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    const bridge = window.gitk!
+    const bridge = window.gitcode!
     const snapshot = bridge.snapshot
     let fetched: Awaited<ReturnType<typeof snapshot>> | null = null
     const calls = { snapshots: 0, plans: 0, fetches: 0 }
@@ -60,8 +60,8 @@ test('本地刷新不访问远端，获取后更新远程列表且保留本地�
 test('获取失败保留已有远程列表并显示失败结果', async ({ page }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.syncPlan = async () => ({ id: 'offline-plan' }) as never
-    window.gitk!.action = async () => ({
+    window.gitcode!.syncPlan = async () => ({ id: 'offline-plan' }) as never
+    window.gitcode!.action = async () => ({
       outcome: 'failed',
       output: '',
       error: '远端连接失败，远程状态未更新',

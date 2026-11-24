@@ -70,7 +70,7 @@ export function writeHistoryFilter(path: string, preference: HistoryFilterPrefer
     )
   } else localStorage.removeItem(key)
   return Promise.resolve(
-    typeof window === 'undefined' ? undefined : window.gitkApp?.flushDraftStorage?.(),
+    typeof window === 'undefined' ? undefined : window.gitcodeApp?.flushDraftStorage?.(),
   )
 }
 function isFlowBranch(snapshot: Snapshot, branch: Branch) {

@@ -103,8 +103,8 @@ test('View commands change actual columns, merge appearance, focus and refresh r
   await view('搜索提交')
   await expect(page.getByLabel('搜索提交', { exact: true })).toBeFocused()
   await page.evaluate(() => {
-    const snapshot = window.gitk!.snapshot
-    window.gitk!.snapshot = async (...args) => ({ ...(await snapshot(...args)), total: 987 })
+    const snapshot = window.gitcode!.snapshot
+    window.gitcode!.snapshot = async (...args) => ({ ...(await snapshot(...args)), total: 987 })
   })
   await view('刷新本地状态')
   await expect(page.locator('.history-heading .pill')).toHaveText('987')

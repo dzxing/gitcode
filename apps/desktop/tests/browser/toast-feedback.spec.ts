@@ -2,14 +2,14 @@ import { test, expect } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
 
 const raw =
-  "Error invoking remote method 'gitk:snapshot': Error: 读取仓库失败。\n    at GitService.snapshot (C:\\GitCode\\app.asar\\electron\\git.cjs:42:7)\n    at async invoke (node:internal/process/task_queues:95:5)"
+  "Error invoking remote method 'gitcode:snapshot': Error: 读取仓库失败。\n    at GitService.snapshot (C:\\GitCode\\app.asar\\electron\\git.cjs:42:7)\n    at async invoke (node:internal/process/task_queues:95:5)"
 
 test('operation toast summarizes the IPC error and preserves expandable, selectable details while reading', async ({
   page,
 }) => {
   await openFixtureRepository(page)
   await page.evaluate((message) => {
-    window.gitk!.snapshot = async () => {
+    window.gitcode!.snapshot = async () => {
       throw new Error(message)
     }
   }, raw)
@@ -37,8 +37,8 @@ test('operation errors with a journal entry retain the log link and their failur
 }) => {
   await openFixtureRepository(page)
   await page.evaluate(async (message) => {
-    const snapshot = await window.gitk!.snapshot('/test-fixtures/repository')
-    window.gitk!.action = async () => ({
+    const snapshot = await window.gitcode!.snapshot('/test-fixtures/repository')
+    window.gitcode!.action = async () => ({
       outcome: 'failed',
       output: '',
       error: message,

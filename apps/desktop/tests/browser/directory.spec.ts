@@ -6,7 +6,7 @@ test('dark directory browser navigates and selects a repository without a native
   await page.addInitScript(() => {
     const home = '/home/test'
     Object.assign(window, {
-      gitk: {
+      gitcode: {
         runtime: async () => ({
           platform: 'linux',
           gitAvailable: true,

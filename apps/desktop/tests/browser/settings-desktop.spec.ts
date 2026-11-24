@@ -23,7 +23,7 @@ for (const theme of Object.keys(themePresets))
       )
       await openFixtureRepository(page)
       await page.evaluate(() => {
-        window.gitk!.gitSettings = async () => ({
+        window.gitcode!.gitSettings = async () => ({
           selection: { mode: 'auto' },
           runtime: {
             platform: 'windows',
@@ -120,7 +120,7 @@ test('默认确认键、输入法与字体列表按键隔离；取消恢复预�
 test('Git 草稿可取消；部分保存失败明确报告，修正后从默认确认入口保存', async ({ page }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.gitSettings = async (selection) => {
+    window.gitcode!.gitSettings = async (selection) => {
       if (selection) {
         document.documentElement.dataset.gitWrite = JSON.stringify(selection)
         if (selection.path === 'invalid') throw new Error('请选择 Git 可执行文件的绝对路径。')
@@ -194,7 +194,7 @@ test('macOS 设置按钮按视觉顺序和 Tab 顺序排列', async ({ page }) =
 test('Git 保存期间阻止重复提交和退出，完成后关闭并保留重启配置', async ({ page }) => {
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.gitSettings = async (selection) => {
+    window.gitcode!.gitSettings = async (selection) => {
       const value = {
         selection: selection || { mode: 'auto' as const },
         restartRequired: !!selection,
@@ -236,7 +236,7 @@ test('仓库操作表单的 Enter 不触发外层设置确认，隐藏滚动条�
   await page.setViewportSize({ width: 760, height: 600 })
   await openFixtureRepository(page)
   await page.evaluate(() => {
-    window.gitk!.fetchSettingsRead = async (path) => ({
+    window.gitcode!.fetchSettingsRead = async (path) => ({
       path,
       shallow: true,
       signature: 'settings-read',

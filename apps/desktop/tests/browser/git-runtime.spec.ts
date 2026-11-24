@@ -6,7 +6,7 @@ test('browser Git settings use the real local core without an Electron bridge', 
 }) => {
   await page.goto('/')
   await expect(page.getByRole('main', { name: '新标签页', exact: true })).toBeVisible()
-  expect(await page.evaluate(() => !!window.gitk)).toBe(false)
+  expect(await page.evaluate(() => !!window.gitcode)).toBe(false)
   await page.getByRole('menuitem', { name: '文件 File', exact: true }).click()
   await page.getByRole('menuitem', { name: /^设置…/ }).click()
   const dialog = page.getByRole('dialog', { name: '设置', exact: true })
@@ -44,7 +44,7 @@ test('Git runtime settings show installed source, validate custom Git and apply 
       gitSource: 'system',
       gitError: '',
     }
-    window.gitk!.gitSettings = async (selection) => {
+    window.gitcode!.gitSettings = async (selection) => {
       if (selection?.mode === 'custom' && selection.path === 'invalid')
         throw new Error('请选择 Git 可执行文件的绝对路径。')
       if (selection?.mode === 'custom') {
@@ -53,7 +53,7 @@ test('Git runtime settings show installed source, validate custom Git and apply 
       }
       return { runtime, selection: selection || { mode: 'auto' } }
     }
-    window.gitk!.chooseGit = async () => 'C:\\Tools\\Git\\cmd\\git.exe'
+    window.gitcode!.chooseGit = async () => 'C:\\Tools\\Git\\cmd\\git.exe'
   })
   await page.reload()
   await page.getByRole('menuitem', { name: '文件 File', exact: true }).click()
@@ -85,14 +85,14 @@ test('Git runtime settings show installed source, validate custom Git and apply 
 test('启动缺少 Git 时错误页可以直接打开 Git 设置', async ({ page }) => {
   await openFixtureRepository(page)
   await page.addInitScript(() => {
-    const original = window.gitk!.runtime
-    window.gitk!.runtime = async () => ({
+    const original = window.gitcode!.runtime
+    window.gitcode!.runtime = async () => ({
       ...(await original()),
       gitAvailable: false,
       gitError: '未找到可用 Git',
     })
-    window.gitk!.gitSettings = async () => ({
-      runtime: await window.gitk!.runtime(),
+    window.gitcode!.gitSettings = async () => ({
+      runtime: await window.gitcode!.runtime(),
       selection: { mode: 'auto' },
       restartRequired: false,
     })
@@ -124,11 +124,11 @@ test('missing or outdated Git offers installation and re-detection resumes witho
       gitSource: '',
       gitError: '未能检测到可运行的 Git。',
     }
-    window.gitk!.runtime = async () => ({ ...runtime })
-    window.gitk!.openResource = async (resource) => {
+    window.gitcode!.runtime = async () => ({ ...runtime })
+    window.gitcode!.openResource = async (resource) => {
       document.documentElement.dataset.gitInstallResource = resource
     }
-    window.gitk!.refreshGitRuntime = async () => ({
+    window.gitcode!.refreshGitRuntime = async () => ({
       selection: { mode: 'auto' },
       runtime: {
         ...runtime,
@@ -157,15 +157,15 @@ test('startup file selection validates and saves a custom Git, then resumes in t
 }) => {
   await openFixtureRepository(page)
   await page.addInitScript(() => {
-    window.gitk!.runtime = async () => ({
+    window.gitcode!.runtime = async () => ({
       platform: 'windows',
       gitAvailable: false,
       gitVersion: '',
       gitPath: '',
       gitError: '未找到 Git',
     })
-    window.gitk!.chooseGit = async () => 'C:\\Tools\\Git\\cmd\\git.exe'
-    window.gitk!.gitSettings = async (selection) => {
+    window.gitcode!.chooseGit = async () => 'C:\\Tools\\Git\\cmd\\git.exe'
+    window.gitcode!.gitSettings = async (selection) => {
       if (!selection || selection.mode !== 'custom') throw Error('Expected custom Git')
       document.documentElement.dataset.selectedGit = selection.path
       return {

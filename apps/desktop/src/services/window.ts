@@ -14,5 +14,5 @@ export interface NativeWindow {
 }
 
 export function currentNativeWindow(): NativeWindow | null {
-  return typeof window === 'undefined' ? null : window.gitkWindow || null
+  return typeof window === 'undefined' ? null : window.gitcodeWindow || null
 }

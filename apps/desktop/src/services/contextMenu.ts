@@ -8,9 +8,9 @@ export interface NativeContextMenuBridge {
 
 declare global {
   interface Window {
-    gitkContextMenu?: NativeContextMenuBridge
+    gitcodeContextMenu?: NativeContextMenuBridge
   }
 }
 export function nativeContextMenu() {
-  return typeof window === 'undefined' ? null : window.gitkContextMenu || null
+  return typeof window === 'undefined' ? null : window.gitcodeContextMenu || null
 }

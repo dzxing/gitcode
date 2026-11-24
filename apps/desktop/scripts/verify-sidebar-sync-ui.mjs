@@ -70,7 +70,7 @@ export async function verifySidebarSync(page, { url, screenshotDirectory } = {})
     const blocked = async () => {
       throw new Error('Read-only sidebar fixture')
     }
-    window.gitk = {
+    window.gitcode = {
       runtime: async () => ({
         platform: 'windows',
         gitAvailable: true,

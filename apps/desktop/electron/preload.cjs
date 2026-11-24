@@ -1,16 +1,16 @@
 'use strict'
 
 const { contextBridge, ipcRenderer } = require('electron')
-const invoke = (name, ...args) => ipcRenderer.invoke(`gitk:${name}`, ...args)
+const invoke = (name, ...args) => ipcRenderer.invoke(`gitcode:${name}`, ...args)
 const observeWindow = (callback) => {
   const listener = (_event, state) => callback(state)
-  ipcRenderer.on('gitk:window-state', listener)
-  return () => ipcRenderer.removeListener('gitk:window-state', listener)
+  ipcRenderer.on('gitcode:window-state', listener)
+  return () => ipcRenderer.removeListener('gitcode:window-state', listener)
 }
 
 // Only named, narrow operations cross the isolated renderer boundary.
 // Neither ipcRenderer nor Node's require / filesystem are exposed.
-contextBridge.exposeInMainWorld('gitk', {
+contextBridge.exposeInMainWorld('gitcode', {
   gitConsole: (repo, request) => invoke('git-console', repo, request),
   terminal: (repo, request) => invoke('terminal', repo, request),
   historyMetadata: (repo, sha) => invoke('history-metadata', repo, sha),
@@ -53,11 +53,11 @@ contextBridge.exposeInMainWorld('gitk', {
   cancel: () => invoke('cancel'),
   openResource: (resource) => invoke('resource', resource),
 })
-contextBridge.exposeInMainWorld('gitkContextMenu', {
+contextBridge.exposeInMainWorld('gitcodeContextMenu', {
   popup: (request) => invoke('context-menu:popup', request),
   close: (requestId) => invoke('context-menu:close', requestId),
 })
-contextBridge.exposeInMainWorld('gitkWindow', {
+contextBridge.exposeInMainWorld('gitcodeWindow', {
   platform: process.platform,
   nativeControls: process.platform === 'win32',
   minimize: () => invoke('window:minimize'),
@@ -78,7 +78,7 @@ const observeApplication = (channel, handler, valid) => {
   ipcRenderer.on(channel, listener)
   return () => ipcRenderer.removeListener(channel, listener)
 }
-contextBridge.exposeInMainWorld('gitkApp', {
+contextBridge.exposeInMainWorld('gitcodeApp', {
   installedFonts: () => invoke('app:fonts'),
   repositoryLocation: (repo, action) => invoke('app:repository-location', repo, action),
   startupPhase: (phase) => invoke('app:startup-phase', phase),
@@ -91,10 +91,10 @@ contextBridge.exposeInMainWorld('gitkApp', {
   cancelClose: (id) => invoke('app:close-cancel', id),
   info: () => invoke('app:info'),
   onCommand: (handler) =>
-    observeApplication('gitk:app-command', handler, (value) => typeof value === 'string'),
+    observeApplication('gitcode:app-command', handler, (value) => typeof value === 'string'),
   onCloseRequested: (handler) =>
     observeApplication(
-      'gitk:close-request',
+      'gitcode:close-request',
       handler,
       (value) => Number.isSafeInteger(value) && value > 0,
     ),

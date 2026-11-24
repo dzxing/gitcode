@@ -5,7 +5,7 @@ import type { RuntimeInfo } from '../../src/types'
 // Exercise the manual fallback when a system picker is unavailable.
 export async function openRepositoryFallback(page: Page) {
   await page.evaluate(() => {
-    window.gitk!.chooseDirectory = async () => {
+    window.gitcode!.chooseDirectory = async () => {
       throw new Error('系统目录选择器不可用')
     }
   })
@@ -52,7 +52,7 @@ export async function openFixtureRepository(
       const unavailable = async () => {
         throw new Error('Unexpected write in a read-only UI fixture')
       }
-      window.gitk = {
+      window.gitcode = {
         runtime: async () => runtime,
         repositoryTrust: async (path: string) => ({
           path,

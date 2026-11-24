@@ -69,7 +69,7 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
     }
     window.__uiGitWrites = 0
     window.__uiSyncPlans = []
-    window.gitk = {
+    window.gitcode = {
       runtime: async () => ({
         platform: 'windows',
         gitAvailable: true,
@@ -163,11 +163,11 @@ export async function verifySidebar(page, { url, screenshotPath } = {}) {
     .locator('.toolbar-actions')
     .getByRole('button', { name: '刷新', exact: true })
   await page.evaluate(() => {
-    const original = window.gitk.snapshot
-    window.gitk.snapshot = () =>
+    const original = window.gitcode.snapshot
+    window.gitcode.snapshot = () =>
       new Promise((resolve) => {
         window.__uiResumeSnapshot = async () => {
-          window.gitk.snapshot = original
+          window.gitcode.snapshot = original
           resolve(await original())
         }
       })
