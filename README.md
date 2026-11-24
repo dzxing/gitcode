@@ -7,8 +7,10 @@
 
 <h1 align="center">GitCode</h1>
 
-<p align="center"><strong>看清每次变更，掌控每条分支。</strong></p>
-<p align="center">提交关系、工作区变更与 GitFlow，连接在同一个本地工作台。</p>
+<p align="center"><strong>English</strong> · <a href="README.zh-CN.md">简体中文</a></p>
+
+<p align="center"><strong>See every change. Manage every branch.</strong></p>
+<p align="center">A local Git workbench for your history, changes, and GitFlow workflows.</p>
 
 <p align="center">
   <img src="docs/assets/badges/version.svg" alt="Version 1.0.1" />
@@ -19,19 +21,19 @@
 </p>
 
 <p align="center">
-  <a href="http://8.138.163.129/">产品网站</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="apps/desktop/README.md">桌面文档</a> ·
-  <a href="https://github.com/dzxing/gitcode/issues">问题反馈</a>
+  <a href="http://8.138.163.129/">Website</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="apps/desktop/README.md">Guide (中文)</a> ·
+  <a href="https://github.com/dzxing/gitcode/issues">Issues</a>
 </p>
 
 <p align="center">
-  <img src="apps/website/public/product/workbench.png" alt="GitCode：仓库导航、提交关系图与工作区变更" width="1200" />
+  <img src="apps/website/public/product/workbench.png" alt="GitCode: repository navigation, commit graph, and working tree changes" width="1200" />
 </p>
 
-## 快速开始
+## Quick start
 
-安装 **Git 2.30+、Node.js 22.22.3 和 Bun 1.3.14**，然后运行：
+Install **Git 2.30+, Node.js 22.22.3, and Bun 1.3.14**, then run:
 
 ```bash
 git clone https://github.com/dzxing/gitcode.git
@@ -40,45 +42,45 @@ bun install --frozen-lockfile
 bun run desktop
 ```
 
-WSL 下使用 `bun run desktop:wsl` 启动。其他环境和打包命令见[开发文档](docs/DEVELOPMENT.md)。
+On WSL, start with `bun run desktop:wsl`. See the [build guide (中文)](docs/DEVELOPMENT.md) for other supported runtimes and packaging commands.
 
-## 使用
+## Usage
 
-### 打开仓库
+### Open a repository
 
-在首页选择 **打开仓库**，选中已有 Git 仓库目录；也可以选择 **克隆仓库** 或 **创建仓库**。
-如果提示找不到 Git，在「设置 → Git → Git 运行环境」中选择本机 Git 可执行文件。
+Choose **Open repository (打开仓库)** on the home screen and select an existing Git repository. You can also clone or create a repository there.
+If Git is not detected, select its executable under **Settings → Git → Git runtime (设置 → Git → Git 运行环境)**.
 
-### 提交更改
+### Commit changes
 
-1. 在 **工作区变更** 中选择文件，查看差异。
-2. 将需要提交的文件加入暂存区。
-3. 输入提交说明，点击 **提交**。
+1. Select a file under **Working tree changes (工作区变更)** to review its diff.
+2. Stage the changes you want to commit.
+3. Enter a commit message and click **Commit (提交)**.
 
-### 同步远程
+### Sync with a remote
 
-- **获取**：更新远程分支信息。
-- **拉取**：将远程更新合并到当前分支。
-- **推送**：发布本地提交，首次推送时确认远程和目标分支。
+- **Fetch (获取)** updates remote-tracking branch information.
+- **Pull (拉取)** merges remote updates into the current branch.
+- **Push (推送)** publishes local commits. Confirm the remote and target branch on the first push.
 
-遇到冲突时，打开冲突文件处理，标记解决后继续操作。
+If conflicts occur, open the affected files, resolve and mark them as resolved, then continue the operation.
 
-### 使用 GitFlow
+### Use GitFlow
 
-1. 打开仓库导航中的 **GitFlow 操作面板**，配置生产分支、开发分支和分支前缀。
-2. 选择 **Feature**，输入名称并确认起点，创建并切换到功能分支。
-3. 开发后提交更改，按需推送功能分支。
-4. 完成功能时核对合并目标，处理可能出现的冲突，再按需推送合并结果。
+1. Open the **GitFlow** panel in the repository sidebar and configure the production branch, development branch, and branch prefixes.
+2. Select **Feature**, enter a name, and confirm the starting point to create and check out the feature branch.
+3. Commit your changes and push the feature branch when needed.
+4. When finishing a feature, review the merge targets and resolve any conflicts, then push the merged changes when needed.
 
 <details>
-  <summary>查看 GitFlow 界面</summary>
-  <p><img src="apps/website/public/product/gitflow.png" alt="GitCode GitFlow 操作面板" width="1200" /></p>
+  <summary>View the GitFlow panel</summary>
+  <p><img src="apps/website/public/product/gitflow.png" alt="GitCode GitFlow panel" width="1200" /></p>
 </details>
 
-## 文档与反馈
+## Guides and feedback
 
-[桌面使用说明](apps/desktop/README.md) · [开发与打包](docs/DEVELOPMENT.md) · [网站维护](apps/website/README.md) · [问题反馈](https://github.com/dzxing/gitcode/issues)
+[Desktop guide (中文)](apps/desktop/README.md) · [Development and builds (中文)](docs/DEVELOPMENT.md) · [Website maintenance (中文)](apps/website/README.md) · [Report an issue](https://github.com/dzxing/gitcode/issues)
 
-## 许可
+## License
 
-仅限非商业用途，禁止修改和二次开发，另有书面授权除外。完整条款见 [LICENSE](LICENSE)；第三方组件遵循各自许可，见[第三方声明](THIRD_PARTY_NOTICES.md)。
+Non-commercial use only; modifications and derivative works require separate written permission. See [LICENSE](LICENSE). Third-party components retain their own licenses; see [third-party notices](THIRD_PARTY_NOTICES.md).
