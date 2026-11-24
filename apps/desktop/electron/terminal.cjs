@@ -59,7 +59,9 @@ class TerminalService {
       let login = ''
       try {
         login = os.userInfo().shell
-      } catch {}
+      } catch {
+        // Environment variables and the platform default remain valid fallbacks.
+      }
       add(
         'default',
         path.basename(

@@ -18,7 +18,9 @@ function close(id) {
   sessions.delete(id)
   try {
     terminal.kill()
-  } catch {}
+  } catch {
+    // The Shell may already have exited when its session is closed.
+  }
 }
 process.on('message', (message) => {
   const { requestId, action, id } = message

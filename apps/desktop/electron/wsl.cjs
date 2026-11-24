@@ -206,7 +206,9 @@ class WslClient {
                   // Kill only our relay, never terminate the user's distribution.
                   try {
                     this.child.kill()
-                  } catch {}
+                  } catch {
+                    // The owned relay may have exited before this timeout fired.
+                  }
                   resolve()
                 }, 3000)
               }),

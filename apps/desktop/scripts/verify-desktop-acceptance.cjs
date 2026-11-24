@@ -585,7 +585,7 @@ async function terminalSuite() {
         const waitForOutput = async (id, marker) => {
           try {
             await waitUntil(async () => (await read(id)).data.includes(marker))
-          } catch (error) {
+          } catch {
             const output = await read(id)
             await fs.writeFile(
               path.join(artifacts, 'terminal-failure-output.json'),

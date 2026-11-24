@@ -1,10 +1,12 @@
 'use strict'
 const path = require('node:path')
 const ROOT = '\\\\wsl.localhost\\'
+// eslint-disable-next-line no-control-regex -- Distribution identities must exclude Windows path delimiters and C0 controls.
+const DISTRIBUTION_NAME = /^[^\\/:*?"<>|\x00-\x1f]{1,256}$/
 function validDistribution(value) {
   return (
     typeof value === 'string' &&
-    /^[^\\/:*?"<>|\x00-\x1f]{1,256}$/.test(value) &&
+    DISTRIBUTION_NAME.test(value) &&
     value.trim() === value &&
     !value.startsWith('-') &&
     !['.', '..'].includes(value)

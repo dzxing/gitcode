@@ -6,6 +6,8 @@ const ids = new Set(
   collectIds(schema.flatMap((group) => group.items)).filter((id) => id !== 'file.recent'),
 )
 const editCommands = new Set(['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'])
+// eslint-disable-next-line no-control-regex -- Native menu labels must not contain control characters.
+const CONTROL_CHARACTERS = /[\x00-\x1f\x7f]/g
 function isCommand(id) {
   return typeof id === 'string' && (ids.has(id) || /^file\.recent\.[0-5]$/.test(id))
 }
@@ -22,7 +24,7 @@ function sanitizeState(value) {
     ? value.recent
         .slice(0, 6)
         .map((label) =>
-          typeof label === 'string' ? label.replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 100) : '',
+          typeof label === 'string' ? label.replace(CONTROL_CHARACTERS, ' ').slice(0, 100) : '',
         )
     : []
   const palette =

@@ -203,7 +203,7 @@ bun run test      # 真实 Git、进程取消、预加载隔离、Vue 状态与�
 bun run test:ui   # Playwright 浏览器交互测试，须先安装 Chromium
 ```
 
-Vue／TypeScript 使用 `eslint.config.js` 的 Flat Config：Vue 模板基本规则、带类型信息的 TypeScript 推荐规则、类型导入、未使用变量及 Promise 检查。Vue 脚本必须使用 `lang="ts"`，禁止 `v-html`。`tsconfig.json` 保留 strict，并检查所有返回路径、switch 贯穿和文件名大小写。`.editorconfig` 统一 UTF-8、两空格缩进和 LF 换行。IDEA 可使用项目 ESLint 自动配置；类型检查与 ESLint 都在本机运行。ESLint 当前覆盖 `src`、本机接口的 TypeScript 插件及根目录构建配置；Electron 的 CJS 后端和测试脚本不在本次 lint 范围。仅测试需要的样例不会进入前端构建。
+Vue／TypeScript 使用 `eslint.config.js` 的 Flat Config：Vue 模板基本规则、带类型信息的 TypeScript 推荐规则、类型导入、未使用变量及 Promise 检查。Vue 脚本必须使用 `lang="ts"`，禁止 `v-html`。`tsconfig.json` 保留 strict，并检查所有返回路径、switch 贯穿和文件名大小写。`.editorconfig` 统一编辑规范，PowerShell 采用带 BOM 的 UTF-8。IDEA 可使用项目 ESLint 自动配置；类型检查与 ESLint 都在本机运行。ESLint 覆盖 `src`、本机接口的 TypeScript 插件、构建配置、Electron 的 CJS 后端、开发脚本及 JS 测试。浏览器验证脚本中的页面回调同时声明浏览器环境。Electron 后端保持 CJS，由 JavaScript ESLint 规则检查；Vue／TypeScript 使用严格类型检查。仅测试需要的样例不会进入前端构建。
 
 Prettier 使用 `.prettierrc`（YAML 格式） 统一 Vue、TS、JS/CJS/MJS、CSS 和代码配置的排版，也覆盖 Electron、开发脚本和测试。采用两空格、100 字符参考行宽、单引号、无分号和 Vue 属性逐行显示；长字符串等不可自然拆分的内容不强行截断。`.prettierignore` 排除依赖、构建产物、锁文件、设计验收资料和归档实现。`check`／`build` 会检查格式，CI 构建也会执行同一检查。IDEA 选择项目 `node_modules/prettier`，可开启保存或重排时运行。Vue 模板的多语句事件应提取为具名函数，ESLint 会拦截多语句内联处理器。
 

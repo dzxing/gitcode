@@ -17,6 +17,7 @@ on:
       - '.node-version'
       - '.prettierignore'
       - 'scripts/check-boundaries.mjs'
+      - 'eslint.config.js'
       - '.github/workflows/desktop-validation.yml'
 
 permissions:
@@ -48,6 +49,7 @@ jobs:
           node-version-file: '.node-version'
       - run: bun install --filter 'gitcode-workbench' --frozen-lockfile
       - run: bun run check:boundaries
+      - run: bun run lint:shared
       - run: bun run format:check
       - run: bun run test
       - run: bun run build

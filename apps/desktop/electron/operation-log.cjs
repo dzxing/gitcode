@@ -6,9 +6,11 @@ const { hookReport } = require('./command-diagnostics.cjs')
 
 const DAY = 86400000
 const MAX_BYTES = 20 * 1024 * 1024
+// eslint-disable-next-line no-control-regex -- Strip ANSI escape sequences from persisted output.
+const ANSI_ESCAPE = /\x1b\[[0-9;]*[A-Za-z]/g
 function redact(value) {
   return String(value ?? '')
-    .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')
+    .replace(ANSI_ESCAPE, '')
     .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1[已隐藏]@')
     .replace(/(https?:\/\/[^\s?#]+)[?#][^\s]*/gi, '$1[已隐藏参数]')
     .replace(/(authorization\s*[:=]\s*)(?:Basic|Bearer)?\s*[^\r\n]+/gi, '$1[已隐藏]')

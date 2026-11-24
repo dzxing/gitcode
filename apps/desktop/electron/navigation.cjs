@@ -372,7 +372,9 @@ class NavigationOperations {
               warning:
                 '服务器上的分支已不存在，但删除请求未正常结束。请核对远程状态后刷新本地跟踪引用；不要重复执行。',
             }
-        } catch {}
+        } catch {
+          // Preserve the original deletion failure when remote state cannot be confirmed.
+        }
         throw failure
       }
       try {

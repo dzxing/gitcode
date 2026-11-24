@@ -211,7 +211,9 @@ class MergeOperations {
     try {
       if (buffer && buffer.length <= MAX_TEXT && !buffer.includes(0))
         working = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(buffer)
-    } catch {}
+    } catch {
+      // Keep non-UTF-8 working files non-editable in the text merge editor.
+    }
     const editable =
       !conflict.manualReason && [base, ours, theirs].every((v) => !v.binary) && working !== null
     let markerSize = conflict.markerSize || 7

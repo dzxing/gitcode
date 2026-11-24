@@ -44,6 +44,9 @@ bun install --filter '@gitcode/website' --frozen-lockfile
 | `bun run build`                           | 检查并构建桌面前端                               |
 | `bun run build:website`                   | 静态生成官网，输出 `apps/website/.output/public` |
 | `bun run check`                           | 全仓库检查：边界、两个应用检查及全仓格式检查     |
+| `bun run typecheck`                       | 桌面与官网的 TypeScript 类型检查                 |
+| `bun run lint`                            | 桌面、官网及公共脚本的 ESLint 检查               |
+| `bun run lint:shared`                     | 根目录与品牌生成脚本的 ESLint 检查               |
 | `bun run test`                            | 桌面 Git、IPC、组件等回归测试                    |
 | `bun run test:ui`                         | 桌面浏览器交互测试                               |
 | `bun run test:core-reload`                | 本机 Git 核心热重载测试                          |
@@ -52,7 +55,7 @@ bun install --filter '@gitcode/website' --frozen-lockfile
 | `bun run desktop:build`                   | 在当前系统构建桌面安装包                         |
 | `bun run desktop:build:win`               | 从 Windows 调用完整 Windows 构建脚本             |
 
-为兼容原有命令，`dev`、`build`、`preview`、`test`、`typecheck` 和 `lint` 默认针对桌面应用；官网使用带 `:website` 的入口，整仓检查使用 `bun run check`。
+为兼容原有命令，`dev`、`build`、`preview` 和 `test` 默认针对桌面应用。根目录 `typecheck` 与 `lint` 检查整个工作区，也可用 `typecheck:desktop`、`typecheck:website`、`lint:desktop`、`lint:website` 单独检查应用；整仓质量检查使用 `bun run check`。Vue／TypeScript 执行严格类型检查；Electron、开发脚本及 JS 测试执行对应的 JavaScript ESLint 检查。
 
 首次执行浏览器测试前，在根目录运行 `bunx playwright install chromium` 安装当前 Playwright 版本对应的浏览器。Linux 若缺少浏览器系统依赖，可按 Playwright 的提示安装；已有其他版本的 Chromium 不一定能被默认测试配置复用。
 

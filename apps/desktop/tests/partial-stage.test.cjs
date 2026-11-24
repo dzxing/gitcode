@@ -257,6 +257,18 @@ test('successful partial staging preserves unrelated cached blobs and never invo
   assert.equal((await f.git.git(f.repo, ['ls-files', '--stage', '--', 'other.txt'])).trim(), before)
   await assert.rejects(fs.stat(path.join(f.repo, 'hook-ran')), /ENOENT/)
 })
+test('lookalike config sections do not block partial staging while real index hooks still do', async (t) => {
+  const f = await fixture(t)
+  await f.write('one\nchanged\nthree\n')
+  await f.git.git(f.repo, ['config', 'hooklookalike.partial.event', 'post-index-change'])
+  const plan = await f.read()
+  success(await f.act(plan, [f.line(plan, '+changed')]))
+  assert.equal(await f.blob(), 'one\ntwo\nchanged\nthree\n')
+  await f.git.git(f.repo, ['config', 'hook.partial.event', 'post-index-change'])
+  const before = await f.git.indexFingerprint(f.repo)
+  await assert.rejects(f.read(), /索引 Hook/)
+  assert.equal(await f.git.indexFingerprint(f.repo), before)
+})
 test('special index configurations and index hooks fail before creating an actionable selection', async (t) => {
   const f = await fixture(t)
   await f.write('changed\n')

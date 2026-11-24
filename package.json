@@ -17,7 +17,13 @@
       "typescript": "5.9.3",
       "vue-tsc": "3.3.8",
       "@resvg/resvg-js": "2.6.2",
-      "prettier": "3.9.10"
+      "prettier": "3.9.10",
+      "eslint": "9.39.5",
+      "@eslint/js": "9.39.5",
+      "globals": "17.13.0",
+      "typescript-eslint": "8.72.1",
+      "eslint-plugin-vue": "10.12.0",
+      "vue-eslint-parser": "10.4.1"
     }
   },
   "scripts": {
@@ -38,21 +44,29 @@
     "test:icons": "bun run --cwd apps/desktop test:icons",
     "icons:generate": "bun run --cwd apps/desktop icons:generate",
     "fonts:install": "bun run --cwd apps/desktop fonts:install",
-    "typecheck": "bun run --cwd apps/desktop typecheck",
-    "lint": "bun run --cwd apps/desktop lint",
-    "lint:fix": "bun run --cwd apps/desktop lint:fix",
+    "typecheck": "bun run typecheck:desktop && bun run typecheck:website",
+    "lint": "bun run lint:shared && bun run lint:desktop && bun run lint:website",
+    "lint:fix": "bun run lint:shared --fix && bun run --cwd apps/desktop lint:fix && bun run --cwd apps/website lint:fix",
     "dev:website": "bun run --cwd apps/website dev",
     "build:website": "bun run --cwd apps/website build",
     "preview:website": "bun run --cwd apps/website preview",
     "check:website": "bun run --cwd apps/website check",
     "check:boundaries": "node scripts/check-boundaries.mjs",
-    "check": "bun run check:boundaries && bun run --cwd apps/desktop check && bun run check:website && bun run format:check",
+    "check": "bun run check:boundaries && bun run lint:shared && bun run --cwd apps/desktop check && bun run check:website && bun run format:check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "package:desktop": "bun run --cwd apps/desktop desktop:build"
+    "package:desktop": "bun run --cwd apps/desktop desktop:build",
+    "typecheck:desktop": "bun run --cwd apps/desktop typecheck",
+    "typecheck:website": "bun run --cwd apps/website typecheck",
+    "lint:shared": "eslint eslint.config.js scripts packages/brand/scripts --max-warnings 0",
+    "lint:desktop": "bun run --cwd apps/desktop lint",
+    "lint:website": "bun run --cwd apps/website lint"
   },
   "devDependencies": {
-    "prettier": "catalog:"
+    "prettier": "catalog:",
+    "eslint": "catalog:",
+    "@eslint/js": "catalog:",
+    "globals": "catalog:"
   },
   "trustedDependencies": [
     "electron",

@@ -28,7 +28,7 @@ function parseDiff(diff) {
         hunkOnly: false,
       }
       hunks.push(hunk)
-    } else if (hunk && /^[ +\-]/.test(text)) {
+    } else if (hunk && /^[ +-]/.test(text)) {
       const line = { id, type: text[0], content: text.slice(1) + '\n' }
       hunk.lines.push(line)
       if (line.type !== ' ') hunk.changed.push(id)
@@ -134,7 +134,7 @@ class PartialStageOperations {
       throw Error('仓库配置了索引 Hook，请使用整文件操作。')
     if (
       (
-        await this.git.git(repo, ['config', '--get-regexp', '^hook\..*\.event$'], {
+        await this.git.git(repo, ['config', '--get-regexp', '^hook\\..*\\.event$'], {
           signal,
           allowedCodes: [0, 1],
         })

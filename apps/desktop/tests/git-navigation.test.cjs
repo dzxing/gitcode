@@ -82,7 +82,7 @@ test('reference info verifies raw ref, resolves annotated tags and rejects stale
   )
 })
 test('fast forward requires confirmation, auto-stashes local edits and keeps the current branch', async (t) => {
-  const { repo, git, topic, act, write, base } = await fixture(t),
+  const { repo, git, topic, act, write } = await fixture(t),
     oid = await topic()
   assert.equal((await act('refs/heads/topic', { action: 'fast-forward' })).outcome, 'failed')
   await write('draft.txt', 'draft\n')

@@ -102,7 +102,9 @@ function killTree(child) {
     killer.on('error', () => {
       try {
         child.kill('SIGKILL')
-      } catch {}
+      } catch {
+        // The child may already have exited before the fallback kill.
+      }
     })
   } else {
     try {
@@ -110,7 +112,9 @@ function killTree(child) {
     } catch {
       try {
         child.kill('SIGKILL')
-      } catch {}
+      } catch {
+        // The child may already have exited before the fallback kill.
+      }
     }
   }
 }

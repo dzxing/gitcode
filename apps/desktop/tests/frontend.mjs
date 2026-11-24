@@ -3045,7 +3045,7 @@ try {
     const plan = deferred(),
       acknowledgement = deferred()
     let actions = 0
-    nativeHandler = async (method, args) => {
+    nativeHandler = async (method) => {
       if (method === 'runtime') return nativeRuntime
       if (method === 'snapshot') return structuredClone(live)
       if (method === 'sync-plan') return plan.promise
@@ -3099,7 +3099,7 @@ try {
     let snapshots = 0,
       plans = 0,
       actions = 0
-    nativeHandler = async (method, args) => {
+    nativeHandler = async (method) => {
       if (method === 'runtime') return nativeRuntime
       if (method === 'snapshot') {
         snapshots++
