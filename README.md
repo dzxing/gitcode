@@ -48,20 +48,20 @@ On WSL, start with `bun run desktop:wsl`. See the [build guide (中文)](docs/DE
 
 ### Open a repository
 
-Choose **Open repository (打开仓库)** on the home screen and select an existing Git repository. You can also clone or create a repository there.
-If Git is not detected, select its executable under **Settings → Git → Git runtime (设置 → Git → Git 运行环境)**.
+Choose **Open repository** on the home screen and select an existing Git repository. You can also clone or create a repository there.
+If Git is not detected, select its executable under **Settings → Git → Git runtime**.
 
 ### Commit changes
 
-1. Select a file under **Working tree changes (工作区变更)** to review its diff.
+1. Select a file under **Working tree changes** to review its diff.
 2. Stage the changes you want to commit.
-3. Enter a commit message and click **Commit (提交)**.
+3. Enter a commit message and click **Commit**.
 
 ### Sync with a remote
 
-- **Fetch (获取)** updates remote-tracking branch information.
-- **Pull (拉取)** merges remote updates into the current branch.
-- **Push (推送)** publishes local commits. Confirm the remote and target branch on the first push.
+- **Fetch** updates remote-tracking branch information.
+- **Pull** merges remote updates into the current branch.
+- **Push** publishes local commits. Confirm the remote and target branch on the first push.
 
 If conflicts occur, open the affected files, resolve and mark them as resolved, then continue the operation.
 
