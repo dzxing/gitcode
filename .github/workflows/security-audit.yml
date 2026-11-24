@@ -1,0 +1,36 @@
+name: Dependency security audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  schedule:
+    - cron: '25 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Check public history
+        run: bun run check:public-history
+      - name: Audit locked dependencies
+        run: bun audit --audit-level=high
+        env:
+          BUN_CONFIG_DEFAULT_NPM_REGISTRY: https://registry.npmjs.org
+          npm_config_registry: https://registry.npmjs.org

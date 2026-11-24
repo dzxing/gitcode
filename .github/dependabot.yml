@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      vue-runtime:
+        patterns:
+          - vue
+          - '@vue/server-renderer'
+    commit-message:
+      prefix: 'deps'
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'ci'

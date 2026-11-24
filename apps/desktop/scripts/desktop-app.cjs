@@ -4,10 +4,19 @@ const path = require('node:path')
 
 // Renderer dependencies are compiled into dist. The only native runtime dependency
 // is explicitly vendored; development dependencies never enter the shipped app.
-async function stageDesktopApp(root, { arch = process.arch, platform = process.platform } = {}) {
+async function stageDesktopApp(
+  root,
+  {
+    arch = process.arch,
+    platform = process.platform,
+    licenseRoot = path.resolve(root, '../..'),
+  } = {},
+) {
   await fs.access(path.join(root, 'dist', 'index.html'))
   await fs.access(path.join(root, 'electron', 'main.cjs'))
   const metadata = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'))
+  const licenseFiles = ['LICENSE', 'THIRD_PARTY_NOTICES.md']
+  for (const file of licenseFiles) await fs.access(path.join(licenseRoot, file))
   const parent = path.join(root, '.gitcode-local', 'desktop-apps')
   await fs.mkdir(parent, { recursive: true })
   const directory = await fs.mkdtemp(path.join(parent, 'app-'))
@@ -29,10 +38,13 @@ async function stageDesktopApp(root, { arch = process.arch, platform = process.p
         .map((key) => [key, metadata[key]]),
     )
     runtime.private = true
+    runtime.license = 'SEE LICENSE IN LICENSE'
     await fs.writeFile(
       path.join(directory, 'package.json'),
       JSON.stringify(runtime, null, 2) + '\n',
     )
+    for (const file of licenseFiles)
+      await fs.copyFile(path.join(licenseRoot, file), path.join(directory, file))
     await fs.cp(path.join(root, 'dist'), path.join(directory, 'dist'), { recursive: true })
     await fs.cp(path.join(root, 'assets'), path.join(directory, 'assets'), { recursive: true })
     if (

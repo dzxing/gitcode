@@ -76,7 +76,7 @@ Windows 可从仓库根目录运行 `bun run desktop:build:win`，也可双击 `
 
 `.gitattributes` 保证 Git 在各平台检出 LF 文本，`.editorconfig` 约束编辑器行为，`.prettierrc` 统一代码格式；三者各有用途。PowerShell 文件使用带 BOM 的 UTF-8，兼容 Windows PowerShell 5.1。
 
-`.github/workflows/` 包含桌面与官网的 GitHub Actions 验证配置，支持手动触发及指定路径的 Pull Request 检查，不在每次 push 时自动运行。GitHub 仓库为 `dzxing/gitcode`，原 GitLab 远程保留；尚未配置 GitLab CI。
+`.github/workflows/` 包含桌面、官网和依赖安全审计，支持 main 分支推送、版本标签、手动触发及 Pull Request 检查。依赖审计还会每周运行，读取完整 Bun 锁文件并阻止高危和严重告警；Dependabot 配置用于 Bun 与 Actions 的定期更新。GitHub 仓库为 `dzxing/gitcode`，原 GitLab 远程保留；尚未配置 GitLab CI。
 
 ## 发布与迁移说明
 

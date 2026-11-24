@@ -16,6 +16,8 @@
     "electron/vendor/**/*",
     "assets/**/*",
     "third-party/**/*",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     "package.json",
     "!node_modules/**/*"
   ],

@@ -31,6 +31,8 @@ test('desktop staging includes built renderer/fonts and every runtime core file 
     ['dist/index.html', '<html/>'],
     ['dist/fonts/test.woff2', 'font'],
     ['assets/icon.ico', 'icon'],
+    ['LICENSE', 'GitCode project license'],
+    ['THIRD_PARTY_NOTICES.md', 'GitCode third-party notices'],
     ['third-party/jetbrains-graph/NOTICE.txt', 'Attribution'],
     ['electron/main.cjs', "require('./operation-log.cjs')"],
     ['electron/operation-log.cjs', 'module.exports = {}'],
@@ -50,7 +52,7 @@ test('desktop staging includes built renderer/fonts and every runtime core file 
       path.join(__dirname, '..', 'electron', file),
       path.join(root, 'electron', file),
     )
-  const app = await stageDesktopApp(root)
+  const app = await stageDesktopApp(root, { licenseRoot: root })
   const packagedPlatform = require(path.join(app, 'electron/platform.cjs'))
   assert.equal(packagedPlatform.getPlatform('win32').id, 'windows')
   assert.equal(packagedPlatform.getPlatform('darwin').id, 'macos')
@@ -61,6 +63,12 @@ test('desktop staging includes built renderer/fonts and every runtime core file 
   assert.equal(metadata.dependencies, undefined)
   assert.equal(metadata.devDependencies, undefined)
   assert.equal(metadata.scripts, undefined)
+  assert.equal(metadata.license, 'SEE LICENSE IN LICENSE')
+  assert.equal(await fs.readFile(path.join(app, 'LICENSE'), 'utf8'), 'GitCode project license')
+  assert.equal(
+    await fs.readFile(path.join(app, 'THIRD_PARTY_NOTICES.md'), 'utf8'),
+    'GitCode third-party notices',
+  )
   for (const file of [
     'dist/index.html',
     'dist/fonts/test.woff2',
@@ -74,6 +82,18 @@ test('desktop staging includes built renderer/fonts and every runtime core file 
     await fs.access(path.join(app, file))
   await assert.rejects(fs.access(path.join(app, 'electron/node_modules')))
   await assert.rejects(fs.access(path.join(app, 'electron/package.json')))
+})
+
+test('desktop staging refuses an absent project license before creating an app directory', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-package-license-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  await fs.mkdir(path.join(root, 'dist'))
+  await fs.mkdir(path.join(root, 'electron'))
+  await fs.writeFile(path.join(root, 'dist/index.html'), '<html/>')
+  await fs.writeFile(path.join(root, 'electron/main.cjs'), '')
+  await fs.writeFile(path.join(root, 'package.json'), '{"name":"gitcode-qa"}')
+  await assert.rejects(stageDesktopApp(root, { licenseRoot: root }), /ENOENT/)
+  await assert.rejects(fs.access(path.join(root, '.gitcode-local')))
 })
 
 test('desktop staging refuses a missing frontend build before creating an app directory', async (t) => {
