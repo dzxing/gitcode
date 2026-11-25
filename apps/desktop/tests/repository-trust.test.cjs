@@ -83,8 +83,12 @@ test('approved repositories work with Git ownership checks without changing glob
     if (previous === undefined) delete process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER
     else process.env.GIT_TEST_ASSUME_DIFFERENT_OWNER = previous
   })
-  // This invokes Git's real ownership check, rather than mocking an error.
-  await assert.rejects(f.setupGit.git(f.repo, ['status', '--porcelain']), /dubious ownership/)
+  // Reset inherited safe.directory entries for this probe: CI images may trust '*'.
+  // The command still exercises Git's real ownership check without changing user config.
+  await assert.rejects(
+    f.setupGit.git(f.repo, ['-c', 'safe.directory=', 'status', '--porcelain']),
+    /dubious ownership/,
+  )
   const consent = await f.git.trust.inspect(f.repo)
   assert.equal(consent.trusted, false)
   await assert.rejects(f.git.snapshot(f.repo), /信任/)
