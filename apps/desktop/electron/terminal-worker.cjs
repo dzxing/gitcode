@@ -2,12 +2,15 @@
 // The native addon and Shell processes never run inside the renderer/main thread.
 const fs = require('node:fs')
 const path = require('node:path')
+const { ensurePtyHelperExecutable } = require('./terminal-native.cjs')
 const vendor = path.join(__dirname, 'vendor', 'node-pty')
-const pty = process.env.GITCODE_TERMINAL_MODULE
-  ? require(process.env.GITCODE_TERMINAL_MODULE)
+const ptyRoot = process.env.GITCODE_TERMINAL_MODULE
+  ? process.env.GITCODE_TERMINAL_MODULE
   : fs.existsSync(vendor)
-    ? require(vendor)
-    : require('node-pty')
+    ? vendor
+    : path.dirname(require.resolve('node-pty/package.json'))
+ensurePtyHelperExecutable(ptyRoot)
+const pty = require(ptyRoot)
 const sessions = new Map()
 const send = (value) => {
   if (process.connected) process.send(value)

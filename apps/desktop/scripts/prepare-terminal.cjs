@@ -3,7 +3,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createRequire } = require('node:module')
 const { spawnSync } = require('node:child_process')
-const { developmentPty } = require('../electron/terminal-native.cjs')
+const { developmentPty, ensurePtyHelperExecutable } = require('../electron/terminal-native.cjs')
 
 async function prepareTerminal(root, arch = process.arch, platform = process.platform) {
   if (platform !== process.platform)
@@ -28,6 +28,7 @@ async function prepareTerminal(root, arch = process.arch, platform = process.pla
           process.platform === 'win32' ? 'conpty.node' : 'pty.node',
         ),
       )
+      ensurePtyHelperExecutable(target, platform, arch)
       return target
     }
   } catch {
@@ -72,6 +73,7 @@ async function prepareTerminal(root, arch = process.arch, platform = process.pla
       return result.status === 0 && result.stdout === 'gitcode-pty-ready'
     }
     let source = 'prebuilt'
+    ensurePtyHelperExecutable(path.join(temporary, 'node_modules/node-pty'), platform, arch)
     if (!compatible()) {
       source = 'built'
       const { rebuild } = tools('@electron/rebuild')
@@ -83,6 +85,7 @@ async function prepareTerminal(root, arch = process.arch, platform = process.pla
         onlyModules: ['node-pty'],
         mode: 'sequential',
       })
+      ensurePtyHelperExecutable(path.join(temporary, 'node_modules/node-pty'), platform, arch)
       if (arch === process.arch && !compatible())
         throw Error('终端原生模块无法在当前 Electron 中加载，停止启动或打包。')
     }

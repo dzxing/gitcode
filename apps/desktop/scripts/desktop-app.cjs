@@ -79,6 +79,7 @@ async function stageDesktopApp(
           })
       }
       await fs.access(path.join(target, 'lib', 'index.js'))
+      require('../electron/terminal-native.cjs').ensurePtyHelperExecutable(target, platform, arch)
     }
     return directory
   } catch (error) {
