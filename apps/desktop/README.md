@@ -107,11 +107,11 @@ Windows 和 WSL 应分别安装依赖，不要共用 `node_modules`。Windows �
 
 ## 品牌图标生成
 
-修改 `assets/brand/logo-glyph-transparent.svg` 后，运行 `bun run icons:generate`。该命令会同步重建紧凑/浅背景 SVG、三档深浅透明 PNG、16–32px 紧凑 PNG，以及系统 PNG、ICO、ICNS。桌面立体母版为 `assets/brand/logo-master.png`。
+品牌源图位于 `packages/brand/source/orange-diamond/`：界面使用 `glyph-ui-1024.png`，系统图标使用带石墨底板的 `tile-transparent.png`。在工作区根目录运行 `bun run icons:generate`，同步重建共享透明 PNG、16–32px 小尺寸 PNG，以及系统 PNG、ICO、ICNS；`packages/brand/assets/logo-master.png` 由底板源图同步生成。
 
 界面通用图标使用 [Google Material Symbols Outlined](https://github.com/google/material-design-icons) 的原始 SVG，项目 Logo 保持独立。所需资源随前端本地打包，不加载在线图标字体；资源映射、固定上游版本和校验值位于 `src/assets/icons/material-symbols/manifest.json`，Apache 2.0 许可证和说明位于 `third-party/google-material-symbols/`。收藏星标使用官方实心变体。运行 `bun run test:icons` 可检查资源完整性和许可证打包规则。
 
-透明 PNG 使用锁定版本的开发依赖 `@resvg/resvg-js` 渲染，不需要 Chrome、Playwright 浏览器或系统图片工具。该依赖不进入桌面运行包。运行 `bun run test:icons` 可验证重建、源图变更同步、透明孔洞与浅背景节点颜色；若源图结构变化导致光学调整规则失效，命令会明确报错。修改后仍需重新打包应用，安装包图标才会更新。
+透明 PNG 使用锁定版本的开发依赖 `@resvg/resvg-js` 缩放，不需要 Chrome、Playwright 浏览器或系统图片工具。该依赖不进入桌面运行包。运行 `bun run test:icons` 可验证重建、源图变更同步、图形间隙透明度，以及 ICO、ICNS 与 PNG 的一致性；无效源图会在写入派生文件前报错。修改后仍需重新打包应用，安装包图标才会更新。
 
 ## 按钮尺寸与状态
 

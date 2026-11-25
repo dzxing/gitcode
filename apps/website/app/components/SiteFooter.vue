@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import logo from '@gitcode/brand/assets/logo-glyph-transparent.svg'
+import logo from '@gitcode/brand/assets/logo-glyph-transparent-256.png'
 </script>
 
 <template>

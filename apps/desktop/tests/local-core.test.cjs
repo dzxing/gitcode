@@ -188,7 +188,7 @@ test('default browser core remembers repository trust after a new session and a 
   assert.deepEqual(fetchSettings.body.result.remotes, [])
   const snapshot = await rpc(core, third, 'snapshot', [repo])
   assert.equal(snapshot.status, 200)
-  assert.equal(snapshot.body.result.path, repo)
+  assert.equal(snapshot.body.result.path, await fs.realpath(repo))
 })
 
 test('local core denies foreign origins, DNS-rebinding hosts, remote clients and unauthenticated RPC', async (t) => {
@@ -342,7 +342,7 @@ test('browser session cap releases closed sessions and shutdown rejects new work
 })
 
 test('browser HTTP transport performs directory, Git, GitFlow and sync operations on a real temporary repository', async (t) => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-browser-中文 '))
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'gitcode-browser-中文 ')))
   const services = []
   const core = createLocalCore({
     serviceFactory: () => {

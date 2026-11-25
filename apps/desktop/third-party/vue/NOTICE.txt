@@ -1,0 +1,4 @@
+Vue 3.5.44
+https://github.com/vuejs/core
+Bundled in the GitCode desktop renderer. Licensed under the MIT License.
+The upstream license is preserved in LICENSE.txt.

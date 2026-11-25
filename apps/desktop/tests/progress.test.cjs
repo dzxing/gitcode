@@ -90,7 +90,7 @@ test('a real non-local clone reports Git phases and finishes only after the new 
   const result = await git.job((signal) =>
     git.create({ kind: 'clone', path: target, url: source }, signal),
   )
-  assert.equal(result.snapshot.path, target)
+  assert.equal(result.snapshot.path, await fs.realpath(target))
   assert.equal(result.snapshot.branch, 'main')
   assert.ok(
     events.some((event) => typeof event.percent === 'number'),

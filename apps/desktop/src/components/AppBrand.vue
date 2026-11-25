@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import compactMark from '@gitcode/brand/assets/logo-ui-compact.svg'
-import detailedMark from '@gitcode/brand/assets/logo-glyph-transparent.svg'
+import compactMark from '@gitcode/brand/assets/logo-glyph-transparent-256.png'
+import detailedMark from '@gitcode/brand/assets/logo-glyph-transparent.png'
 withDefaults(defineProps<{ size?: number; showMark?: boolean }>(), { size: 24, showMark: true })
 </script>
 <template>

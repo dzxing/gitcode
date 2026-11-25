@@ -1,19 +1,6 @@
-// Deterministic SVG + supersampled PNG/ICO/ICNS, using only Node builtins.
-// Small icons use the optical SVG geometry; larger sizes use the checked-in artwork.
+// Deterministic PNG/ICO/ICNS from the approved transparent tile, using Node builtins.
 import { deflateSync, inflateSync } from 'node:zlib'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import {
-  palette,
-  glyphScale,
-  outline,
-  routes,
-  junction,
-  endpoints,
-  flatten,
-  circle,
-  roundedTile,
-  markSvg,
-} from './brand-design.mjs'
 const out = new URL('../assets/', import.meta.url)
 const web = new URL('../public/brand/', import.meta.url)
 mkdirSync(out, { recursive: true })
@@ -36,111 +23,6 @@ function chunk(name, bytes) {
   return Buffer.concat([u32(bytes.length), data, u32(crc32(data))])
 }
 const rasterRows = new Map()
-function png(size) {
-  const samples = size <= 48 ? 4 : 2,
-    width = size * samples,
-    scale = width / 64
-  const pixels = Buffer.alloc(width * width * 4)
-  function polygon(points, color, gradient = false) {
-    const p = points.map(([x, y]) => [x * scale, y * scale])
-    const minY = Math.max(0, Math.floor(Math.min(...p.map((v) => v[1])))),
-      maxY = Math.min(width - 1, Math.ceil(Math.max(...p.map((v) => v[1]))))
-    for (let y = minY; y <= maxY; y++) {
-      const scan = y + 0.5,
-        intersections = []
-      for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
-        const [ax, ay] = p[j],
-          [bx, by] = p[i]
-        if (ay > scan !== by > scan) intersections.push(ax + ((scan - ay) * (bx - ax)) / (by - ay))
-      }
-      intersections.sort((a, b) => a - b)
-      const mix = Math.max(0, Math.min(1, (scan / scale - 2) / 60))
-      const rgba = Buffer.from([
-        ...(gradient
-          ? palette.graphiteTop.map((v, i) =>
-              Math.round(v * (1 - mix) + palette.graphiteBottom[i] * mix),
-            )
-          : typeof color === 'function'
-            ? [0, 0, 0]
-            : color),
-        255,
-      ])
-      for (let i = 0; i + 1 < intersections.length; i += 2) {
-        const left = Math.max(0, Math.ceil(intersections[i] - 0.5)),
-          right = Math.min(width, Math.ceil(intersections[i + 1] - 0.5))
-        if (typeof color === 'function') {
-          for (let x = left; x < right; x++) {
-            const i = (y * width + x) * 4
-            const rgb = color((x + 0.5) / scale, (y + 0.5) / scale)
-            pixels[i] = rgb[0]
-            pixels[i + 1] = rgb[1]
-            pixels[i + 2] = rgb[2]
-            pixels[i + 3] = 255
-          }
-        } else if (right > left) pixels.fill(rgba, (y * width + left) * 4, (y * width + right) * 4)
-      }
-    }
-  }
-  polygon(roundedTile(), palette.graphiteTop, true)
-  const glyphPolygon = (points, color) =>
-    polygon(
-      points.map(([x, y]) => [(x - 32) * glyphScale + 32, (y - 32) * glyphScale + 32]),
-      color,
-    )
-  function stroke(points, radius, color) {
-    for (let i = 1; i < points.length; i++) {
-      const [ax, ay] = points[i - 1],
-        [bx, by] = points[i]
-      const length = Math.hypot(bx - ax, by - ay)
-      if (!length) continue
-      const dx = (-(by - ay) / length) * radius,
-        dy = ((bx - ax) / length) * radius
-      glyphPolygon(
-        [
-          [ax + dx, ay + dy],
-          [bx + dx, by + dy],
-          [bx - dx, by - dy],
-          [ax - dx, ay - dy],
-        ],
-        color,
-      )
-    }
-    for (const [x, y] of points) glyphPolygon(circle(x, y, radius, 32), color)
-  }
-  const gradient = (x, y) => {
-    const t = Math.max(0, Math.min(1, (x + y - 16) / 88)),
-      split = 0.52
-    const [a, b, u] =
-      t < split
-        ? [palette.cyan, palette.blue, t / split]
-        : [palette.blue, palette.violet, (t - split) / (1 - split)]
-    return a.map((v, i) => Math.round(v * (1 - u) + b[i] * u))
-  }
-  stroke(flatten(outline), 4, gradient)
-  for (const route of routes) stroke(flatten(route), 1.3, palette.ivory)
-  glyphPolygon(circle(junction.x, junction.y, junction.radius), palette.ivory)
-  for (const p of endpoints) {
-    glyphPolygon(circle(p.x, p.y, 3.7), palette.ivory)
-    glyphPolygon(circle(p.x, p.y, 1.9), [13, 27, 50])
-  }
-  const rows = Buffer.alloc(size * (size * 4 + 1)),
-    count = samples * samples
-  for (let y = 0; y < size; y++)
-    for (let x = 0; x < size; x++) {
-      const sum = [0, 0, 0, 0]
-      for (let sy = 0; sy < samples; sy++)
-        for (let sx = 0; sx < samples; sx++) {
-          const i = ((y * samples + sy) * width + x * samples + sx) * 4,
-            a = pixels[i + 3]
-          for (let c = 0; c < 3; c++) sum[c] += pixels[i + c] * a
-          sum[3] += a
-        }
-      const i = y * (size * 4 + 1) + 1 + x * 4
-      for (let c = 0; c < 3; c++) rows[i + c] = sum[3] ? Math.round(sum[c] / sum[3]) : 0
-      rows[i + 3] = Math.round(sum[3] / count)
-    }
-  return encodePng(size, rows)
-}
 function encodePng(size, rows) {
   rasterRows.set(size, rows)
   return Buffer.concat([
@@ -233,11 +115,7 @@ function detailedPng(size, master) {
 }
 const master = decodeMaster()
 const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256, 512, 1024]
-const images = new Map(
-  sizes.map((size) => [size, size <= 32 ? png(size) : detailedPng(size, master)]),
-)
-writeFileSync(new URL('brand-mark.svg', out), markSvg)
-writeFileSync(new URL('icon.svg', web), markSvg)
+const images = new Map(sizes.map((size) => [size, detailedPng(size, master)]))
 writeFileSync(new URL('icon.png', out), images.get(512))
 for (const size of sizes) writeFileSync(new URL(`icon-${size}.png`, web), images.get(size))
 // Explicit 32-bit DIB entries retain alpha and support native Win32 readers
@@ -302,6 +180,4 @@ writeFileSync(
     ...entries,
   ]),
 )
-console.log(
-  `Generated shared GitCode SVG, ${icoSizes.length}-resolution ICO, PNG 16–1024 and ICNS.`,
-)
+console.log(`Generated GitCode ${icoSizes.length}-resolution ICO, PNG 16–1024 and ICNS.`)

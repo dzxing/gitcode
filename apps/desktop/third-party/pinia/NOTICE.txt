@@ -1,0 +1,4 @@
+Pinia 3.0.4
+https://github.com/vuejs/pinia
+Bundled in the GitCode desktop renderer. Licensed under the MIT License.
+The upstream license is preserved in LICENSE.txt.

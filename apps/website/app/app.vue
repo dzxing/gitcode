@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import logo from '@gitcode/brand/assets/logo-glyph-transparent.svg'
-useHead({ link: [{ rel: 'icon', type: 'image/svg+xml', href: logo }] })
+import logo from '@gitcode/brand/assets/logo-glyph-transparent-256.png'
+useHead({ link: [{ rel: 'icon', type: 'image/png', href: logo }] })
 </script>
 
 <template>

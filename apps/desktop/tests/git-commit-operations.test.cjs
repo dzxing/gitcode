@@ -274,8 +274,10 @@ test('检出修订保护未提交更改并恢复原暂存状态；历史读取�
   assert.equal(await fs.readFile(path.join(f.repo, 'a.txt'), 'utf8'), 'dirty\n')
   assert.equal((await f.cmd('diff', '--cached', '--name-only')).trim(), 'a.txt')
   await f.cmd('reset', '--hard', f.b)
-  const sha = await f.commit('file[*].txt', '\uFEFFexact\n', 'special file')
-  assert.equal((await f.read('blob', [sha], { file: 'file[*].txt' })).content, '\uFEFFexact\n')
+  // Square brackets still exercise literal Git paths on Windows, which forbids '*'.
+  const file = process.platform === 'win32' ? 'file[abc].txt' : 'file[*].txt'
+  const sha = await f.commit(file, '\uFEFFexact\n', 'special file')
+  assert.equal((await f.read('blob', [sha], { file })).content, '\uFEFFexact\n')
 })
 test('Hard 重置显示可能覆盖的忽略文件；确认后内容变化使计划失效', async (t) => {
   const f = await fixture(t)
