@@ -32,6 +32,42 @@ async function fixture(t) {
   })
   return { repo, g, git }
 }
+test('900 independent branch tips use bounded argv for counts, paging and filtered history', async (t) => {
+  const f = await fixture(t)
+  const head = await f.g.head(f.repo)
+  let input = ''
+  for (let i = 0; i < 900; i++) {
+    const message = `fanout ${i}`
+    input += `commit refs/heads/fanout-${i}\ncommitter QA <qa@example.test> ${1700100000 + i} +0000\ndata ${Buffer.byteLength(message)}\n${message}\nfrom ${head}\n\n`
+  }
+  await f.g.git(f.repo, ['fast-import', '--quiet'], { input })
+  const expected = (await f.git('log', '--all', '--date-order', '--format=%H')).trim().split('\n')
+  const original = f.g.git.bind(f.g)
+  f.g.git = (repo, args, options) => {
+    assert.ok(
+      args.join(' ').length < 5000,
+      'revision lists must not grow the command line with the number of branches',
+    )
+    return original(repo, args, options)
+  }
+  const snapshot = await f.g.snapshot(f.repo)
+  assert.equal(snapshot.total, 1520)
+  const hashes = snapshot.commits.map((c) => c.hash)
+  let offset = snapshot.history.nextOffset
+  while (offset !== null) {
+    const page = await f.g.history.read(f.repo, { token: snapshot.history.token, offset })
+    hashes.push(...page.commits.map((c) => c.hash))
+    offset = page.history.nextOffset
+  }
+  assert.deepEqual(hashes, expected)
+  const filtered = await f.g.historyTools.read(f.repo, {
+    kind: 'query',
+    token: snapshot.history.token,
+    query: 'fanout 812',
+  })
+  assert.equal(filtered.commits.length, 1)
+  assert.equal(filtered.commits[0].subject, 'fanout 812')
+})
 test('fixed-tip pages concatenate exactly once in Git date order, even after refs advance', async (t) => {
   const f = await fixture(t),
     s = await f.g.snapshot(f.repo)

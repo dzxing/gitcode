@@ -371,6 +371,49 @@ test('timeout terminates a process rather than hanging the UI', async () => {
   )
 })
 
+test('failed prepared validation force-terminates a stalled abort protocol and preserves the original error', async () => {
+  const started = Date.now()
+  const script =
+    "process.stdin.resume();process.stdout.write('prepare: ok\\n');setInterval(()=>{},1000);setTimeout(()=>process.exit(42),8000)"
+  await assert.rejects(
+    execute(process.execPath, ['-e', script], {
+      input: 'start\nprepare\n',
+      timeout: 5000,
+      onPrepared: async () => {
+        throw Error('prepared validation failed')
+      },
+    }),
+    /prepared validation failed/,
+  )
+  assert.ok(
+    Date.now() - started < 6500,
+    'must kill the stalled process instead of waiting for its own exit',
+  )
+})
+
+test('timeout settles even when prepared validation ignores its abort signal', async () => {
+  const script =
+    "process.stdin.resume();process.stdout.write('prepare: ok\\n');setInterval(()=>{},1000);setTimeout(()=>process.exit(42),8000)"
+  let watchdog
+  try {
+    await assert.rejects(
+      Promise.race([
+        execute(process.execPath, ['-e', script], {
+          input: 'start\nprepare\n',
+          timeout: 1000,
+          onPrepared: () => new Promise(() => {}),
+        }),
+        new Promise((_, reject) => {
+          watchdog = setTimeout(() => reject(Error('validation retained the queue')), 6500)
+        }),
+      ]),
+      /超时/,
+    )
+  } finally {
+    clearTimeout(watchdog)
+  }
+})
+
 test('cancellation invalidates active and queued jobs; later jobs can proceed', async () => {
   const git = new GitService()
   let release

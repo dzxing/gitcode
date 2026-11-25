@@ -20,6 +20,104 @@ class RecoveryOperations {
     })
     return ref
   }
+  async deleteBranch(repo, request, signal) {
+    const git = this.git,
+      name = request.name,
+      ref = `refs/heads/${name}`,
+      backup = this.reference('deleted', name)
+    const merged = async (readSignal) => {
+      if (request.force === true) return
+      const upstream = (
+        await git.git(repo, ['for-each-ref', '--format=%(upstream)', ref], { signal: readSignal })
+      ).trim()
+      const upstreamOid = upstream
+        ? (
+            await git.git(repo, ['rev-parse', '--verify', '--quiet', `${upstream}^{commit}`], {
+              signal: readSignal,
+              allowedCodes: [0, 1],
+            })
+          ).trim()
+        : ''
+      // Match git branch -d: use a resolvable upstream, otherwise HEAD.
+      const reference = upstreamOid || (await git.head(repo, readSignal))
+      const result = reference
+        ? await git.git(repo, ['merge-base', '--is-ancestor', request.expectedOid, reference], {
+            signal: readSignal,
+            allowedCodes: [0, 1],
+            returnCode: true,
+          })
+        : null
+      if (!result || result.code !== 0)
+        throw Object.assign(
+          new Error(
+            '该分支未通过 Git 的合并检查。请确认是否删除未合并分支，再以强制删除方式重试。',
+          ),
+          {
+            code: 'BRANCH_UNMERGED',
+          },
+        )
+    }
+    try {
+      await merged(signal)
+      // Never dereference a symbolic local branch while deleting its name.
+      if (
+        (await git.git(repo, ['symbolic-ref', '-q', ref], { signal, allowedCodes: [0, 1] })).trim()
+      )
+        throw Error('该本地引用是符号引用，请先通过 Git 核对其目标。')
+      await git.git(repo, ['update-ref', '--stdin'], {
+        signal,
+        input: `start\noption no-deref\ncreate ${backup} ${request.expectedOid}\noption no-deref\ndelete ${ref} ${request.expectedOid}\nprepare\n`,
+        onPrepared: async (validationSignal) => {
+          await git.checkContext(repo, request, validationSignal)
+          await git.checkWorktree(repo, ref, true, validationSignal)
+          await git.noInProgress(repo, validationSignal)
+          await merged(validationSignal)
+        },
+      })
+    } catch (error) {
+      if (error.code === 'BRANCH_UNMERGED')
+        return {
+          output: '',
+          outcome: 'failed',
+          branchDeleteBlocked: 'unmerged',
+          error: error.message,
+        }
+      throw error
+    }
+    const output = `本地分支 ${name} 已删除，原提交已保留为恢复点。`
+    try {
+      const recreated = (
+        await git.git(repo, ['rev-parse', '--verify', '--quiet', ref], {
+          signal,
+          allowedCodes: [0, 1],
+        })
+      ).trim()
+      if (recreated)
+        return {
+          outcome: 'partial',
+          output,
+          warning: '同名分支已被其他操作重新创建，已保留其配置，请刷新核对。',
+        }
+      const pattern = '^branch\\.' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\.'
+      const settings = await git.git(
+        repo,
+        ['config', '--local', '--no-includes', '--name-only', '--get-regexp', pattern],
+        {
+          signal,
+          allowedCodes: [0, 1],
+        },
+      )
+      if (settings.trim())
+        await git.git(repo, ['config', '--local', '--remove-section', `branch.${name}`], { signal })
+      return { outcome: 'succeeded', output }
+    } catch (error) {
+      return {
+        outcome: 'partial',
+        output,
+        warning: `分支已删除，但其本地配置未能清理：${git.safeError(error)}`,
+      }
+    }
+  }
   async read(repo, signal) {
     const head = await this.git.head(repo, signal)
     const branch = await this.git.currentBranch(repo, signal)

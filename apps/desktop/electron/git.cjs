@@ -157,15 +157,17 @@ function execute(
       commitSent = false,
       killTimer,
       preparationTask = null,
+      stopping = false,
       protocol = ''
     function stop(message) {
-      if (failure) return
-      failure = new Error(message)
+      failure ||= message instanceof Error ? message : new Error(message)
+      if (stopping) return
+      stopping = true
       preparedController.abort(failure)
-      if (onPrepared && !commitSent && !child.stdin.destroyed) {
+      if (onPrepared && !commitSent) {
         // Let Git abort its prepared transaction and release its own lock files.
         // A stuck reference-transaction hook still has a bounded cancellation.
-        child.stdin.end('abort\n')
+        if (!child.stdin.destroyed && !child.stdin.writableEnded) child.stdin.end('abort\n')
         killTimer = setTimeout(() => killTree(child), 1500)
       } else killTree(child)
     }
@@ -195,9 +197,7 @@ function execute(
                 }
               },
               (error) => {
-                if (!failure) failure = error instanceof Error ? error : new Error(String(error))
-                preparedController.abort(failure)
-                child.stdin.end('abort\n')
+                stop(error instanceof Error ? error : new Error(String(error)))
               },
             )
         }
@@ -222,11 +222,21 @@ function execute(
     child.once('close', async (code, termination) => {
       cleanup()
       if (!commitSent) preparedController.abort(new Error('Git 引用事务已结束。'))
+      // Cooperative callbacks must finish before their owner releases index
+      // locks or temporary files. Bound this wait if a callback ignores abort.
       if (preparationTask) {
+        let settlementTimer
         try {
-          await preparationTask
+          await Promise.race([
+            preparationTask,
+            new Promise((resolve) => {
+              settlementTimer = setTimeout(resolve, 1500)
+            }),
+          ])
         } catch (error) {
           failure ||= error instanceof Error ? error : new Error(String(error))
+        } finally {
+          clearTimeout(settlementTimer)
         }
       }
       if (failure) {
@@ -1196,6 +1206,37 @@ class GitService {
         throw new Error('该分支正被工作区使用，请先在对应工作区切换分支。')
       }
     }
+    if (deleting) {
+      // Rebase and bisect can detach HEAD while still owning the original
+      // branch. Native `git branch -d/-D` protects these worktrees too.
+      const common = path.resolve(
+        repo,
+        (await this.git(repo, ['rev-parse', '--git-common-dir'], { signal })).trim(),
+      )
+      const linked = await fs
+        .readdir(path.join(common, 'worktrees'), { withFileTypes: true })
+        .catch((error) => {
+          if (error.code === 'ENOENT') return []
+          throw error
+        })
+      for (const directory of [
+        common,
+        ...linked
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => path.join(common, 'worktrees', entry.name)),
+      ]) {
+        for (const name of ['rebase-merge/head-name', 'rebase-apply/head-name', 'BISECT_START']) {
+          const state = await fs
+            .readFile(path.join(directory, name), { encoding: 'utf8', signal })
+            .catch((error) => {
+              if (error.code === 'ENOENT') return ''
+              throw error
+            })
+          if ([fullRef, fullRef.slice('refs/heads/'.length)].includes(state.trim()))
+            throw Error('该分支正被工作区的变基或二分查找使用，请先结束对应操作。')
+        }
+      }
+    }
   }
 
   async sameDirectory(left, right) {
@@ -1593,25 +1634,7 @@ class GitService {
         } else {
           if (request.force !== undefined && typeof request.force !== 'boolean')
             throw new Error('无效的强制删除选项。')
-          await this.recovery.checkpoint(repo, name, request.expectedOid, signal)
-          try {
-            output = await this.git(
-              repo,
-              ['branch', request.force === true ? '-D' : '-d', '--', name],
-              { signal, locale: 'C' },
-            )
-          } catch (error) {
-            if (!request.force && !signal?.aborted && /not fully merged/i.test(error.message))
-              return {
-                output: '',
-                outcome: 'failed',
-                branchDeleteBlocked: 'unmerged',
-                error:
-                  '该分支未通过 Git 的合并检查。请确认是否删除未合并分支，再以强制删除方式重试。',
-                details: this.safeError(error),
-              }
-            throw error
-          }
+          return this.recovery.deleteBranch(repo, { ...request, name }, signal)
         }
         break
       }

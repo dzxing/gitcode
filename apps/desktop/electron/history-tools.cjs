@@ -242,7 +242,10 @@ class HistoryTools {
     // full-history prevents path filtering from rewriting real parent IDs.
     if (path) args.push('--full-history')
     const fields = (
-      await this.git.git(repo, [...args, ...tips, '--', ...(path ? [path] : [])], { signal })
+      await this.git.git(repo, [...args, '--stdin', '--', ...(path ? [path] : [])], {
+        signal,
+        input: tips.join('\n') + '\n',
+      })
     ).split('\0')
     const commits = []
     for (let i = 0; i + 5 < fields.length; i += 6) {
