@@ -21,7 +21,6 @@
 </p>
 
 <p align="center">
-  <a href="http://8.138.163.129/">Website</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="apps/desktop/README.md">Guide (中文)</a> ·
   <a href="https://github.com/dzxing/gitcode/issues">Issues</a>

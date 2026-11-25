@@ -21,7 +21,6 @@
 </p>
 
 <p align="center">
-  <a href="http://8.138.163.129/">产品网站</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="apps/desktop/README.md">桌面文档</a> ·
   <a href="https://github.com/dzxing/gitcode/issues">问题反馈</a>
