@@ -68,7 +68,7 @@ jobs:
       - run: node apps/desktop/scripts/package-desktop.mjs --${{ matrix.platform }} --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gitcode-electron-unsigned-${{ matrix.platform }}-${{ matrix.arch }}
           path: release/desktop/
