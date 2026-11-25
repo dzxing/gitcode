@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import type { NativeMenuItem } from '../../src/services/contextMenu'
+import type { NativeMenuItem } from '../../src/infrastructure/contextMenu'
 import { openFixtureRepository } from './repository-fixture'
 import { repositoryFixture } from '../fixtures/repository'
 
@@ -263,7 +263,7 @@ test('unchanged background snapshots keep the native branch menu; moved refs can
     .poll(() => page.evaluate(() => (window as unknown as NativeTestWindow).nativeRequests.length))
     .toBe(1)
   await page.evaluate(async () => {
-    const modulePath = '/src/stores/repository.ts'
+    const modulePath = '/src/features/repository/stores/repository.ts'
     const { useRepositoryStore } = await import(modulePath)
     const repo = useRepositoryStore()
     repo.repo = JSON.parse(JSON.stringify(repo.repo))
@@ -273,7 +273,7 @@ test('unchanged background snapshots keep the native branch menu; moved refs can
     [],
   )
   await page.evaluate(async () => {
-    const modulePath = '/src/stores/repository.ts'
+    const modulePath = '/src/features/repository/stores/repository.ts'
     const { useRepositoryStore } = await import(modulePath)
     const repo = useRepositoryStore()
     const snapshot = JSON.parse(JSON.stringify(repo.repo))
@@ -487,7 +487,7 @@ test('native commit menu opens before optional slow Git eligibility reads and ke
     () => (window as unknown as NativeTestWindow).nativeRequests[1]!.requestId,
   )
   await page.evaluate(async () => {
-    const modulePath = '/src/stores/repository.ts'
+    const modulePath = '/src/features/repository/stores/repository.ts'
     const { useRepositoryStore } = await import(modulePath)
     const repo = useRepositoryStore()
     repo.repo = JSON.parse(JSON.stringify(repo.repo))
@@ -497,7 +497,7 @@ test('native commit menu opens before optional slow Git eligibility reads and ke
     await page.evaluate(() => (window as unknown as NativeTestWindow).nativeClosed),
   ).not.toContain(activeId)
   await page.evaluate(async () => {
-    const modulePath = '/src/stores/repository.ts'
+    const modulePath = '/src/features/repository/stores/repository.ts'
     const { useRepositoryStore } = await import(modulePath)
     useRepositoryStore().repo.head = 'f'.repeat(40)
   })
@@ -505,7 +505,7 @@ test('native commit menu opens before optional slow Git eligibility reads and ke
     .poll(() => page.evaluate(() => (window as unknown as NativeTestWindow).nativeClosed))
     .toContain(activeId)
   await page.evaluate(async (head) => {
-    const modulePath = '/src/stores/repository.ts'
+    const modulePath = '/src/features/repository/stores/repository.ts'
     const { useRepositoryStore } = await import(modulePath)
     useRepositoryStore().repo.head = head
   }, snapshot.head)
@@ -517,7 +517,7 @@ test('native commit menu opens before optional slow Git eligibility reads and ke
     () => (window as unknown as NativeTestWindow).nativeRequests[2]!.requestId,
   )
   await page.evaluate(async () => {
-    const modulePath = '/src/stores/repository.ts'
+    const modulePath = '/src/features/repository/stores/repository.ts'
     const { useRepositoryStore } = await import(modulePath)
     const store = useRepositoryStore()
     const next = JSON.parse(JSON.stringify(store.repo))

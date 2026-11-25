@@ -1,0 +1,73 @@
+/* The historical graph has one visual weight; selection adds a separate ring. */
+.graph-selection-ring {
+  opacity: 0.8;
+  pointer-events: none;
+}
+.graph-jump-arrow {
+  pointer-events: visiblePainted;
+  cursor: pointer;
+}
+.graph-arrow-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+.graph-arrow-mark {
+  stroke: var(--text);
+  opacity: 0;
+  pointer-events: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.graph-jump-arrow.is-hovered .graph-arrow-mark,
+.graph-jump-arrow:focus-within .graph-arrow-mark {
+  opacity: 0.7;
+}
+.graph-arrow-head {
+  outline: none;
+  pointer-events: all;
+}
+.graph-arrow-tooltip {
+  position: fixed;
+  z-index: 1000;
+  width: max-content;
+  max-width: min(330px, calc(100vw - 16px));
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 4px 16px var(--popup-shadow-color);
+  display: grid;
+  gap: 3px;
+  font-size: var(--ui-font-size);
+  line-height: 1.45;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+.graph-arrow-tooltip small {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+.graph-arrow-unavailable {
+  margin-top: 3px;
+  color: var(--text-secondary);
+}
+.graph-jump-arrow[aria-disabled='true'] {
+  opacity: 0.5;
+}
+.history-panel .commit-row.selected::after {
+  width: 2px;
+  opacity: 0.65;
+}
+
+/* MergeCommitsHighlighter changes text foreground only; selection wins. */
+.history-panel
+  .commit-row.is-merge:not(.selected)
+  :is(.commit-message, .author-cell, .time-cell, .sha-cell) {
+  color: var(--history-merge-text);
+}
+.history-panel .table-head > span:nth-child(2) {
+  padding: 0 2px;
+  letter-spacing: 0;
+  text-align: center;
+}

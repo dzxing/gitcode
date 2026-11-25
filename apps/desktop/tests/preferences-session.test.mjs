@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 const server = await createServer({ configFile: false, server: { middlewareMode: true } })
 after(() => server.close())
-const { commitPreferences } = await server.ssrLoadModule('/src/preferencesSession.ts')
+const { commitPreferences } = await server.ssrLoadModule(
+  '/src/features/preferences/preferencesSession.ts',
+)
 function memory(initial = {}) {
   const values = new Map(Object.entries(initial))
   return {

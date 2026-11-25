@@ -52,32 +52,45 @@ globalThis.localStorage = {
 }
 
 try {
-  const { default: App } = await vite.ssrLoadModule('/src/App.vue')
-  const { useRepositoryStore } = await vite.ssrLoadModule('/src/stores/repository.ts')
-  const { useGitFlowStore } = await vite.ssrLoadModule('/src/stores/gitflow.ts')
-  const { default: GitFlowPanel } = await vite.ssrLoadModule('/src/components/GitFlowPanel.vue')
-  const { default: Sidebar } = await vite.ssrLoadModule('/src/components/Sidebar.vue')
-  const { default: Inspector } = await vite.ssrLoadModule('/src/components/Inspector.vue')
-  const { default: ContextMenu } = await vite.ssrLoadModule('/src/components/ContextMenu.vue')
-  const { useSidebarStore } = await vite.ssrLoadModule('/src/stores/sidebar.ts')
-  const { useWorktreeStore } = await vite.ssrLoadModule('/src/stores/worktree.ts')
+  const { default: App } = await vite.ssrLoadModule('/src/app/DesktopWorkbench.vue')
+  const { useRepositoryStore } = await vite.ssrLoadModule(
+    '/src/features/repository/stores/repository.ts',
+  )
+  const { useGitFlowStore } = await vite.ssrLoadModule('/src/features/gitflow/stores/gitflow.ts')
+  const { default: GitFlowPanel } = await vite.ssrLoadModule(
+    '/src/features/gitflow/components/GitFlowPanel.vue',
+  )
+  const { default: Sidebar } = await vite.ssrLoadModule(
+    '/src/features/branches/components/Sidebar.vue',
+  )
+  const { default: Inspector } = await vite.ssrLoadModule(
+    '/src/features/changes/components/Inspector.vue',
+  )
+  const { default: ContextMenu } = await vite.ssrLoadModule('/src/app/components/ContextMenu.vue')
+  const { useSidebarStore } = await vite.ssrLoadModule('/src/features/branches/stores/sidebar.ts')
+  const { useWorktreeStore } = await vite.ssrLoadModule('/src/features/changes/stores/worktree.ts')
   const { normalizeSidebarOrder, sortSidebarBranches, remoteBranchGroups, branchDirectoryTree } =
-    await vite.ssrLoadModule('/src/sidebar.ts')
-  const { branchTracking } = await vite.ssrLoadModule('/src/branchTracking.ts')
-  const { buildGraph, buildHistoryGraph } = await vite.ssrLoadModule('/src/graph.ts')
-  const { resolveCommitReferences, groupCommitReferences } =
-    await vite.ssrLoadModule('/src/referenceLabels.ts')
-  const { buildMenus } = await vite.ssrLoadModule('/src/menu.ts')
+    await vite.ssrLoadModule('/src/features/branches/sidebar.ts')
+  const { branchTracking } = await vite.ssrLoadModule('/src/features/branches/branchTracking.ts')
+  const { buildGraph, buildHistoryGraph } = await vite.ssrLoadModule(
+    '/src/features/history/graph.ts',
+  )
+  const { resolveCommitReferences, groupCommitReferences } = await vite.ssrLoadModule(
+    '/src/features/history/referenceLabels.ts',
+  )
+  const { buildMenus } = await vite.ssrLoadModule('/src/app/menu.ts')
   const { repositoryFixture: fixture } = await vite.ssrLoadModule('/tests/fixtures/repository.ts')
   const { useContextMenuStore, referenceBranch, branchContextCurrent } = await vite.ssrLoadModule(
-    '/src/stores/contextMenu.ts',
+    '/src/app/stores/contextMenu.ts',
   )
-  const { interactiveRebaseFromHistory } = await vite.ssrLoadModule('/src/rebaseMenu.ts')
-  const { desktop, pathName, joinPath } = await vite.ssrLoadModule('/src/services/desktop.ts')
+  const { interactiveRebaseFromHistory } = await vite.ssrLoadModule(
+    '/src/features/rebase/rebaseMenu.ts',
+  )
+  const { desktop, pathName, joinPath } = await vite.ssrLoadModule('/src/infrastructure/desktop.ts')
   const { createLocalCoreClient, LocalConnectionError } = await vite.ssrLoadModule(
-    '/src/services/localCore.ts',
+    '/src/infrastructure/localCore.ts',
   )
-  const { useDesktopWindow } = await vite.ssrLoadModule('/src/composables/useDesktopWindow.ts')
+  const { useDesktopWindow } = await vite.ssrLoadModule('/src/app/useDesktopWindow.ts')
   const seedRepository = (store) => {
     store.repo = structuredClone(fixture)
     store.tabs = [{ id: 1, kind: 'repository', name: fixture.name, path: fixture.path }]
@@ -499,7 +512,7 @@ try {
   })
 
   await test('Operation notices collapse IPC stacks without losing the original error or operation outcome', async () => {
-    const { noticePresentation } = await vite.ssrLoadModule('/src/noticePresentation.ts')
+    const { noticePresentation } = await vite.ssrLoadModule('/src/shared/lib/noticePresentation.ts')
     const raw =
       "Error invoking remote method 'gitcode:snapshot': Error: 读取仓库失败。\n    at GitService.snapshot (C:\\GitCode\\app.asar\\electron\\git.cjs:42:7)\n    at async invoke (node:internal/process/task_queues:95:5)"
     const store = freshStore()
@@ -650,7 +663,7 @@ try {
 
   await test('External observation coalesces bursts and waits for foreground operations', async () => {
     const { createRepositoryObservation } = await vite.ssrLoadModule(
-      '/src/services/repositoryObservation.ts',
+      '/src/infrastructure/repositoryObservation.ts',
     )
     let time = 0,
       allowed = false,
@@ -693,7 +706,7 @@ try {
 
   await test('External reads cannot overwrite a newer context after a tab round trip or disposal', async () => {
     const { createRepositoryObservation } = await vite.ssrLoadModule(
-      '/src/services/repositoryObservation.ts',
+      '/src/infrastructure/repositoryObservation.ts',
     )
     const pending = deferred()
     let key = 'one',
@@ -735,7 +748,7 @@ try {
 
   await test('Observation falls back to periodic validation and recovers from locks and read errors', async () => {
     const { createRepositoryObservation } = await vite.ssrLoadModule(
-      '/src/services/repositoryObservation.ts',
+      '/src/infrastructure/repositoryObservation.ts',
     )
     let time = 0,
       reads = 0,
@@ -1744,6 +1757,37 @@ try {
     assert.equal(flow.name, 'reviewed-input')
   })
 
+  await test('completed Finish renews an empty Start through its receipt but preserves an edited draft', async () => {
+    const { useGitFlowFinishStore } = await vite.ssrLoadModule(
+      '/src/features/gitflow/stores/gitflowFinish.ts',
+    )
+    for (const draft of ['', 'keep-my-reviewed-input']) {
+      const { store, flow } = flowWorkspace(`finish-receipt-${draft || 'empty'}`)
+      store.repo.gitflow.finishSupported = true
+      flow.open('start')
+      flow.name = draft
+      const oldHead = flow.capturedHead
+      const candidate = store.repo.branches.find(
+        (branch) => branch.kind === 'local' && branch.name.startsWith('feature/'),
+      )
+      assert.ok(candidate)
+      const next = structuredClone(JSON.parse(JSON.stringify(store.repo)))
+      next.head = 'b'.repeat(40)
+      next.branch = 'develop'
+      next.branches = next.branches.filter((branch) => branch.name !== candidate.name)
+      next.branches.find((branch) => branch.name === 'develop').hash = next.head
+      const finish = useGitFlowFinishStore()
+      finish.open(candidate.name)
+      assert.equal(finish.blocked, '')
+      nativeHandler = async () => ({ outcome: 'succeeded', output: '', snapshot: next })
+      await finish.finish()
+      assert.equal(store.repo.head, next.head)
+      assert.equal(flow.name, draft)
+      assert.equal(flow.stale, !!draft)
+      assert.equal(flow.capturedHead, draft ? oldHead : next.head)
+    }
+  })
+
   await test('GitFlow navigation, type toggles and reset cannot silently renew stale targets', async () => {
     const { store, flow } = flowWorkspace('stale-buttons')
     flow.open('start')
@@ -1955,7 +1999,9 @@ try {
     assert.equal(store.modal, 'gitflow-finish')
     assert.equal(store.repo.branch, before)
     assert.equal(store.busy, false)
-    const { useGitFlowFinishStore } = await vite.ssrLoadModule('/src/stores/gitflowFinish.ts')
+    const { useGitFlowFinishStore } = await vite.ssrLoadModule(
+      '/src/features/gitflow/stores/gitflowFinish.ts',
+    )
     const finish = useGitFlowFinishStore()
     assert.equal(finish.canChooseBranch, !candidate)
     assert.equal(finish.deleteBranch, true)
@@ -1978,7 +2024,9 @@ try {
       { path: 'draft.txt', status: 'M' },
       { path: 'new.txt', status: '?' },
     ]
-    const { useGitFlowFinishStore } = await vite.ssrLoadModule('/src/stores/gitflowFinish.ts')
+    const { useGitFlowFinishStore } = await vite.ssrLoadModule(
+      '/src/features/gitflow/stores/gitflowFinish.ts',
+    )
     const finish = useGitFlowFinishStore()
     finish.open('feature/dirty-finish')
     assert.equal(finish.blocked, '')
@@ -4542,7 +4590,7 @@ try {
     assert.match(store.historyError, /不存在/)
   })
   await test('Changed root snapshots reset pagination while same-root checkout only refreshes decorations', async () => {
-    const { retainHistory } = await vite.ssrLoadModule('/src/historyPaging.ts')
+    const { retainHistory } = await vite.ssrLoadModule('/src/features/history/historyPaging.ts')
     const full = structuredClone(fixture)
     const history = {
       token: 'pages',
@@ -4568,7 +4616,9 @@ try {
   })
 
   await test('Changed graph roots refill the loaded window only from the new frame and never retain removed commits', async () => {
-    const { refillHistoryWindow } = await vite.ssrLoadModule('/src/historyPaging.ts')
+    const { refillHistoryWindow } = await vite.ssrLoadModule(
+      '/src/features/history/historyPaging.ts',
+    )
     const full = structuredClone(fixture)
     const frame = {
       token: 'fresh',
@@ -4608,7 +4658,9 @@ try {
   })
 
   await test('Graph window refill stops when its repository context changes and rejects a mismatched page', async () => {
-    const { refillHistoryWindow } = await vite.ssrLoadModule('/src/historyPaging.ts')
+    const { refillHistoryWindow } = await vite.ssrLoadModule(
+      '/src/features/history/historyPaging.ts',
+    )
     const full = structuredClone(fixture)
     const frame = {
       token: 'fresh',
@@ -4714,7 +4766,7 @@ try {
     assert.equal(store.commitBody, 'keep detail')
   })
   await test('History filters survive a fresh store by canonical repository path; explicit clear survives restart', async () => {
-    const { historyFilterKey } = await vite.ssrLoadModule('/src/services/historyFilter.ts')
+    const { historyFilterKey } = await vite.ssrLoadModule('/src/features/history/historyFilter.ts')
     const live = { ...structuredClone(fixture), path: '/tmp/filter-persist/app' }
     let store = freshStore()
     const calls = []
@@ -4766,7 +4818,7 @@ try {
   })
   await test('Restoring a deleted full ref clears saved preferences and does not select a same-named tag', async () => {
     const { historyFilterKey, writeHistoryFilter } = await vite.ssrLoadModule(
-      '/src/services/historyFilter.ts',
+      '/src/features/history/historyFilter.ts',
     )
     const store = freshStore(),
       live = { ...structuredClone(fixture), path: '/tmp/filter-removed' }
@@ -4840,7 +4892,7 @@ try {
     }
   })
   await test('SHA location is temporary and never overwrites the remembered branch; explicit return clears it', async () => {
-    const { readHistoryFilter } = await vite.ssrLoadModule('/src/services/historyFilter.ts')
+    const { readHistoryFilter } = await vite.ssrLoadModule('/src/features/history/historyFilter.ts')
     const store = freshStore(),
       live = { ...structuredClone(fixture), path: '/tmp/filter-sha' }
     const state = {
@@ -4880,7 +4932,7 @@ try {
   })
   await test('Restoring an old branch loads its history read-only; clearing it exits its scope and preserves the keyword', async () => {
     const { writeHistoryFilter, readHistoryFilter } = await vite.ssrLoadModule(
-      '/src/services/historyFilter.ts',
+      '/src/features/history/historyFilter.ts',
     )
     const store = freshStore(),
       live = { ...structuredClone(fixture), path: '/tmp/filter-old' }
@@ -4927,7 +4979,7 @@ try {
   })
   await test('Cancelling first trust never reads, validates or deletes a remembered filter for that repository', async () => {
     const { writeHistoryFilter, historyFilterKey } = await vite.ssrLoadModule(
-      '/src/services/historyFilter.ts',
+      '/src/features/history/historyFilter.ts',
     )
     const store = freshStore(),
       path = '/tmp/filter-untrusted'

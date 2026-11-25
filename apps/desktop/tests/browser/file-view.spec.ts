@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { FileChange, Snapshot } from '../../src/types'
+import type { FileChange, Snapshot } from '../../src/shared/contracts'
 declare global {
   interface Window {
     __fileViewWrites: number

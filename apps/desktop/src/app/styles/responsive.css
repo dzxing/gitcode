@@ -1,0 +1,176 @@
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (min-width: 1600px) {
+  .commit-grid {
+    grid-template-columns: 150px var(--graph-width) minmax(220px, 1fr) 100px 78px;
+  }
+  .commit-graph {
+    left: 150px;
+  }
+  .author-cell {
+    display: flex;
+  }
+  .author-heading,
+  .time-cell,
+  .wip-owner {
+    display: block;
+  }
+}
+@media (max-width: 1200px) {
+  .toolbar {
+    gap: 12px;
+    padding: 0 12px;
+  }
+  .toolbar-actions {
+    margin-left: 0;
+    gap: 2px;
+  }
+  .toolbar-actions > button {
+    min-width: calc(36px + max(0px, var(--ui-font-delta, 0px)) * 2);
+  }
+  .toolbar-actions .toolbar-divider {
+    margin: 0 4px;
+  }
+  .repo-selector {
+    min-width: 130px;
+  }
+  .repo-selector strong,
+  .branch-selector strong {
+    max-width: 145px;
+  }
+  .open-button kbd {
+    display: none;
+  }
+  .commit-grid {
+    grid-template-columns: 130px var(--graph-width) minmax(200px, 1fr);
+  }
+  .commit-graph {
+    left: 130px;
+  }
+  .commit-search {
+    width: 180px;
+  }
+}
+@media (max-width: 1000px) {
+  .app-shell {
+    --sidebar-width: 190px !important;
+    --inspector-width: 290px !important;
+  }
+  .toolbar {
+    gap: 8px;
+  }
+  .repo-selector {
+    min-width: 110px;
+  }
+  .repo-selector strong,
+  .branch-selector strong {
+    max-width: 115px;
+  }
+  .toolbar-actions > button {
+    min-width: calc(32px + max(0px, var(--ui-font-delta, 0px)) * 2);
+  }
+  .branch-selector {
+    min-width: 105px;
+  }
+  .branch-selector summary {
+    gap: 5px;
+  }
+  .branch-selector summary > svg:last-child {
+    margin-left: 3px;
+  }
+  .commit-search {
+    width: 145px;
+  }
+  .commit-search kbd {
+    display: none;
+  }
+  .open-button {
+    padding: 0 8px;
+  }
+  .history-footer {
+    font-size: var(--ui-font-help);
+    padding: 0 10px;
+  }
+  .new-tab-page {
+    gap: 30px;
+    padding: 40px 35px;
+    grid-template-columns: minmax(410px, 1.5fr) minmax(225px, 1fr);
+  }
+  .new-tab-resources {
+    padding-left: 25px;
+  }
+  .repository-action {
+    padding: 0 10px;
+  }
+  .repository-action kbd {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .open-button > span {
+    display: none;
+  }
+  .history-heading .commit-search {
+    min-width: 0;
+    width: auto;
+    flex: 1;
+  }
+  #operation-status {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .new-tab-page {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding: 24px;
+  }
+  .new-tab-resources {
+    padding-left: 0;
+    border-left: 0;
+  }
+  .titlebar-right .profile {
+    display: none;
+  }
+}
+
+@media (max-width: 1599px) {
+  .author-cell,
+  .author-heading,
+  .time-cell,
+  .wip-owner {
+    display: none;
+  }
+}
+
+.file-main {
+  position: relative;
+}
+.file-full-path {
+  display: none;
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 100%;
+  z-index: 10;
+  padding: 8px 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--theme-border, #606a7a);
+  border-radius: 4px;
+  color: var(--theme-text, #e2e6ed);
+  font-size: var(--ui-font-size);
+  line-height: 1.6;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  box-shadow: 0 4px 12px var(--popup-shadow-color);
+}
+.file-main:hover .file-full-path,
+.file-main:focus-visible .file-full-path {
+  display: block;
+}

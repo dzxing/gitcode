@@ -1,0 +1,647 @@
+.sidebar {
+  position: relative;
+  --nav-gutter: 8px;
+  --nav-content-inset: 4px;
+  --section-inset: 2px;
+  --tree-column-gap: 2px;
+  --branch-indent: 16px;
+  --section-label-inset: calc(var(--section-inset) + 12px + 14px + 2 * var(--tree-column-gap));
+  --tree-label-inset: calc(var(--section-label-inset) + var(--branch-indent));
+  --branch-base-inset: calc(var(--section-label-inset) - 14px - 6px);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  min-height: 0;
+  min-width: 0;
+}
+.sidebar-content {
+  display: contents;
+}
+.ref-cell:has(.inline-branch-form) {
+  position: relative;
+  z-index: 18;
+  overflow: visible;
+}
+.inline-branch-form {
+  pointer-events: auto;
+  display: flex;
+  position: relative;
+  align-items: center;
+  width: 100%;
+  height: 26px;
+  border: 1px solid var(--focus-ring);
+  background: var(--panel);
+  border-radius: 3px;
+}
+.inline-branch-form > input {
+  flex: 1;
+  min-width: 0;
+  width: 70px;
+  padding: 3px 6px;
+  font-size: var(--ui-font-size);
+}
+.inline-branch-form > .icon-button {
+  width: var(--compact-button-size);
+  height: var(--compact-button-size);
+}
+.inline-branch-options {
+  position: absolute;
+  top: 29px;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 200px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  font-size: var(--ui-font-help);
+  box-shadow: 0 5px 14px var(--popup-shadow-color);
+}
+.inline-branch-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.inline-branch-options input {
+  width: auto;
+}
+.inline-branch-options p {
+  flex-basis: 100%;
+  color: var(--git-deleted);
+  white-space: normal;
+}
+.sidebar-checkout-progress {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 16px;
+  background: var(--theme-fill, #1c2026ed);
+  color: var(--text-secondary);
+  text-align: center;
+}
+.sidebar-checkout-progress > svg {
+  color: var(--accent);
+}
+.sidebar-checkout-progress > strong {
+  font-size: var(--ui-font-size);
+  font-weight: 500;
+}
+.sidebar-checkout-progress > span {
+  max-width: 100%;
+  font-size: var(--ui-font-help);
+  overflow-wrap: anywhere;
+}
+.sidebar-heading {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px calc(var(--nav-gutter) + var(--nav-content-inset)) 8px;
+  font-size: var(--ui-font-size);
+  color: var(--text-secondary);
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.workspace-repo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 13px 16px;
+  padding: 9px;
+  border: 1px solid var(--theme-border, #333b46);
+  background: var(--theme-fill, #222731);
+  border-radius: 6px;
+  text-align: left;
+}
+.workspace-repo:hover {
+  border-color: var(--theme-border, #4a5867);
+  background: var(--theme-hover-fill, #272e38);
+}
+.repo-tile {
+  display: grid;
+  place-items: center;
+  background: var(--theme-fill, #294139);
+  border: 1px solid var(--theme-border, #3c5d50);
+  color: var(--theme-success-text, #7fceb5);
+  border-radius: 6px;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+}
+.repo-caption {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+  flex: 1;
+}
+.repo-caption strong {
+  color: var(--theme-text, #e0e6ed);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repo-caption small {
+  color: var(--muted);
+  font-size: var(--ui-font-help);
+}
+.workspace-repo > svg {
+  color: var(--theme-caption, #707d8e);
+}
+/* Each navigation container owns its outer gutter; rows only add internal columns. */
+.workspace-nav {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--nav-gutter);
+}
+.workspace-nav button {
+  position: relative;
+  display: grid;
+  grid-template-columns: 12px 14px minmax(0, 1fr) auto;
+  column-gap: var(--tree-column-gap);
+  width: 100%;
+  height: 30px;
+  padding: 0 var(--section-inset);
+  border-radius: 4px;
+  text-align: left;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-size);
+}
+.workspace-nav button > svg {
+  grid-column: 2;
+}
+.workspace-nav button > span:first-of-type {
+  grid-column: 3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-nav button.active {
+  color: var(--view-selection-color);
+  background: var(--view-selection-bg);
+}
+.workspace-nav button.active::before {
+  content: '';
+  height: 15px;
+  width: 2px;
+  position: absolute;
+  left: 0;
+  background: var(--view-selection-color);
+  border-radius: 0 3px 3px 0;
+}
+.workspace-nav button:not(:disabled):hover {
+  background: var(--control-hover-bg);
+}
+.workspace-nav button.active:not(:disabled):hover {
+  color: var(--view-selection-color);
+  background: var(--view-selection-hover-bg);
+}
+.workspace-nav .count {
+  margin-left: auto;
+  padding: 0 5px;
+  min-width: 18px;
+  height: 17px;
+  line-height: 17px;
+  font: var(--ui-font-help)/17px var(--mono);
+  text-align: center;
+  background: var(--theme-info-fill, #22b8d019);
+  color: var(--accent-hover);
+  border-radius: 4px;
+}
+.nav-subtle {
+  margin-left: auto;
+  font: var(--ui-font-help)/1.5 var(--mono);
+  color: var(--muted);
+}
+.sidebar-divider {
+  flex-shrink: 0;
+  margin: 10px var(--nav-gutter);
+  border-top: 1px solid var(--line-soft);
+}
+.branch-search {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  margin: 0 var(--nav-gutter) 8px;
+  border: 1px solid var(--theme-border, #303743);
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--bg);
+}
+.branch-search:focus-within {
+  border-color: var(--accent);
+}
+.branch-search input {
+  width: 100%;
+  font-size: var(--ui-font-size);
+}
+.branch-search kbd {
+  font-size: var(--ui-font-help);
+  padding: 1px 3px;
+}
+.branch-sections {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  padding: 2px var(--nav-gutter) 8px;
+}
+.branch-section + .branch-section {
+  margin-top: 8px;
+}
+/* The header owns sibling hit targets; only the toggle owns its content columns. */
+.section-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  column-gap: 6px;
+  height: 30px;
+  padding: 0 var(--section-inset);
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.section-head:hover {
+  background: var(--theme-overlay, #ffffff08);
+}
+.section-head.has-section-action {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.section-toggle {
+  display: grid;
+  grid-template-columns: 12px 14px minmax(0, 1fr);
+  column-gap: var(--tree-column-gap);
+  align-items: center;
+  height: 30px;
+  min-width: 0;
+  text-align: left;
+  color: var(--text);
+  font-size: var(--ui-font-size);
+  font-weight: 600;
+}
+.section-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.section-head .section-action {
+  width: var(--compact-button-size);
+  height: var(--compact-button-size);
+  justify-self: end;
+}
+.section-head .gitflow-panel-action {
+  width: 40px;
+  font-size: var(--ui-font-size);
+  font-weight: 400;
+}
+.section-toggle,
+.gitflow-group-label {
+  border-radius: 4px;
+}
+.section-toggle:not(:disabled):hover {
+  background: transparent;
+}
+.gitflow-group-label:not(:disabled):hover {
+  background: var(--control-hover-bg);
+}
+.section-toggle:not(:disabled):active,
+.gitflow-group-label:not(:disabled):active {
+  background: var(--control-pressed-bg);
+  box-shadow: none;
+}
+.gitflow-favorites-label {
+  padding: 4px var(--nav-content-inset) 4px var(--tree-label-inset);
+  font-size: var(--ui-font-size);
+  color: var(--muted);
+}
+.gitflow-favorites {
+  margin-bottom: 4px;
+}
+.gitflow-setup {
+  padding: 4px var(--nav-content-inset) 4px var(--tree-label-inset);
+  font-size: var(--ui-font-help);
+  color: var(--muted);
+}
+.gitflow-setup p {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+}
+.gitflow-setup .text-button {
+  max-width: 100%;
+  min-height: 26px;
+  font-size: var(--ui-font-size);
+  text-align: left;
+}
+.sidebar-order-note {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 calc(var(--nav-gutter) + var(--nav-content-inset)) 8px;
+  color: var(--muted);
+  font-size: var(--ui-font-help);
+}
+.branch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* Animate intrinsic height, including large groups, without a max-height cutoff. */
+.sidebar-disclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 180ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 140ms ease,
+    visibility 0s linear 180ms;
+}
+.sidebar-disclosure.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: inherit;
+  transition-delay: 0s;
+}
+.sidebar-disclosure-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+.gitflow-group-label + .sidebar-disclosure .branch-list {
+  padding-top: 2px;
+}
+.disclosure-chevron {
+  color: var(--icon-color);
+  transform: rotate(0deg);
+  transform-origin: center;
+  transition:
+    transform 180ms cubic-bezier(0.2, 0, 0, 1),
+    color 0.15s;
+}
+.section-toggle:not(:disabled):is(:hover, :focus-visible) .disclosure-chevron,
+.gitflow-group-label:not(:disabled):is(:hover, :focus-visible) .disclosure-chevron,
+.branch-selector summary:is(:hover, :focus-visible) .disclosure-chevron {
+  color: var(--icon-hover-color);
+}
+.disclosure-chevron.is-open {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-disclosure,
+  .disclosure-chevron {
+    transition: none;
+  }
+}
+.branch-row {
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  min-width: 0;
+}
+.branch-row.current {
+  background: var(--current-branch-bg);
+  color: var(--current-branch-color);
+}
+.branch-row.filtered {
+  outline: 1px solid var(--view-selection-border);
+  outline-offset: -1px;
+}
+.branch-main {
+  min-width: 0;
+  flex: 1;
+  justify-content: start;
+  text-align: left;
+  gap: 6px;
+  height: 100%;
+  padding: 0 6px 0 calc(var(--branch-base-inset) + var(--branch-depth, 1) * var(--branch-indent));
+  font-size: var(--ui-font-size);
+  color: var(--text);
+}
+.branch-row.current .branch-main,
+.branch-row.current .branch-main:not(:disabled):hover {
+  color: var(--current-branch-color);
+}
+.branch-main > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.branch-main > .branch-kind-icon {
+  color: var(--icon-color);
+  width: 14px;
+  /* Match the text's optical center while preserving its descender space. */
+  transform: translateY(1px);
+}
+.branch-row.current .branch-kind-icon {
+  color: inherit;
+}
+.branch-main > svg:last-child:not(:first-child),
+.branch-main > small {
+  margin-left: auto;
+}
+.branch-main > .branch-name {
+  flex: 1;
+  min-width: 0;
+}
+.branch-main > .branch-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font: var(--ui-font-help)/1.5 var(--mono);
+}
+.branch-current-check {
+  flex-shrink: 0;
+  color: var(--current-branch-color);
+}
+.branch-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  font: var(--ui-font-help)/1.4 var(--font-ui);
+}
+.branch-sync-count {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 1px;
+  min-height: 18px;
+  white-space: nowrap;
+}
+.branch-sync-number {
+  min-width: 1ch;
+  font-variant-numeric: tabular-nums;
+}
+.branch-sync-count.is-ahead {
+  color: var(--file-status-added);
+}
+.branch-sync-count.is-behind {
+  color: var(--file-status-modified);
+}
+.branch-row.current .branch-sync-count {
+  color: var(--current-branch-color);
+}
+.branch-sync-state {
+  font-size: var(--ui-font-help);
+}
+.branch-sync-state.is-warning {
+  color: var(--git-modified);
+}
+.branch-row:hover {
+  background: var(--control-hover-bg);
+}
+.branch-row.current:hover {
+  background: var(--current-branch-hover-bg);
+}
+/* Reserve actions so hover and current-branch changes never move text. */
+.branch-row .branch-row-action {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  margin-right: 0;
+}
+.branch-name-tooltip {
+  position: fixed;
+  z-index: 40;
+  width: max-content;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  color: var(--bright);
+  box-shadow: 0 4px 14px var(--popup-shadow-color);
+  font: var(--ui-font-size)/1.5 var(--font-ui);
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+/* Reserve the favorite target even while hidden, so hover never moves labels. */
+.branch-row .branch-favorite {
+  width: var(--compact-button-size);
+  height: var(--compact-button-size);
+  flex-shrink: 0;
+  visibility: hidden;
+  color: var(--icon-color);
+}
+.branch-row:hover .branch-favorite,
+.branch-row:focus-within .branch-favorite,
+.branch-row .branch-favorite.is-favorite {
+  visibility: visible;
+}
+.branch-row .branch-favorite.is-favorite {
+  color: var(--favorite-color);
+}
+.branch-favorite.is-favorite svg {
+  fill: currentColor;
+}
+.branch-row .branch-row-action {
+  visibility: hidden;
+}
+.branch-row:hover .branch-row-action,
+.branch-row:focus-within .branch-row-action {
+  visibility: visible;
+}
+.section-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px var(--nav-content-inset) 8px var(--tree-label-inset);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--ui-font-help);
+}
+.sidebar-bottom {
+  flex-shrink: 0;
+  margin-top: auto;
+  padding: 8px var(--nav-gutter);
+  border-top: 1px solid var(--line);
+}
+.help-button {
+  width: 100%;
+  justify-content: start;
+  height: 30px;
+  padding: 0 var(--nav-content-inset);
+  gap: 8px;
+  font-size: var(--ui-font-help);
+  color: var(--text-secondary);
+}
+.help-button kbd {
+  margin-left: auto;
+}
+.sidebar-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  padding: 6px var(--nav-content-inset) 0;
+  color: var(--muted);
+  font: var(--ui-font-help)/1.5 var(--mono);
+}
+.mini-brand {
+  --brand-type-size: calc(14px + var(--ui-font-delta, 0px));
+  opacity: 0.8;
+}
+.resize-handle {
+  width: 5px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 8;
+  cursor: col-resize;
+  touch-action: none;
+}
+.resize-handle[aria-disabled='true'] {
+  cursor: default;
+  pointer-events: none;
+}
+.resize-handle.left {
+  left: calc(var(--sidebar-width) - 3px);
+}
+.resize-handle.right {
+  right: calc(var(--inspector-width) - 3px);
+}
+.resize-handle:hover,
+.resize-handle:focus-visible {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+.app-shell.resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+/* Keep readable content selectable even though command labels are not. */
+.commit-detail h2,
+.commit-body,
+.detail-author strong,
+.detail-author small,
+.detail-date,
+.detail-full-hash,
+.parent-hashes code,
+.diff-path,
+.diff-line code,
+.toast-content,
+.directory-error,
+.gitflow-warning,
+.gitflow-result p {
+  cursor: text;
+  user-select: text;
+}
+.detail-full-hash {
+  user-select: all;
+}

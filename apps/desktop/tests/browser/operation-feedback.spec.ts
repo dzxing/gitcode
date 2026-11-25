@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
 import { repositoryFixture } from '../fixtures/repository'
-import type { GitActivity, SyncPlan } from '../../src/types'
+import type { GitActivity, SyncPlan } from '../../src/shared/contracts'
 
 test('Fetch allows cached tab browsing and never applies its result to another repository', async ({
   page,

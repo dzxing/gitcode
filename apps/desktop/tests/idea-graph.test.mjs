@@ -17,8 +17,8 @@ const branch = (name, hash, kind = 'local') => ({
   track: '',
 })
 try {
-  const { ideaGraphLayout } = await vite.ssrLoadModule('/src/ideaGraphLayout.ts')
-  const { buildGraph } = await vite.ssrLoadModule('/src/graph.ts')
+  const { ideaGraphLayout } = await vite.ssrLoadModule('/src/features/history/ideaGraphLayout.ts')
+  const { buildGraph } = await vite.ssrLoadModule('/src/features/history/graph.ts')
   await test('native IDEA print elements agree on row columns, half-edge extents and arrow-aware width', async () => {
     const { cases } = JSON.parse(
       await fs.readFile(new URL('./fixtures/idea-print-layout.json', import.meta.url)),
@@ -218,7 +218,7 @@ try {
     )
   })
   await test('arrow hit ellipse reproduces IDEA sum-of-distances edge detection', async () => {
-    const { graphArrowHit } = await vite.ssrLoadModule('/src/graphPainting.ts')
+    const { graphArrowHit } = await vite.ssrLoadModule('/src/features/history/graphPainting.ts')
     const arrow = { fromX: 0, fromY: 0, otherX: 22, otherY: 30 }
     const hit = graphArrowHit(arrow, 2),
       angle = (hit.angle * Math.PI) / 180
@@ -248,8 +248,10 @@ try {
     )
   })
   await test('paint coordinates and reference endpoints share device pixels at common Windows scales', async () => {
-    const { graphPaint, paintHistoryGraph } = await vite.ssrLoadModule('/src/graphPainting.ts')
-    const { buildHistoryGraph } = await vite.ssrLoadModule('/src/graph.ts')
+    const { graphPaint, paintHistoryGraph } = await vite.ssrLoadModule(
+      '/src/features/history/graphPainting.ts',
+    )
+    const { buildHistoryGraph } = await vite.ssrLoadModule('/src/features/history/graph.ts')
     const commits = longMerge(40).map((commit) => ({
       ...commit,
       date: '2026-11-09T00:00:00Z',
@@ -277,7 +279,7 @@ try {
     }
   })
   await test('navigation arrowheads follow diagonal edge direction in both directions', async () => {
-    const { graphArrowPath } = await vite.ssrLoadModule('/src/graphPainting.ts')
+    const { graphArrowPath } = await vite.ssrLoadModule('/src/features/history/graphPainting.ts')
     for (const [x, y] of [
       [22, 30],
       [-22, -30],
@@ -337,7 +339,9 @@ try {
     }
   })
   await test('compact arrow ornaments retain thick main lines across desktop scales', async () => {
-    const { graphPaint, graphArrowPath } = await vite.ssrLoadModule('/src/graphPainting.ts')
+    const { graphPaint, graphArrowPath } = await vite.ssrLoadModule(
+      '/src/features/history/graphPainting.ts',
+    )
     for (const ratio of [1, 1.25, 1.5, 2]) {
       const paint = graphPaint({ ratio, scaleX: 1, scaleY: 1, phaseX: 0, phaseY: 0 })
       assert.ok(paint.arrowWidth < paint.lineWidth)

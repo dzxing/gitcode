@@ -1,13 +1,12 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import type { ThemePalette } from '../../src/themePresets'
+import type { ThemePalette } from '../../src/shared/lib/themePresets'
 import { repositoryFixture } from '../fixtures/repository'
 import { openFixtureRepository } from './repository-fixture'
 import { measureThemeContrast } from './theme-audit-metrics'
-const themePresets: (typeof import('../../src/themePresets'))['themePresets'] = createRequire(
-  import.meta.url,
-)('../../electron/theme-presets.json')
+const themePresets: (typeof import('../../src/shared/lib/themePresets'))['themePresets'] =
+  createRequire(import.meta.url)('../../electron/theme-presets.json')
 
 async function resolvedColor(page: Page, value: string) {
   return page.evaluate((value) => {

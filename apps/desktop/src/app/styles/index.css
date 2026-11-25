@@ -1,0 +1,15 @@
+@import '../../shared/styles/base.css';
+@import './chrome.css';
+@import '../../features/branches/styles/sidebar.css';
+@import '../../features/history/styles/history.css';
+@import '../../features/changes/styles/changes.css';
+@import './statusbar.css';
+@import '../../shared/styles/dialogs.css';
+@import './notices.css';
+@import '../../features/repository/styles/entry.css';
+@import './responsive.css';
+@import './menus.css';
+@import '../../features/gitflow/styles/gitflow.css';
+@import './overrides.css';
+@import '../../features/history/styles/navigation.css';
+@import '../../features/terminal/styles/terminal.css';

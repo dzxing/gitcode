@@ -1,0 +1,291 @@
+/* The terminal is a docked workbench tool; hiding it preserves its Shell sessions. */
+.toolbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.toolbar-tools .open-button {
+  margin-left: 0;
+}
+.toolbar-terminal {
+  gap: 6px;
+  min-width: 0;
+}
+.toolbar-terminal[aria-pressed='true'] {
+  background: var(--view-selection-hover-bg);
+  border-color: var(--accent);
+}
+.terminal-workbench {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 120px;
+  max-height: 65vh;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+.terminal-resize {
+  position: absolute;
+  inset: -5px 0 auto;
+  height: 5px;
+  z-index: 3;
+  cursor: row-resize;
+  touch-action: none;
+}
+.terminal-resize:hover,
+.terminal-resize:focus-visible {
+  background: var(--accent);
+  outline: none;
+}
+.terminal-header {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-toolbar);
+  font-size: var(--ui-font-size);
+}
+.terminal-heading {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+.terminal-tabs {
+  display: flex;
+  align-self: stretch;
+  min-width: 0;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.terminal-tabs::-webkit-scrollbar {
+  display: none;
+}
+.terminal-tab {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  max-width: 220px;
+}
+.terminal-tab.selected {
+  background: var(--panel);
+}
+.terminal-tab > [role='tab'] {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1.4;
+  flex: 1;
+  align-self: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-size);
+}
+.terminal-tab:not(.terminal-console-tab) > [role='tab'] {
+  padding-right: 34px;
+}
+.terminal-tab > [role='tab']:hover {
+  background: var(--control-hover-bg);
+}
+.terminal-tab > [role='tab']:active {
+  background: var(--control-pressed-bg);
+}
+.terminal-tab.selected > [role='tab'] {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.terminal-tab > [role='tab']:focus-visible {
+  outline-offset: -3px;
+}
+.terminal-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-tab .icon-button {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  z-index: 1;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  margin: 0;
+}
+.terminal-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.terminal-actions .icon-button {
+  width: 26px;
+  height: 26px;
+}
+.terminal-actions .terminal-shell-menu-button {
+  width: 18px;
+  margin-left: -2px;
+}
+
+.terminal-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.terminal-session-view {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  padding: 10px 8px 4px 12px;
+}
+.terminal-screen {
+  height: 100%;
+  width: 100%;
+  font-family: var(--font-terminal);
+  font-size: var(--terminal-font-size);
+  line-height: var(--terminal-line-height);
+  letter-spacing: 0;
+}
+.terminal-screen .xterm {
+  height: 100%;
+}
+.terminal-screen .xterm-viewport {
+  scrollbar-color: var(--line) var(--panel);
+  scrollbar-width: thin;
+}
+.terminal-screen .xterm .xterm-viewport {
+  background-color: var(--panel);
+}
+.terminal-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  height: 100%;
+  gap: 12px;
+  padding: 16px;
+  color: var(--text-secondary);
+  font-size: var(--ui-font-size);
+}
+.terminal-error {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--ui-font-size);
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+
+/* Shared dock: the interactive shell and readonly Git console have separate lifecycles. */
+/* Git console is a permanent peer of numbered shell sessions. */
+.terminal-console-tab {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface-toolbar);
+}
+.terminal-tab > [role='tab'] {
+  display: flex;
+  align-items: center;
+}
+.terminal-actions {
+  margin-left: auto;
+}
+.git-console {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  color: var(--text);
+}
+.git-console-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 2px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--ui-font-size);
+}
+.git-console-actions > span {
+  margin-right: auto;
+  color: var(--text-secondary);
+}
+.git-console-actions label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.git-console-actions input {
+  margin: 0;
+}
+.git-console-output {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px;
+  font-family: var(--font-code);
+  font-size: var(--code-font-size);
+  line-height: var(--code-line-height);
+  font-variant-ligatures: var(--code-ligatures);
+  user-select: text;
+}
+.git-console-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.git-console-line time {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+}
+.git-console-line > span {
+  white-space: pre;
+}
+.git-console-output.soft-wrap .git-console-line > span {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.git-console-line.start {
+  color: var(--accent);
+  margin-top: 6px;
+}
+.git-console-line.finish {
+  color: var(--text-secondary);
+}
+.git-console-line.failed,
+.git-console-error {
+  color: var(--git-deleted);
+}
+.git-console-note {
+  margin: 0 0 4px;
+  color: var(--text-secondary);
+}
+.git-console-error {
+  margin: 0;
+  padding: 4px 12px;
+}

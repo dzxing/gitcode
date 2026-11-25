@@ -7,7 +7,7 @@ const themePresets: Record<string, { mode: 'dark' | 'light' }> = createRequire(i
 )
 import { measureThemeContrast } from './theme-audit-metrics'
 import { mkdir, writeFile } from 'node:fs/promises'
-import type { FileChange } from '../../src/types'
+import type { FileChange } from '../../src/shared/contracts'
 
 const staged: FileChange[] = [
   { path: 'tracked/modified.ts', status: 'M' },
@@ -95,7 +95,7 @@ for (const [theme, preset] of Object.entries(themePresets)) {
     }
     await page.locator('.inspector').screenshot({ path: `${out}/history.png` })
     await page.evaluate(async (files) => {
-      const modulePath = '/src/stores/repository.ts'
+      const modulePath = '/src/features/repository/stores/repository.ts'
       const store = (await import(modulePath)).useRepositoryStore()
       const entry = {
         ref: 'stash@{0}',
@@ -115,7 +115,7 @@ for (const [theme, preset] of Object.entries(themePresets)) {
       store.repo.stashSignature = 'status-colors'
       store.selectedCommit = null
       store.selectedFile = null
-      const stashModulePath = '/src/stores/stash.ts'
+      const stashModulePath = '/src/features/stash/stores/stash.ts'
       ;(await import(stashModulePath)).useStashStore().openList(entry)
     }, files)
     for (const file of files) {

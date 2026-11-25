@@ -479,7 +479,7 @@ export async function verifySyncDivergence(
     if (originalAutoFetchInterval !== undefined)
       await page
         .evaluate(async (interval) => {
-          const { desktop } = await import('/src/services/desktop.ts')
+          const { desktop } = await import('/src/infrastructure/desktop.ts')
           const settings = await desktop.activitySettings()
           if (settings) await desktop.activitySettings({ ...settings, autoFetchInterval: interval })
         }, originalAutoFetchInterval)

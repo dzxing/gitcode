@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
-import type { GitRuntimeSettings } from '../../src/types'
+import type { GitRuntimeSettings } from '../../src/shared/contracts'
 import { createRequire } from 'node:module'
 
 const themePresets = createRequire(import.meta.url)('../../electron/theme-presets.json')

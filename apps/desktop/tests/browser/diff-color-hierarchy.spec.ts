@@ -20,7 +20,7 @@ for (const [theme, preset] of Object.entries(themes)) {
     })
     for (const metric of metrics) expect(metric.ratio).toBeGreaterThanOrEqual(4.5)
     await page.evaluate(async () => {
-      const modulePath = '/src/stores/repository.ts'
+      const modulePath = '/src/features/repository/stores/repository.ts'
       const repo = (await import(modulePath)).useRepositoryStore()
       repo.clearSelection()
       repo.selectedFile = { path: 'colors.ts', status: 'M' }
@@ -42,8 +42,8 @@ for (const [theme, preset] of Object.entries(themes)) {
     await mkdir(output, { recursive: true })
     await page.locator('.diff-panel').screenshot({ path: `${output}/diff.png` })
     await page.evaluate(async () => {
-      const repoPath = '/src/stores/repository.ts',
-        mergePath = '/src/stores/merge.ts'
+      const repoPath = '/src/features/repository/stores/repository.ts',
+        mergePath = '/src/features/merge/stores/merge.ts'
       const repo = (await import(repoPath)).useRepositoryStore()
       repo.clearSelection()
       const state = {

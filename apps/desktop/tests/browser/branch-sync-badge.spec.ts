@@ -49,14 +49,14 @@ for (const [theme, preset] of Object.entries(themes))
       .locator('.branch-selector')
       .screenshot({ path: `.tmp/sync-badge/${theme}/toolbar.png` })
     await page.evaluate(async () => {
-      const name = '/src/stores/repository.ts'
+      const name = '/src/features/repository/stores/repository.ts'
       const s = (await import(name)).useRepositoryStore()
       s.repo.branches.find((b: { current: boolean }) => b.current)!.track = ''
     })
     await expect(page.locator('.tracking')).toHaveCount(0)
     await expect(sidebar.locator('.branch-sync-badge')).toHaveCount(0)
     await page.evaluate(async () => {
-      const name = '/src/stores/repository.ts'
+      const name = '/src/features/repository/stores/repository.ts'
       const s = (await import(name)).useRepositoryStore()
       s.repo.branches.find((b: { current: boolean }) => b.current)!.track = '[gone]'
     })

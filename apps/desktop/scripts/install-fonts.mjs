@@ -10,7 +10,7 @@ const base = 'https://raw.githubusercontent.com/google/fonts/main/ofl/'
 const cascadiaRelease =
   'https://github.com/microsoft/cascadia-code/releases/download/v2407.24/CascadiaCode-2407.24.zip'
 const fonts = JSON.parse(
-  await readFile(new URL('../src/fontCatalog.json', import.meta.url), 'utf8'),
+  await readFile(new URL('../src/features/preferences/fontCatalog.json', import.meta.url), 'utf8'),
 )
 const staging = await mkdtemp(path.join(os.tmpdir(), 'gitcode-fonts-'))
 const manifest = []

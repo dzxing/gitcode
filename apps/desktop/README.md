@@ -249,7 +249,7 @@ GitFlow 未配置或缺基础分支时，开始分支和完成入口禁用，并
 
 表单草稿按仓库路径保存在本机应用存储，版本 2 同时记录配置编辑基线。外部更新后，未编辑字段采用仓库新值；同字段冲突须显式选择采用仓库规则或保留修改，选择不会自动保存。旧格式无法判定哪些字段曾被编辑，规则只作为待确认候选，不自动套用；名称和类型可恢复。收起和切仓不会执行或移用到别的仓库；同一会话内保留原起点与对应操作结果，外部变化后须显式核对。重新启动只恢复输入，明确重新读取起点，不恢复初始化执行计划；Finish 进度另从 Git 目录中的实际记录恢复。存储不可用时草稿仅在本次会话保留。配置保存使用 Git 配置锁约定并保留其他设置，只清理本次取得的锁，不删除非自有锁；异常残留须核对。配置键只归一 section 与最终变量名大小写，保留 subsection 的大小写。来自全局/include 的 GitFlow 规则、独立 worktree 配置及配置符号链接暂不支持在应用内编辑。支持读取这些规则，若规则完整有效且基础分支存在，可用于 Start；重复规则须先整理。
 
-按钮条件统一在 `src/stores/gitflow.ts` 中计算，按钮禁用与提交方法共用校验；主进程仍使用 Git 复核。保存默认规则不要求表单先有改动，已保存且未改变的有效规则才禁用保存。初始化检查首次提交、未完成操作、分支目录冲突和明确起点；确认还检查计划期限及引用变化。Start 检查合法且不冲突的名称、完整配置、干净工作区、未完成操作与固定起点。导航、切换类型和恢复规则不会悄悄更新原操作上下文；须显式刷新核对。确认初始化时再次检查当前时钟，不能只依赖到期计时器。Start 切换前再次核对 HEAD、源与新分支，这只缩小外部并发窗口，不是跨进程锁。应用前后端统一不接受分支后缀中的空白字符，这是本应用的更窄命名策略。刷新同步未编辑的规则，对冲突字段要求明确选择；恢复规则只恢复配置，不清除 Start 名称。
+按钮条件统一在 `src/features/gitflow/stores/gitflow.ts` 中计算，按钮禁用与提交方法共用校验；主进程仍使用 Git 复核。保存默认规则不要求表单先有改动，已保存且未改变的有效规则才禁用保存。初始化检查首次提交、未完成操作、分支目录冲突和明确起点；确认还检查计划期限及引用变化。Start 检查合法且不冲突的名称、完整配置、干净工作区、未完成操作与固定起点。导航、切换类型和恢复规则不会悄悄更新原操作上下文；须显式刷新核对。确认初始化时再次检查当前时钟，不能只依赖到期计时器。Start 切换前再次核对 HEAD、源与新分支，这只缩小外部并发窗口，不是跨进程锁。应用前后端统一不接受分支后缀中的空白字符，这是本应用的更窄命名策略。刷新同步未编辑的规则，对冲突字段要求明确选择；恢复规则只恢复配置，不清除 Start 名称。
 
 GitFlow 设置使用共同靠左的最大 640px 内容容器。基础分支与命名前缀分组，普通字段采用 128px 标签、16px 间隔和最大 360px 输入列，输入高 34px、字号 13px；字段帮助可用键盘展开，冲突与旧草稿完整保留并自然增高。可用内容宽度不足 560px 时转为单列，窄窗设置导航改为顶行。应用全局最小 CSS 宽度仍为 860px，物理小窗口叠加大比例缩放的裁切尚需实机检查，不能仅以无横向滚动作为验收。布局用例已通过本机缓存的 Chromium，并使用现有 Chrome 验证实际交互；原生桌面窗口和不同系统缩放仍需分别验收。
 
@@ -390,11 +390,12 @@ WSL 核心通过受限的标准输入输出协议复用现有 Git 服务。Windo
 验证命令：`bun run test:wsl`；在 Windows 中执行 `node tests/wsl-windows.test.cjs Ubuntu-26.04`，会创建临时仓库验证 GitFlow、推送、贮藏、worktree、监听与三方冲突处理，并在结束后清理。
 
 ```text
-src/components/           Vue 工作台、差异、弹窗和目录浏览器
-src/stores/repository.ts  Pinia 仓库/标签状态
-src/services/desktop.ts   类型明确的 Electron preload 适配
-src/composables/          窗口状态与生命周期
-src/graph.ts              提交拓扑图布局
+src/app/                  Vue 工作台组装、菜单与全局弹层
+src/features/             按仓库、图谱、分支、变更等功能组织组件和 Store
+src/features/repository/stores/repository.ts  仓库/标签状态与统一操作上下文
+src/features/history/graph.ts  提交拓扑图布局
+src/infrastructure/desktop.ts 类型明确的 Electron preload / 本机服务适配
+src/shared/               公共控件、类型契约、基础样式和纯逻辑
 assets/                   PNG / ICO / ICNS 应用图标
 electron/main.cjs         Electron 主进程、窗口与 IPC
 electron/preload.cjs      隔离的受限桥梁
@@ -404,7 +405,7 @@ electron/wsl.cjs          Windows 到发行版核心的路由、连接与生命�
 electron/wsl-worker.cjs   WSL 内复用 Git 核心的受限 stdio 入口
 electron/gitflow.cjs      GitFlow 配置、初始化事务与 Start
 electron/gitflow-finish.cjs GitFlow Finish、逐步合并与持久恢复
-src/stores/gitflow.ts     仓库级 GitFlow 面板、草稿与预览状态
+src/features/gitflow/stores/gitflow.ts     仓库级 GitFlow 面板、草稿与预览状态
 package.json             桌面应用及 Electron 开发/打包依赖
 scripts/                  启动、打包与图标生成
 electron-builder.json     跨平台安装包配置

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
 import { repositoryFixture } from '../fixtures/repository'
-import type { Snapshot } from '../../src/types'
+import type { Snapshot } from '../../src/shared/contracts'
 
 const [feature, side, featureOld, main, root] = ['1', '2', '3', '4', '5'].map((x) => x.repeat(40))
 const snapshot: Snapshot = {

@@ -23,7 +23,7 @@ try {
     readHistoryFilter,
     writeHistoryFilter,
     restoreHistoryFilter,
-  } = await vite.ssrLoadModule('/src/services/historyFilter.ts')
+  } = await vite.ssrLoadModule('/src/features/history/historyFilter.ts')
   const { repositoryFixture } = await vite.ssrLoadModule('/tests/fixtures/repository.ts')
   const repo = { ...structuredClone(repositoryFixture), path: '/repo/one' }
   await test('repository keys normalize Windows spelling without merging case-sensitive repositories or UNC paths', () => {

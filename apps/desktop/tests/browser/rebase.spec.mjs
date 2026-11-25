@@ -98,7 +98,7 @@ test('interactive rebase replaces navigation and graph, preserves details and ex
   await fixture(page, {}, async (f) => {
     // Simulate an older source commit falling outside the history snapshot's 250-row limit.
     await page.evaluate(async (sha) => {
-      const { useRepositoryStore } = await import('/src/stores/repository.ts')
+      const { useRepositoryStore } = await import('/src/features/repository/stores/repository.ts')
       const repo = useRepositoryStore()
       // This fixture intentionally alters the loaded history. Pause external
       // observation so it cannot restore the omitted row during menu planning.

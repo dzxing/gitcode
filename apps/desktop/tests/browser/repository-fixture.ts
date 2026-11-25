@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 import { repositoryFixture } from '../fixtures/repository'
-import type { RuntimeInfo } from '../../src/types'
+import type { RuntimeInfo } from '../../src/shared/contracts'
 
 // Exercise the manual fallback when a system picker is unavailable.
 export async function openRepositoryFallback(page: Page) {

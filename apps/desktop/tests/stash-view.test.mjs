@@ -30,8 +30,10 @@ const vite = await createServer({
   appType: 'custom',
 })
 try {
-  const { useRepositoryStore } = await vite.ssrLoadModule('/src/stores/repository.ts')
-  const { useStashStore } = await vite.ssrLoadModule('/src/stores/stash.ts')
+  const { useRepositoryStore } = await vite.ssrLoadModule(
+    '/src/features/repository/stores/repository.ts',
+  )
+  const { useStashStore } = await vite.ssrLoadModule('/src/features/stash/stores/stash.ts')
   const entry = {
     oid: 'b'.repeat(40),
     ref: 'stash@{0}',

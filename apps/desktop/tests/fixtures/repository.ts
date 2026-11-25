@@ -1,4 +1,4 @@
-import type { Commit, Snapshot } from '../../src/types'
+import type { Commit, Snapshot } from '../../src/shared/contracts'
 
 const hash = (n: number) =>
   `${n.toString(16).padStart(7, '0')}8c2de74a91be65f03480c12d6a93f0e24b`
@@ -86,8 +86,8 @@ export const repositoryFixture: Snapshot = {
   ],
   unstaged: [
     { path: 'src/components/CommitGraph.vue', status: 'M' },
-    { path: 'src/components/Sidebar.vue', status: 'M' },
-    { path: 'src/stores/repository.ts', status: 'M' },
+    { path: 'src/features/branches/components/Sidebar.vue', status: 'M' },
+    { path: 'src/features/repository/stores/repository.ts', status: 'M' },
     { path: 'src/styles/tokens.css', status: 'M' },
     { path: 'src/composables/useKeyboard.ts', status: '?' },
   ],

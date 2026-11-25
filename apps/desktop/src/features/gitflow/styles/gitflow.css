@@ -1,0 +1,547 @@
+/* GitFlow keeps repository navigation in place and uses the main area for settings. */
+.gitflow-panel {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  bottom: 0;
+  left: var(--sidebar-width);
+  width: 400px;
+  max-width: calc(100% - var(--sidebar-width));
+  background: var(--panel);
+  color: var(--text);
+  border-right: 1px solid var(--line);
+  box-shadow: 8px 0 24px var(--drawer-shadow-color);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  outline: none;
+}
+.gitflow-panel.gitflow-settings {
+  right: 0;
+  width: auto;
+}
+.gitflow-panel-head {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.gitflow-panel-head small {
+  color: var(--muted);
+  font-size: var(--ui-font-help);
+}
+.gitflow-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 7px 0 0;
+  font-size: var(--ui-font-size);
+  font-weight: 550;
+}
+.gitflow-location {
+  padding: 8px 20px;
+  font-size: var(--ui-font-size);
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--line-soft);
+}
+.gitflow-panel-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.gitflow-panel-body {
+  padding: 22px 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-width: 0;
+}
+.gitflow-panel p {
+  line-height: 1.65;
+  color: var(--text-secondary);
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+.gitflow-panel h3 {
+  font-size: var(--ui-font-size);
+  margin: 0 0 10px;
+  color: var(--bright);
+  font-weight: 550;
+}
+.gitflow-panel h4 {
+  font-size: var(--ui-font-size);
+  margin: 0 0 12px;
+}
+.gitflow-panel fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.gitflow-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--bright);
+}
+.gitflow-task-buttons {
+  display: grid;
+  gap: 10px;
+  margin: 22px 0;
+}
+.gitflow-task-buttons button {
+  justify-content: start;
+  min-height: 42px;
+}
+.gitflow-task-buttons > div > button {
+  width: 100%;
+}
+.gitflow-panel .gitflow-disabled-reason {
+  font-size: var(--ui-font-size);
+  color: var(--text-secondary);
+  margin: 7px 0 0;
+}
+.gitflow-summary {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px 0;
+  margin-bottom: 16px;
+  border-block: 1px solid var(--line-soft);
+}
+.gitflow-summary small {
+  color: var(--muted);
+}
+.gitflow-summary strong {
+  overflow-wrap: anywhere;
+}
+.gitflow-panel .text-button {
+  font-size: var(--ui-font-size);
+  line-height: 1.6;
+  text-align: left;
+}
+.gitflow-settings-nav {
+  width: 190px;
+  flex-shrink: 0;
+  padding: 20px 14px;
+  border-right: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+.gitflow-settings-nav > button[aria-current] {
+  justify-content: start;
+  padding: 10px 12px;
+  background: var(--theme-overlay, #ffffff08);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+}
+.gitflow-settings-nav > small {
+  color: var(--muted);
+  padding: 0 12px;
+  line-height: 1.6;
+}
+.gitflow-content {
+  min-width: 0;
+}
+.gitflow-settings .gitflow-panel-body {
+  container: gitflow-form / inline-size;
+}
+.gitflow-settings .gitflow-content {
+  width: 100%;
+  max-width: 640px;
+  margin: 0;
+}
+.gitflow-content > .gitflow-note:first-child {
+  margin-top: 0;
+}
+.gitflow-settings-form {
+  --flow-label-width: 128px;
+  --flow-field-gap: 16px;
+  --flow-control-inset: calc(var(--flow-label-width) + var(--flow-field-gap));
+  margin: 0;
+}
+.gitflow-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 18px 0;
+}
+.gitflow-field label,
+.gitflow-field > label {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.gitflow-field .form-input,
+.gitflow-field select {
+  width: 100%;
+  min-height: 36px;
+  max-width: 360px;
+  border: 1px solid var(--theme-border, #414651);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--bright);
+  padding: 8px 10px;
+}
+.gitflow-field .form-input:focus,
+.gitflow-field select:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+.gitflow-field small,
+.gitflow-muted {
+  color: var(--muted);
+  font-size: var(--ui-font-help);
+  line-height: 1.6;
+}
+.gitflow-panel .gitflow-rule-group {
+  margin: 0;
+}
+.gitflow-rule-group + .gitflow-rule-group {
+  margin-top: 24px;
+}
+.gitflow-rule-group legend {
+  padding: 0;
+  font-size: var(--ui-font-size);
+  line-height: 20px;
+  color: var(--bright);
+  font-weight: 550;
+}
+.gitflow-rule-rows {
+  display: grid;
+  gap: 16px;
+}
+.gitflow-rule-row {
+  display: grid;
+  grid-template-columns: var(--flow-label-width) minmax(0, 360px);
+  column-gap: var(--flow-field-gap);
+  align-items: start;
+}
+.gitflow-rule-row > label {
+  padding-block: 7px;
+  text-align: right;
+  line-height: 20px;
+  font-size: var(--ui-font-size);
+  overflow-wrap: anywhere;
+}
+.gitflow-rule-control {
+  min-width: 0;
+}
+.gitflow-rule-control .form-input {
+  display: block;
+  width: 100%;
+  height: 34px;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: var(--ui-font-size);
+  line-height: 20px;
+  border: 1px solid var(--theme-border, #414651);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.gitflow-rule-control .form-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+.gitflow-rule-control .gitflow-warning {
+  margin: 10px 0 0;
+}
+.gitflow-rule-control .gitflow-actions {
+  gap: 8px 14px;
+  margin: 8px 0 0;
+}
+.gitflow-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.gitflow-field-help {
+  margin: 16px 0 16px var(--flow-control-inset);
+  color: var(--muted);
+  font-size: var(--ui-font-help);
+  line-height: 20px;
+}
+.gitflow-field-help summary {
+  cursor: default;
+  width: fit-content;
+}
+.gitflow-field-help dl {
+  margin: 12px 0;
+}
+.gitflow-field-help dl > div {
+  margin-bottom: 10px;
+}
+.gitflow-field-help dt {
+  color: var(--text);
+}
+.gitflow-field-help dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.gitflow-settings-form .gitflow-save-actions {
+  margin-left: var(--flow-control-inset);
+}
+@container gitflow-form (max-width: 559px) {
+  .gitflow-rule-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+  .gitflow-rule-row > label {
+    padding: 0;
+    text-align: left;
+  }
+  .gitflow-rule-control .form-input {
+    max-width: 360px;
+  }
+  .gitflow-field-help,
+  .gitflow-settings-form .gitflow-save-actions {
+    margin-left: 0;
+  }
+}
+.gitflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 16px 0;
+}
+.gitflow-initialize {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 16px;
+  padding-bottom: 20px;
+  scroll-margin-top: 16px;
+}
+.gitflow-initialize:focus,
+.gitflow-plan[tabindex]:focus,
+.gitflow-result:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.gitflow-plan {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 16px;
+  margin: 18px 0;
+}
+.gitflow-plan > small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--ui-font-help);
+  margin: 10px 0 7px;
+}
+.gitflow-plan > small:first-child {
+  margin-top: 0;
+}
+.gitflow-full-name {
+  display: block;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+.gitflow-full-name:last-child {
+  margin-bottom: 0;
+}
+.gitflow-plan summary {
+  cursor: default;
+  color: var(--muted);
+  font-size: var(--ui-font-size);
+}
+.gitflow-plan code {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 9px;
+  font: var(--ui-font-size)/1.5 var(--mono);
+}
+.gitflow-type-picker {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 24px;
+}
+.gitflow-type-picker button {
+  flex: 1;
+  flex-direction: column;
+  padding: 9px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.gitflow-type-picker button[aria-pressed='true'] {
+  border-color: var(--theme-info-border, #68a6d5);
+  background: var(--theme-info-fill, #68a6d514);
+  color: var(--theme-info-text, #b3d6ef);
+}
+.gitflow-type-picker small {
+  font-size: var(--ui-font-help);
+  color: var(--muted);
+}
+.gitflow-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.6;
+  margin: 16px 0;
+}
+.gitflow-check input {
+  accent-color: var(--accent);
+}
+.gitflow-note,
+.gitflow-warning {
+  border: 1px solid var(--line);
+  background: var(--theme-overlay, #ffffff04);
+  padding: 12px;
+  border-radius: 4px;
+  margin: 16px 0;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.gitflow-panel :is(.gitflow-note, .gitflow-warning) {
+  margin-block: 16px;
+}
+.gitflow-panel .gitflow-content > .gitflow-note:first-child {
+  margin-top: 0;
+}
+.gitflow-panel :is(.gitflow-note, .gitflow-warning) > p:first-child {
+  margin-top: 0;
+}
+.gitflow-panel :is(.gitflow-note, .gitflow-warning) > p:last-child {
+  margin-bottom: 0;
+}
+.gitflow-panel .gitflow-rule-control .gitflow-warning {
+  margin: 10px 0 0;
+}
+.gitflow-panel .gitflow-warning {
+  color: var(--theme-warning-text, #e4bc7c);
+  border-color: var(--theme-warning-border, #6c5532);
+  background: var(--theme-warning-fill, #b88a3610);
+}
+.gitflow-panel .gitflow-warning p {
+  color: inherit;
+}
+.gitflow-panel .gitflow-result p {
+  color: var(--text);
+}
+.gitflow-note .text-button {
+  display: flex;
+  margin-top: 8px;
+}
+.gitflow-candidates {
+  max-height: 260px;
+  overflow-y: auto;
+  border-block: 1px solid var(--line);
+  margin: 16px 0;
+}
+.gitflow-candidates > button {
+  display: flex;
+  width: 100%;
+  padding: 11px 8px;
+  text-align: left;
+  align-items: start;
+  border-bottom: 1px solid var(--line-soft);
+}
+.gitflow-candidates > button > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+  min-width: 0;
+  line-height: 1.5;
+}
+.gitflow-candidates small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--ui-font-help);
+  margin-top: 3px;
+}
+.gitflow-candidates > button[aria-pressed='true'] {
+  background: var(--theme-info-fill, #68a6d514);
+}
+.gitflow-result {
+  border: 1px solid var(--theme-border, #3e6b5c);
+  background: var(--theme-success-fill, #56d6bb09);
+  border-radius: 4px;
+  padding: 14px;
+  margin-top: 20px;
+  line-height: 1.6;
+}
+.gitflow-result.incomplete {
+  border-color: var(--theme-warning-border, #6c5532);
+  background: var(--theme-warning-fill, #b88a3610);
+}
+.gitflow-panel-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-shrink: 0;
+  gap: 12px;
+  padding: 13px 18px;
+  border-top: 1px solid var(--line);
+  font-size: var(--ui-font-help);
+  color: var(--muted);
+}
+.gitflow-group-label {
+  display: grid;
+  grid-template-columns: 12px 14px minmax(0, 1fr) auto;
+  column-gap: var(--tree-column-gap);
+  align-items: center;
+  width: 100%;
+  height: 28px;
+  padding: 0 46px 0 calc(var(--section-inset) + var(--branch-indent));
+  color: var(--text-secondary);
+  font-size: var(--ui-font-size);
+  text-align: left;
+}
+.gitflow-group-label > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gitflow-group-label > small {
+  font: var(--ui-font-help)/1.5 var(--mono);
+}
+@media (max-width: 1300px) {
+  .gitflow-panel {
+    width: auto;
+    right: 0;
+  }
+  .gitflow-panel:not(.gitflow-settings) .gitflow-panel-body {
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+  }
+  .gitflow-settings-nav {
+    width: 165px;
+  }
+  .gitflow-panel-footer > span {
+    display: none;
+  }
+}
+@media (max-width: 1000px) {
+  .gitflow-settings .gitflow-panel-layout {
+    flex-direction: column;
+  }
+  .gitflow-settings-nav {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+    padding: 10px 20px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .gitflow-settings-nav > small {
+    padding: 0;
+  }
+  .gitflow-settings-nav > button[aria-current] {
+    padding: 6px 10px;
+  }
+}

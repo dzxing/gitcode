@@ -1,7 +1,7 @@
 import { expect, test, type Page, type Locator } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
-import { bundledFonts, commonSystemFonts } from '../../src/fontPreferences'
-import fontCatalog from '../../src/fontCatalog.json' with { type: 'json' }
+import { bundledFonts, commonSystemFonts } from '../../src/features/preferences/fontPreferences'
+import fontCatalog from '../../src/features/preferences/fontCatalog.json' with { type: 'json' }
 
 async function readSystemFonts(dialog: Locator) {
   await dialog.getByLabel('使用自定义界面字体', { exact: true }).check()

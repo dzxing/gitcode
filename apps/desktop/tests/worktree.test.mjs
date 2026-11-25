@@ -21,8 +21,8 @@ try {
     filterWorktreeChanges,
     buildWorktreeTree,
     worktreeSelectionState,
-  } = await vite.ssrLoadModule('/src/worktree.ts')
-  const { useWorktreeStore } = await vite.ssrLoadModule('/src/stores/worktree.ts')
+  } = await vite.ssrLoadModule('/src/features/changes/worktree.ts')
+  const { useWorktreeStore } = await vite.ssrLoadModule('/src/features/changes/stores/worktree.ts')
 
   await test('one logical file retains staged and local versions, rename origin and conflicts', () => {
     const files = collectWorktreeChanges(

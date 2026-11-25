@@ -1,11 +1,11 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
-import { useAppearanceStore } from './stores/appearance'
-import { useFontStore } from './stores/fonts'
-import './style.css'
-import './themes.css'
-import './settings.css'
+import { useAppearanceStore } from './features/preferences/stores/appearance'
+import { useFontStore } from './features/preferences/stores/fonts'
+import './app/styles/index.css'
+import './shared/styles/themes.css'
+import './shared/styles/settings.css'
 
 const pinia = createPinia()
 useAppearanceStore(pinia)

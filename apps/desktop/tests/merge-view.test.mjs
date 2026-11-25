@@ -8,7 +8,9 @@ const vite = await createServer({
   appType: 'custom',
 })
 try {
-  const { conflictBlocks, resolveBlock } = await vite.ssrLoadModule('/src/mergeConflicts.ts')
+  const { conflictBlocks, resolveBlock } = await vite.ssrLoadModule(
+    '/src/features/merge/mergeConflicts.ts',
+  )
   await test('resolving one block preserves non-conflicting content and other blocks', () => {
     const text =
       'before\n<<<<<<< HEAD\nlocal\n=======\nremote\n>>>>>>> incoming\nafter\n<<<<<<< HEAD\nsecond local\n=======\nsecond remote\n>>>>>>> incoming\n'
