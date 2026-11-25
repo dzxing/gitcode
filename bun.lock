@@ -13,7 +13,7 @@
     },
     "apps/desktop": {
       "name": "gitcode-workbench",
-      "version": "1.0.1",
+      "version": "1.0.2-dev.0",
       "dependencies": {
         "@gitcode/brand": "workspace:*",
         "@xterm/addon-fit": "0.11.0",
