@@ -8,7 +8,6 @@ const workspace = JSON.parse(await readFile(path.join(root, 'package.json'), 'ut
 const catalog = workspace.workspaces.catalog
 const definitions = [
   ['apps/desktop', ['@gitcode/brand']],
-  ['apps/website', ['@gitcode/brand']],
   ['packages/brand', []],
 ]
 const failures = []
@@ -41,10 +40,6 @@ for (const [directory, allowed] of definitions) {
     )
       failures.push(`${directory}: 不允许依赖 ${name}`)
   }
-  if (directory === 'apps/website') {
-    for (const name of ['electron', 'electron-builder', '@electron/rebuild', 'node-pty'])
-      if (dependencies[name]) failures.push(`${directory}: 不允许依赖桌面运行环境 ${name}`)
-  }
   async function inspect(folder) {
     const ignored = new Set([
       'node_modules',
@@ -69,20 +64,11 @@ for (const [directory, allowed] of definitions) {
           /(?:\bfrom\s*|\bimport\s*(?:\(\s*)?|\brequire\s*\(\s*)['"]([^'"]+)['"]/g,
         )) {
           const specifier = match[1]
-          if (
-            directory === 'apps/website' &&
-            (['electron', 'electron-builder', 'node-pty', 'node:child_process'].includes(
-              specifier,
-            ) ||
-              specifier.startsWith('@electron/') ||
-              (specifier.startsWith('@gitcode/brand/') &&
-                !specifier.startsWith('@gitcode/brand/assets/')))
-          )
-            failures.push(
-              `${path.relative(root, file)}: 官网不得导入桌面或品牌生成工具 ${specifier}`,
-            )
           if (specifier.startsWith('.')) {
             const resolved = path.resolve(path.dirname(file), specifier)
+            const portal = path.join(root, 'apps/website')
+            if (resolved === portal || resolved.startsWith(portal + path.sep))
+              failures.push(`${path.relative(root, file)}: 公开模块不得依赖私有门户源码`)
             for (const [other] of definitions)
               if (other !== directory && resolved.startsWith(path.join(root, other) + path.sep))
                 failures.push(`${path.relative(root, file)}: 请通过 workspace 包导入 ${specifier}`)
@@ -101,4 +87,4 @@ for (const [directory, allowed] of definitions) {
 if (failures.length) {
   console.error(failures.join('\n'))
   process.exitCode = 1
-} else console.log('Workspace boundaries passed: desktop / website → brand.')
+} else console.log('Workspace boundaries passed: desktop → brand.')

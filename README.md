@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="apps/website/public/product/workbench.png" alt="GitCode: repository navigation, commit graph, and working tree changes" width="1200" />
+  <img src="docs/assets/screenshots/workbench.png" alt="GitCode: repository navigation, commit graph, and working tree changes" width="1200" />
 </p>
 
 ## Quick start
@@ -73,12 +73,12 @@ If conflicts occur, open the affected files, resolve and mark them as resolved, 
 
 <details>
   <summary>View the GitFlow panel</summary>
-  <p><img src="apps/website/public/product/gitflow.png" alt="GitCode GitFlow panel" width="1200" /></p>
+  <p><img src="docs/assets/screenshots/gitflow.png" alt="GitCode GitFlow panel" width="1200" /></p>
 </details>
 
 ## Guides and feedback
 
-[Desktop guide (中文)](apps/desktop/README.md) · [Development and builds (中文)](docs/DEVELOPMENT.md) · [Website maintenance (中文)](apps/website/README.md) · [Report an issue](https://github.com/dzxing/gitcode/issues)
+[Desktop guide (中文)](apps/desktop/README.md) · [Development and builds (中文)](docs/DEVELOPMENT.md) · [Report an issue](https://github.com/dzxing/gitcode/issues)
 
 ## License
 

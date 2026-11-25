@@ -20,3 +20,6 @@ playwright-report/
 package-lock.json
 bun.lock
 *.tsbuildinfo
+
+# Privately maintained portal; excluded from this public workspace.
+/apps/website/

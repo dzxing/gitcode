@@ -16,6 +16,6 @@ GitCode 的原创部分采用根目录 [LICENSE](LICENSE) 中的自定义非商�
 
 IntelliJ IDEA 相关材料的具体上游文件、版本与 GitCode 适配说明见其 NOTICE，相关源文件也保留了许可说明。第三方部分不因与 GitCode 原创部分放在同一文件或安装包中，就失去原有许可权利。
 
-上表是仓库随附声明的索引，不是完整的依赖清单。Electron、Vue、Pinia、Nuxt、Nuxt UI、Tailwind CSS、Lucide 及其他直接和间接依赖，以锁定版本各自附带的许可为准。依赖版本由根目录 `bun.lock` 固定。
+上表是仓库随附声明的索引，不是完整的依赖清单。Electron、Vue、Pinia 及其他直接和间接依赖，以锁定版本各自附带的许可为准。依赖版本由根目录 `bun.lock` 固定。
 
 分发第三方材料时，应继续保留其许可所要求的著作权声明、许可文本及 NOTICE。根目录的限制仅适用于著作权人有权按该条件授权的 GitCode 原创部分。

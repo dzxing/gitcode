@@ -9,7 +9,7 @@
   },
   "workspaces": {
     "packages": [
-      "apps/*",
+      "apps/desktop",
       "packages/*"
     ],
     "catalog": {
@@ -51,24 +51,18 @@
     "test:icons": "bun run --cwd apps/desktop test:icons",
     "icons:generate": "bun run --cwd apps/desktop icons:generate",
     "fonts:install": "bun run --cwd apps/desktop fonts:install",
-    "typecheck": "bun run typecheck:desktop && bun run typecheck:website",
-    "lint": "bun run lint:shared && bun run lint:desktop && bun run lint:website",
-    "lint:fix": "bun run lint:shared --fix && bun run --cwd apps/desktop lint:fix && bun run --cwd apps/website lint:fix",
-    "dev:website": "bun run --cwd apps/website dev",
-    "build:website": "bun run --cwd apps/website build",
-    "preview:website": "bun run --cwd apps/website preview",
-    "check:website": "bun run --cwd apps/website check",
+    "typecheck": "bun run typecheck:desktop",
+    "lint": "bun run lint:shared && bun run lint:desktop",
+    "lint:fix": "bun run lint:shared --fix && bun run --cwd apps/desktop lint:fix",
     "check:boundaries": "node scripts/check-boundaries.mjs",
     "check:public-history": "node scripts/check-public-history.mjs",
-    "check": "bun run check:boundaries && bun run lint:shared && bun run --cwd apps/desktop check && bun run check:website && bun run format:check",
+    "check": "bun run check:boundaries && bun run lint:shared && bun run --cwd apps/desktop check && bun run format:check",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "package:desktop": "bun run --cwd apps/desktop desktop:build",
     "typecheck:desktop": "bun run --cwd apps/desktop typecheck",
-    "typecheck:website": "bun run --cwd apps/website typecheck",
     "lint:shared": "eslint eslint.config.js scripts packages/brand/scripts --max-warnings 0",
-    "lint:desktop": "bun run --cwd apps/desktop lint",
-    "lint:website": "bun run --cwd apps/website lint"
+    "lint:desktop": "bun run --cwd apps/desktop lint"
   },
   "devDependencies": {
     "prettier": "catalog:",

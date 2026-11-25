@@ -34,3 +34,6 @@ Thumbs.db
 .nuxt/
 .output/
 .data/
+
+# Privately maintained portal; excluded from this public workspace.
+/apps/website/

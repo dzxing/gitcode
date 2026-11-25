@@ -41,6 +41,9 @@ Never submit SSH private keys, access tokens or account passwords.
 - Do not commit real credentials in source, fixtures, screenshots, logs or release attachments.
   Use environment variables or a credential manager. Scans redact matching values from their output.
   Git hooks can be bypassed locally; required server checks protect merges to `main` independently.
+- `apps/website/` is privately maintained and excluded from the public workspace. The public-scope
+  check permits its already-published legacy history, but rejects tracked portal files and new portal
+  commits even when a later commit deletes them. Desktop screenshots belong in `docs/assets/screenshots/`.
 - A credential already pushed to any branch must be revoked or rotated immediately, even if a later
   commit removes it. The Actions scan detects pushed content after upload; it does not prevent that
   initial exposure. Pattern scanning cannot recognize every possible secret or inspect screenshot text.
