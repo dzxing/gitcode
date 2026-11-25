@@ -222,13 +222,21 @@ function execute(
     child.once('close', async (code, termination) => {
       cleanup()
       if (!commitSent) preparedController.abort(new Error('Git 引用事务已结束。'))
-      // An aborted validation may ignore its signal. Once the child has exited,
-      // do not let that callback retain the operation queue indefinitely.
-      if (preparationTask && commitSent) {
+      // Cooperative callbacks must finish before their owner releases index
+      // locks or temporary files. Bound this wait if a callback ignores abort.
+      if (preparationTask) {
+        let settlementTimer
         try {
-          await preparationTask
+          await Promise.race([
+            preparationTask,
+            new Promise((resolve) => {
+              settlementTimer = setTimeout(resolve, 1500)
+            }),
+          ])
         } catch (error) {
           failure ||= error instanceof Error ? error : new Error(String(error))
+        } finally {
+          clearTimeout(settlementTimer)
         }
       }
       if (failure) {
