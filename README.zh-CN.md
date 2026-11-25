@@ -27,7 +27,7 @@
 </p>
 
 <p align="center">
-  <img src="apps/website/public/product/workbench.png" alt="GitCode：仓库导航、提交关系图与工作区变更" width="1200" />
+  <img src="docs/assets/screenshots/workbench.png" alt="GitCode：仓库导航、提交关系图与工作区变更" width="1200" />
 </p>
 
 ## 快速开始
@@ -73,12 +73,12 @@ WSL 下使用 `bun run desktop:wsl` 启动。其他环境和打包命令见[开�
 
 <details>
   <summary>查看 GitFlow 界面</summary>
-  <p><img src="apps/website/public/product/gitflow.png" alt="GitCode GitFlow 操作面板" width="1200" /></p>
+  <p><img src="docs/assets/screenshots/gitflow.png" alt="GitCode GitFlow 操作面板" width="1200" /></p>
 </details>
 
 ## 文档与反馈
 
-[桌面使用说明](apps/desktop/README.md) · [开发与打包](docs/DEVELOPMENT.md) · [网站维护](apps/website/README.md) · [问题反馈](https://github.com/dzxing/gitcode/issues)
+[桌面使用说明](apps/desktop/README.md) · [开发与打包](docs/DEVELOPMENT.md) · [问题反馈](https://github.com/dzxing/gitcode/issues)
 
 ## 许可
 

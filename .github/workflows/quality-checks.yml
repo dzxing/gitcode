@@ -33,5 +33,5 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check:public-history
       - run: bun run check
-      - run: node --test scripts/tests/secrets-policy.test.mjs
+      - run: node --test scripts/tests/*.test.mjs
       - run: bun run test
