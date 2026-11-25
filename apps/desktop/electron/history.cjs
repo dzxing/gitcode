@@ -52,7 +52,12 @@ class HistoryOperations {
     if (!frame) {
       const total = tips.length
         ? Number(
-            (await this.git.git(repo, ['rev-list', '--count', ...tips, '--'], { signal })).trim(),
+            (
+              await this.git.git(repo, ['rev-list', '--count', '--stdin'], {
+                signal,
+                input: tips.join('\n') + '\n',
+              })
+            ).trim(),
           )
         : 0
       if (!Number.isSafeInteger(total) || total < 0) throw Error('提交数量无效。')
@@ -115,10 +120,9 @@ class HistoryOperations {
             `--max-count=${PAGE_SIZE}`,
             '-z',
             '--format=%H%x00%P%x00%s%x00%an%x00%ae%x00%aI',
-            ...frame.tips,
-            '--',
+            '--stdin',
           ],
-          { signal },
+          { signal, input: frame.tips.join('\n') + '\n' },
         )
       ).split('\0')
       for (let i = 0; i + 5 < fields.length; i += 6) {
