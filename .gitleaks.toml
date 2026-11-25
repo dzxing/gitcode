@@ -1,0 +1,16 @@
+title = "GitCode credential policy"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "gitcode-literal-credential"
+description = "Hard-coded passwords and credentials, including low-entropy values"
+regex = '''(?i)\b[\w.-]*(?:password|passwd|passphrase|client[_-]?secret|api[_-]?key|access[_-]?token|auth[_-]?token|secret[_-]?access[_-]?key)\b["']?\s*[:=]\s*["']([^"'\r\n]{4,})["']'''
+secretGroup = 1
+keywords = ["password", "passwd", "passphrase", "secret", "token", "key"]
+
+[[rules.allowlists]]
+description = "Explicit placeholder syntax only; other rules still apply"
+regexTarget = "secret"
+regexes = ['''^(?:\$\{[A-Z_][A-Z0-9_]*\}|<[A-Z_][A-Z0-9_]*>)$''']

@@ -28,6 +28,12 @@
     }
   },
   "scripts": {
+    "prepare": "node scripts/install-git-hooks.mjs",
+    "hooks:install": "node scripts/install-git-hooks.mjs",
+    "secrets:install": "node scripts/check-secrets.mjs install",
+    "check:secrets": "node scripts/check-secrets.mjs history",
+    "check:secrets:staged": "node scripts/check-secrets.mjs staged",
+    "test:secrets": "node --test scripts/tests/secrets-policy.test.mjs",
     "dev": "bun run --cwd apps/desktop dev",
     "dev:desktop": "bun run --cwd apps/desktop dev",
     "build": "bun run --cwd apps/desktop build",
