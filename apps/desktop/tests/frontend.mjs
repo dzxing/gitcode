@@ -4352,6 +4352,7 @@ try {
     const calls = []
     let max = false
     const native = {
+      platform: 'linux',
       minimize: async () => {
         calls.push('minimize')
       },
