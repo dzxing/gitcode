@@ -15,9 +15,12 @@ globalThis.localStorage = {
   setItem: (key, value) => storage.set(key, value),
 }
 try {
-  const { visibleHistory, visibleReferenceBranches, knownAncestor } =
-    await vite.ssrLoadModule('/src/graphVisibility.ts')
-  const { useGraphViewStore } = await vite.ssrLoadModule('/src/stores/graphView.ts')
+  const { visibleHistory, visibleReferenceBranches, knownAncestor } = await vite.ssrLoadModule(
+    '/src/features/history/graphVisibility.ts',
+  )
+  const { useGraphViewStore } = await vite.ssrLoadModule(
+    '/src/features/history/stores/graphView.ts',
+  )
   const commits = [
     { hash: 'topic', parents: ['base'] },
     { hash: 'main', parents: ['base'] },
@@ -111,9 +114,9 @@ try {
     assert.equal(view.showLongEdges, false)
   })
   await test('filtered history preserves permanent fragments and bridges only real hidden ancestry', async () => {
-    const { ideaGraphLayout } = await vite.ssrLoadModule('/src/ideaGraphLayout.ts')
-    const { buildHistoryGraph } = await vite.ssrLoadModule('/src/graph.ts')
-    const { projectHistory } = await vite.ssrLoadModule('/src/graphVisibility.ts')
+    const { ideaGraphLayout } = await vite.ssrLoadModule('/src/features/history/ideaGraphLayout.ts')
+    const { buildHistoryGraph } = await vite.ssrLoadModule('/src/features/history/graph.ts')
+    const { projectHistory } = await vite.ssrLoadModule('/src/features/history/graphVisibility.ts')
     const full = [
       { hash: 'main', parents: ['hidden'], subject: 'visible main' },
       { hash: 'other', parents: ['root'], subject: 'visible other' },
@@ -151,7 +154,7 @@ try {
     assert.equal(rootOnly.nodes[0].color, before.nodes.find((n) => n.hash === 'root').color)
   })
   await test('Paged merge graphs terminate unknown parents locally and expand their real ancestry when loaded', async () => {
-    const { buildGraph } = await vite.ssrLoadModule('/src/graph.ts')
+    const { buildGraph } = await vite.ssrLoadModule('/src/features/history/graph.ts')
     const commits = [
       { hash: 'merge', parents: ['base', 'side'] },
       { hash: 'side', parents: ['side-old'] },

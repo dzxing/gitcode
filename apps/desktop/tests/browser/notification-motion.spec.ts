@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
-import type { SyncPlan } from '../../src/types'
+import type { SyncPlan } from '../../src/shared/contracts'
 
 async function notify(page: import('@playwright/test').Page, texts: string[]) {
   return page.evaluate(async (texts) => {
-    const modulePath = '/src/stores/repository.ts'
+    const modulePath = '/src/features/repository/stores/repository.ts'
     const store = (await import(modulePath)).useRepositoryStore()
     store.notices = []
     for (const text of texts) store.notify(text)

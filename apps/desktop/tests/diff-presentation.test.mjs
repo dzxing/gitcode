@@ -8,7 +8,7 @@ const vite = await createServer({
   appType: 'custom',
 })
 try {
-  const { presentDiff } = await vite.ssrLoadModule('/src/diffPresentation.ts')
+  const { presentDiff } = await vite.ssrLoadModule('/src/features/changes/diffPresentation.ts')
   await test('intraline decoration preserves patch text, line indices and numbers', () => {
     const patch = '--- a/x\n+++ b/x\n@@ -8,2 +10,2 @@\n-old value\n+new value\n context\n'
     const lines = presentDiff(patch)

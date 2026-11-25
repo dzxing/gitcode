@@ -8,7 +8,7 @@ test('notices stay at the window top right while panel widths change and preserv
   await expect(page.locator('.workbench')).toBeVisible()
   const notify = async (reset = false) =>
     page.evaluate(async (reset) => {
-      const modulePath = '/src/stores/repository.ts'
+      const modulePath = '/src/features/repository/stores/repository.ts'
       const store = (await import(modulePath)).useRepositoryStore()
       if (reset) {
         store.notices = []

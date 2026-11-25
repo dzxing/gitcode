@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import test from 'node:test'
+import { checkSourceBoundaries } from '../scripts/check-source-boundaries.mjs'
+
+async function fixture(files, run) {
+  const root = await mkdtemp(path.join(tmpdir(), 'gitcode-source-boundaries-'))
+  try {
+    for (const [name, source] of Object.entries(files)) {
+      const file = path.join(root, name)
+      await mkdir(path.dirname(file), { recursive: true })
+      await writeFile(file, source)
+    }
+    await run(root)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+test('feature assembly accepts shared contracts and type-only backreferences without a runtime cycle', async () => {
+  await fixture(
+    {
+      'App.vue': '<script setup lang="ts">import "./features/history/view"</script>',
+      'features/history/view.ts':
+        'import { type Row } from "../../shared/contracts"; import type { Peer } from "./peer"',
+      'features/history/peer.ts': 'export type { Peer } from "./view"',
+      'shared/contracts/index.ts': 'export interface Row { hash: string }',
+    },
+    async (root) => assert.deepEqual(await checkSourceBoundaries(root), []),
+  )
+})
+
+test('shared and infrastructure cannot depend on feature implementation, even through types', async () => {
+  await fixture(
+    {
+      'features/repository/store.ts': 'export interface State {}',
+      'shared/lib/format.ts': 'import type { State } from "../../features/repository/store"',
+      'infrastructure/bridge.ts': 'export type { State } from "../features/repository/store"',
+    },
+    async (root) => {
+      const failures = await checkSourceBoundaries(root)
+      assert.equal(failures.length, 2)
+      assert.ok(failures.every((item) => item.includes('forbidden dependency')))
+    },
+  )
+})
+
+test('Vue script, re-exports and dynamic imports participate in runtime cycle detection', async () => {
+  await fixture(
+    {
+      'features/gitflow/view.vue':
+        '<script setup lang="ts">import { finish } from "./finish"</script>',
+      'features/gitflow/finish.ts': 'export { finish } from "./receipt"',
+      'features/gitflow/receipt.ts': 'export const finish = () => import("./view.vue")',
+    },
+    async (root) => {
+      const failures = await checkSourceBoundaries(root)
+      assert.equal(failures.length, 1)
+      assert.match(failures[0], /^Runtime cycle:/)
+      assert.ok(failures[0].includes('finish.ts'))
+      assert.ok(failures[0].includes('view.vue'))
+    },
+  )
+})

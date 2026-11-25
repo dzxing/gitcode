@@ -16,7 +16,7 @@ for (const ratio of [1, 1.25, 1.5, 2]) {
       await openFixtureRepository(page)
       const measurements = await page.evaluate(async (names) => {
         const vuePath = '/node_modules/.vite/deps/vue.js'
-        const iconPath = '/src/components/Icon.vue'
+        const iconPath = '/src/shared/ui/Icon.vue'
         const [{ createApp, h }, { default: Icon }] = await Promise.all([
           import(vuePath),
           import(iconPath),

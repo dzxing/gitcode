@@ -12,9 +12,13 @@ try {
   globalThis.window = {
     gitcode: { runtime: async () => ({}), historyTools: (...args) => handler(...args) },
   }
-  const { alignVersions } = await vite.ssrLoadModule('/src/versionComparison.ts')
-  const { useHistoryToolsStore } = await vite.ssrLoadModule('/src/stores/historyTools.ts')
-  const { useHistoryQueryStore } = await vite.ssrLoadModule('/src/stores/historyQuery.ts')
+  const { alignVersions } = await vite.ssrLoadModule('/src/features/history/versionComparison.ts')
+  const { useHistoryToolsStore } = await vite.ssrLoadModule(
+    '/src/features/history/stores/historyTools.ts',
+  )
+  const { useHistoryQueryStore } = await vite.ssrLoadModule(
+    '/src/features/history/stores/historyQuery.ts',
+  )
   await test('three-version alignment preserves every line, repeated lines, deletions and insertions', () => {
     for (const versions of [
       ['a\nb\nc', 'a\nc', 'a\nx\nc'],

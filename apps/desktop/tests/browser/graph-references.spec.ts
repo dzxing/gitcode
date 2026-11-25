@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import type { Snapshot } from '../../src/types'
+import type { Snapshot } from '../../src/shared/contracts'
 test.beforeEach(async ({ page }, info) => {
   if (info.title.startsWith('combined labels expand')) return
   await page.addInitScript(() =>

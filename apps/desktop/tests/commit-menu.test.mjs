@@ -8,7 +8,7 @@ const vite = await createServer({
   appType: 'custom',
 })
 try {
-  const { buildCommitMenu } = await vite.ssrLoadModule('/src/commitMenu.ts')
+  const { buildCommitMenu } = await vite.ssrLoadModule('/src/app/commitMenu.ts')
   const { repositoryFixture } = await vite.ssrLoadModule('/tests/fixtures/repository.ts')
   const state = {
     connected: true,

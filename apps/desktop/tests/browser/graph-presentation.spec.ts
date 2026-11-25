@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
 import { repositoryFixture } from '../fixtures/repository'
-import type { Snapshot } from '../../src/types'
+import type { Snapshot } from '../../src/shared/contracts'
 
 const sha = (row: number) => (row + 1).toString(16).padStart(40, '0')
 function fixture(): Snapshot {

@@ -71,13 +71,44 @@ Windows 可从仓库根目录运行 `bun run desktop:build:win`，也可双击 `
 
 `.github/workflows/` 包含桌面构建、完整质量检查、敏感信息扫描和依赖安全审计，支持 main 分支推送、版本标签、手动触发及 Pull Request 检查。依赖审计还会每周运行，读取完整 Bun 锁文件并阻止高危和严重告警；Dependabot 配置用于 Bun 与 Actions 的定期更新。GitHub 仓库为 `dzxing/gitcode`，原 GitLab 远程保留；尚未配置 GitLab CI。
 
+## 桌面前端结构
+
+`apps/desktop/src` 按功能组织，根目录只保留应用入口：
+
+```text
+src/
+  App.vue / main.ts         应用入口
+  app/                      工作台组装、菜单、启动和全局弹层
+  features/
+    repository/             仓库、标签会话、信任和刷新协调
+    history/                提交历史、关系图纯算法和筛选
+    branches/               导航、分支排序和目录分组
+    changes/                暂存、提交、文件和差异
+    gitflow/ merge/ rebase/  各 Git 流程的状态及界面
+    stash/ terminal/        贮藏、终端和 Git 控制台
+    preferences/            字体、主题和设置
+  infrastructure/           Electron / 本机服务通信及平台、存储适配
+  shared/
+    contracts/              Git 通信 DTO、界面会话和视图类型
+    lib/                    无界面状态的公共逻辑
+    ui/                     图标、菜单等公共控件
+    styles/                 全局变量、基础样式及主题
+  assets/                   离线图标资源
+```
+
+功能内按需要划分组件、Store 和纯逻辑；跨功能依赖使用明确文件路径，避免通过聚合导出隐式初始化其他 Store。`shared` 不依赖功能、应用组装或通信层，`infrastructure` 不依赖功能或应用组装；类型导入也遵循此规则。桌面 `check:boundaries` 对 TypeScript 与 Vue 脚本检查这些边界及运行时导入环，并纳入 `check` 和 CI。
+
+仓库 Store 继续统一持有操作上下文、快照版本和选中版本。后台观察控制器只负责调度，通过注入接口使用同一套版本检查；信任控制器只管理确认状态。GitFlow 完成 Store 发布已完成的操作回执，由开始流程 Store 消费，不相互调用。
+
+全局 CSS 入口为 `app/styles/index.css`，其中区域样式按原层叠顺序导入，随后加载主题和设置样式。`overrides.css` 保留原有后置规则，不能随意提前加载；调整此文件或导入次序时应运行主题、字体和工作台浏览器回归。
+
 ## 发布与迁移说明
 
 桌面应用版本由 `apps/desktop/package.json` 管理。README 截图保存在 `docs/assets/screenshots/`。
 
 `apps/website/` 已加入忽略规则，并从后续公开版本取消跟踪；源码仍保留在本地。此前已公开的提交历史和旧 Release 源码包按维护者决定保留，忽略规则不会移除这些历史内容。公开范围检查允许既有历史，但会阻止后续新增门户源码，包括先提交再删除的情况。
 
-本次迁移保留桌面内部目录结构与运行时路径，仅调整工作区层级。根目录原有 `dev`、`desktop:wsl`、`build`、`test` 等入口继续可用。旧 `release/1.0.1` 产物已移动至 `release/desktop/1.0.1`，同版本重打包仍自动归档。
+工作区迁移保留运行时入口；前端内部结构随后按上述功能边界整理。根目录原有 `dev`、`desktop:wsl`、`build`、`test` 等入口继续可用。旧 `release/1.0.1` 产物已移动至 `release/desktop/1.0.1`，同版本重打包仍自动归档。
 
 新增模块时，在 `apps/` 或 `packages/` 创建独立 `package.json`，并显式加入工作区，通过 `workspace:*` 引用共享包，并更新边界检查、检查命令和对应 CI。依赖变更在仓库根目录执行，只提交根 `bun.lock`。
 

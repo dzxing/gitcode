@@ -1,0 +1,102 @@
+.statusbar {
+  display: flex;
+  white-space: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--theme-fill, #1c2128);
+  border-top: 1px solid var(--theme-border, #323944);
+  height: 27px;
+  flex-shrink: 0;
+  padding: 0 14px;
+  font-size: var(--ui-font-help);
+  color: var(--muted);
+  gap: 15px;
+}
+.statusbar > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.statusbar .statusbar-primary {
+  flex: 1 1 55%;
+}
+.statusbar .statusbar-secondary {
+  flex: 0 1 45%;
+  justify-content: flex-end;
+}
+#operation-status,
+.status-branch {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.statusbar button:is(.status-branch, .status-path) {
+  flex-shrink: 1;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 0;
+  height: 22px;
+  padding: 0 3px;
+  border-radius: 3px;
+  outline-offset: -2px;
+}
+.statusbar button:is(.status-branch, .status-path):hover:not(:disabled) {
+  background: var(--control-hover-bg);
+}
+.statusbar button:disabled {
+  color: var(--control-disabled-color);
+}
+.statusbar button:is(.status-branch, .status-path) > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.close-tabs-list {
+  max-height: 180px;
+  overflow-y: auto;
+  padding-left: 20px;
+  overflow-wrap: anywhere;
+}
+#operation-status {
+  max-width: 360px;
+}
+.status-branch {
+  max-width: clamp(80px, 18vw, 260px);
+}
+.statusbar :is(.connection-dot, .status-divider, .status-changes, button, svg) {
+  flex-shrink: 0;
+}
+.connection-dot {
+  height: 5px;
+  width: 5px;
+  border-radius: 50%;
+  background: var(--theme-warning-text, #ae946a);
+}
+.connection-dot.online {
+  background: var(--theme-success-text, #6db69d);
+}
+.status-divider {
+  height: 9px;
+  width: 1px;
+  background: var(--theme-fill, #3b434f);
+  margin: 0 3px;
+}
+.status-changes {
+  color: var(--theme-caption, #7da699);
+  margin-left: 3px;
+}
+.status-path {
+  min-width: 0;
+  flex: 1 1 auto;
+  font: var(--ui-font-help)/1.5 var(--mono);
+  color: var(--muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.statusbar button {
+  color: var(--text-secondary);
+}

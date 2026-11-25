@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
-import type { TerminalRequest } from '../../src/terminalTypes'
+import type { TerminalRequest } from '../../src/shared/contracts/terminalTypes'
 
 async function fixture(page: Page) {
   await openFixtureRepository(page)
@@ -212,13 +212,13 @@ test('shell uses fixed monospace metrics while tabs and Git Console follow their
     .evaluate((e) => e.getBoundingClientRect().height)
   async function code(patch: Record<string, unknown>) {
     await page.evaluate(async (patch) => {
-      const name = '/src/stores/fonts.ts'
+      const name = '/src/features/preferences/stores/fonts.ts'
       ;(await import(name)).useFontStore().set('code', patch, false)
     }, patch)
   }
   await code({ enabled: true, family: 'JetBrains Mono', size: 24, lineHeight: 2.2 })
   await page.evaluate(async () => {
-    const name = '/src/stores/fonts.ts'
+    const name = '/src/features/preferences/stores/fonts.ts'
     ;(await import(name))
       .useFontStore()
       .set('ui', { enabled: true, family: 'Roboto', size: 16 }, false)
@@ -300,7 +300,7 @@ test('cold bundled font loads before measuring shell cells and editor changes ca
     await page.getByRole('button', { name: '显示或隐藏终端', exact: true }).click()
     await request
     await page.evaluate(async () => {
-      const name = '/src/stores/fonts.ts'
+      const name = '/src/features/preferences/stores/fonts.ts'
       ;(await import(name))
         .useFontStore()
         .set('code', { enabled: true, family: 'Roboto', size: 24, lineHeight: 2.2 }, false)
@@ -341,7 +341,7 @@ test('compact shell tabs align all targets and the new-session menu selects a sh
   await expect(first.locator('small')).toHaveCount(0)
   await expect(panel.locator('select')).toHaveCount(0)
   await page.evaluate(async () => {
-    const name = '/src/stores/terminal.ts'
+    const name = '/src/features/terminal/stores/terminal.ts'
     ;(await import(name)).useTerminalStore().shells = [
       { id: 'default', label: 'Bash' },
       { id: 'bash', label: 'Bash' },
@@ -378,7 +378,7 @@ test('compact shell tabs align all targets and the new-session menu selects a sh
   expect((await events(page, 'create')).at(-1)).not.toHaveProperty('shell')
   for (const size of [11, 13, 16]) {
     await page.evaluate(async (size) => {
-      const name = '/src/stores/fonts.ts'
+      const name = '/src/features/preferences/stores/fonts.ts'
       ;(await import(name))
         .useFontStore()
         .set('ui', { enabled: true, family: 'Roboto', size }, false)
@@ -403,7 +403,7 @@ test('compact shell tabs align all targets and the new-session menu selects a sh
     expect(Math.max(...offsets)).toBeLessThan(0.6)
   }
   await page.evaluate(async () => {
-    const name = '/src/stores/terminal.ts',
+    const name = '/src/features/terminal/stores/terminal.ts',
       store = (await import(name)).useTerminalStore()
     store.sessions[1].shell = 'Very long shell name '.repeat(20)
     store.update(store.sessions[1].id, { state: 'exited', exitCode: 0 })

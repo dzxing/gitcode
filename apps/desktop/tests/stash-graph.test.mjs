@@ -8,8 +8,9 @@ const vite = await createServer({
   appType: 'custom',
 })
 try {
-  const { buildGraph, buildHistoryGraph, HISTORY_ROW_HEIGHT } =
-    await vite.ssrLoadModule('/src/graph.ts')
+  const { buildGraph, buildHistoryGraph, HISTORY_ROW_HEIGHT } = await vite.ssrLoadModule(
+    '/src/features/history/graph.ts',
+  )
   const commits = [
     { hash: 'new', parents: ['old'], date: '2026-10-28T00:00:00Z' },
     { hash: 'old', parents: [], date: '2026-10-27T00:00:00Z' },

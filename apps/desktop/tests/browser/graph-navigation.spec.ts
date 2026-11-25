@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
 import { repositoryFixture } from '../fixtures/repository'
-import type { Snapshot } from '../../src/types'
+import type { Snapshot } from '../../src/shared/contracts'
 
 const sha = (n: number) => n.toString(16).padStart(2, '0').repeat(20)
 const merge = sha(1),
