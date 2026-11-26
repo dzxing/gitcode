@@ -1,8 +1,8 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import { useRepositoryStore } from '../../repository/stores/repository'
-import type { TerminalShell } from '../../../shared/contracts/terminalTypes'
+import type { TerminalShell } from '../../../shared/contracts/terminal'
 
 export interface TerminalSession {
   id: string
@@ -59,7 +59,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       error.value = ''
       if (!available.value) return
       try {
-        const reply = await desktop.terminal(repository.repo.path, { action: 'shells' })
+        const reply = await coreBridge.terminal(repository.repo.path, { action: 'shells' })
         if (version === shellVersion) shells.value = reply?.shells || []
       } catch {
         /* Opening a terminal reports any unavailable service in its panel. */
@@ -78,7 +78,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     error.value = ''
     creating.value = true
     try {
-      const reply = await desktop.terminal(repo, {
+      const reply = await coreBridge.terminal(repo, {
         action: 'create',
         tabId,
         cols: 80,
@@ -87,7 +87,7 @@ export const useTerminalStore = defineStore('terminal', () => {
       })
       if (!reply?.id) throw Error('终端服务未返回会话。')
       if (!repository.tabs.some((tab) => tab.id === tabId && tab.path === repo)) {
-        await desktop.terminal(repo, { action: 'close', id: reply.id })
+        await coreBridge.terminal(repo, { action: 'close', id: reply.id })
         return
       }
       const number = (numbers.get(context) || 0) + 1
@@ -146,7 +146,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     const session = sessions.value.find((s) => s.id === id)
     if (!session) return
     try {
-      await desktop.terminal(session.repo, { action: 'close', id })
+      await coreBridge.terminal(session.repo, { action: 'close', id })
       const context = `${session.tabId}\0${session.repo}`
       const owned = sessions.value.filter(
         (s) => s.tabId === session.tabId && s.repo === session.repo,

@@ -394,7 +394,7 @@ src/app/                  Vue 工作台组装、菜单与全局弹层
 src/features/             按仓库、图谱、分支、变更等功能组织组件和 Store
 src/features/repository/stores/repository.ts  仓库/标签状态与统一操作上下文
 src/features/history/graph.ts  提交拓扑图布局
-src/infrastructure/desktop.ts 类型明确的 Electron preload / 本机服务适配
+src/infrastructure/coreBridge.ts 类型明确的 Electron preload / 本机服务适配
 src/shared/               公共控件、类型契约、基础样式和纯逻辑
 assets/                   PNG / ICO / ICNS 应用图标
 electron/main.cjs         Electron 主进程、窗口与 IPC

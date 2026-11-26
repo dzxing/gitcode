@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../../features/repository/stores/repository'
-import { desktop } from '../../infrastructure/desktop'
+import { coreBridge } from '../../infrastructure/coreBridge'
 import type { GitActivity } from '../../shared/contracts'
 import Icon from '../../shared/ui/Icon.vue'
 
@@ -35,7 +35,7 @@ watch(
     const activeOrigin = origin.value
     const poll = async () => {
       try {
-        const next = await desktop.activity()
+        const next = await coreBridge.activity()
         if (current !== version) return
         if (
           next?.operation === activeOperation &&

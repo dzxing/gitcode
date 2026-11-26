@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { reactive, ref } from 'vue'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import type { Commit, HistoryToolRequest, HistoryToolResult } from '../../../shared/contracts'
 
 type Revision = Commit & { path?: string; oldPath?: string }
@@ -52,7 +52,7 @@ export const useHistoryToolsStore = defineStore('history-tools', () => {
     tab.error = ''
     tab.stale = false
     try {
-      const data = await desktop.historyTools(tab.repo, {
+      const data = await coreBridge.historyTools(tab.repo, {
         kind: tab.kind,
         path: tab.path,
         revision: tab.revision,
@@ -128,7 +128,7 @@ export const useHistoryToolsStore = defineStore('history-tools', () => {
       base: older?.hash,
     }
     try {
-      const result = await desktop.historyTools(tab.repo, request)
+      const result = await coreBridge.historyTools(tab.repo, request)
       if (valid(tab, generation) && selection === tab.selected.join(':'))
         tab.diff = result.diff || ''
     } catch (e) {
@@ -146,7 +146,7 @@ export const useHistoryToolsStore = defineStore('history-tools', () => {
     tab.error = ''
     tab.preview = 'local'
     try {
-      const result = await desktop.historyTools(tab.repo, {
+      const result = await coreBridge.historyTools(tab.repo, {
         kind: 'diff',
         path: currentPath,
         oldPath: path,

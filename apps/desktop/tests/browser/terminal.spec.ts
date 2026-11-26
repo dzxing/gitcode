@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
-import type { TerminalRequest } from '../../src/shared/contracts/terminalTypes'
+import type { TerminalRequest } from '../../src/shared/contracts/terminal'
 
 async function fixture(page: Page) {
   await openFixtureRepository(page)

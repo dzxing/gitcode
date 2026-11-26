@@ -2,7 +2,7 @@
 import { vOverflowTitle } from '../../shared/ui/overflowTitle'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../../features/repository/stores/repository'
-import { desktop } from '../../infrastructure/desktop'
+import { coreBridge } from '../../infrastructure/coreBridge'
 import type { ActivitySettings, OperationLogEntry, OperationLogQuery } from '../../shared/contracts'
 import Icon from '../../shared/ui/Icon.vue'
 import { fetchLogPresentation } from '../../shared/lib/activityLogPresentation'
@@ -97,7 +97,7 @@ async function load() {
   const current = ++version
   clearTimeout(timer)
   try {
-    const value = await desktop.operationLog({
+    const value = await coreBridge.operationLog({
       ...query.value,
       ...(focusFailure.value ? { focus: 'fetch-failure' as const } : {}),
       ...(selected.value ? { id: selected.value } : {}),
@@ -164,7 +164,7 @@ async function clear() {
   saving.value = true
   error.value = ''
   try {
-    await desktop.clearOperationLog(query.value)
+    await coreBridge.clearOperationLog(query.value)
     selected.value = ''
     confirmingClear.value = false
     await load()

@@ -23,7 +23,7 @@ import NewTab from '../features/repository/components/NewTab.vue'
 import WindowControls from './components/WindowControls.vue'
 import ContextMenu from './components/ContextMenu.vue'
 import CommitActionsDialog from '../features/changes/components/CommitActionsDialog.vue'
-import NavigationDialog from '../features/branches/components/NavigationDialog.vue'
+import ReferenceActionsDialog from '../features/branches/components/ReferenceActionsDialog.vue'
 import ApplicationMenu from './components/ApplicationMenu.vue'
 import GitFlowPanel from '../features/gitflow/components/GitFlowPanel.vue'
 import ProtectedCheckoutDialog from '../features/repository/components/ProtectedCheckoutDialog.vue'
@@ -39,11 +39,11 @@ import StashDeleteDialog from '../features/stash/components/StashDeleteDialog.vu
 import { useContextMenuStore } from './stores/contextMenu'
 import { useGitFlowStore } from '../features/gitflow/stores/gitflow'
 import { useDesktopWindow } from './useDesktopWindow'
-import { isDesktop } from '../infrastructure/desktop'
+import { isDesktop } from '../infrastructure/coreBridge'
 import { branchTracking } from '../features/branches/branchTracking'
 import { fetchFailureSummary } from '../shared/lib/activityLogPresentation'
 import WorkbenchMenu, { type WorkbenchMenuItem } from '../shared/ui/WorkbenchMenu.vue'
-import { applicationBridge } from '../infrastructure/application'
+import { applicationBridge } from '../infrastructure/applicationBridge'
 
 const store = useRepositoryStore()
 const renderedNotices = ref<typeof store.notices>([])
@@ -1241,7 +1241,7 @@ onUnmounted(() => {
     <RepositoryTrustDialog />
     <StashDeleteDialog />
     <ProtectedCheckoutDialog /><GitFlowFinishDialog />
-    <ContextMenu /><NavigationDialog /><CommitActionsDialog />
+    <ContextMenu /><ReferenceActionsDialog /><CommitActionsDialog />
     <TransitionGroup
       name="notification"
       tag="div"

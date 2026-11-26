@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Branch } from '../../../shared/contracts'
-import { branchDirectoryTree, type SidebarSection } from '../sidebar'
+import { branchDirectoryTree, type SidebarSection } from '../sidebarModel'
 import { branchReference } from '../../../shared/lib/references'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import { useSidebarStore } from '../stores/sidebar'

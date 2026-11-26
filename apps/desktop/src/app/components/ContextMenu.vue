@@ -14,18 +14,21 @@ import {
 } from '../stores/contextMenu'
 import Icon from '../../shared/ui/Icon.vue'
 import { useGitFlowStore } from '../../features/gitflow/stores/gitflow'
-import { flowKind, flowTypes } from '../../features/gitflow/rules'
+import { flowKind, flowTypes } from '../../features/gitflow/branchKinds'
 import type { GitFlowType } from '../../shared/contracts'
-import { BRANCH_SORTS } from '../../features/branches/sidebar'
-import { SIDEBAR_SECTIONS } from '../../features/branches/sidebar'
+import { BRANCH_SORTS } from '../../features/branches/sidebarModel'
+import { SIDEBAR_SECTIONS } from '../../features/branches/sidebarModel'
 import { useSidebarStore } from '../../features/branches/stores/sidebar'
 import { useStashStore } from '../../features/stash/stores/stash'
-import { useNavigationStore, type NavigationMode } from '../../features/branches/stores/navigation'
+import {
+  useReferenceActionsStore,
+  type ReferenceActionMode,
+} from '../../features/branches/stores/referenceActions'
 import { useGraphViewStore } from '../../features/history/stores/graphView'
 import { knownAncestor } from '../../features/history/graphVisibility'
 import { interactiveRebaseFromHistory } from '../../features/rebase/rebaseMenu'
 import { nativeContextMenu, type NativeMenuItem } from '../../infrastructure/contextMenu'
-import { desktop } from '../../infrastructure/desktop'
+import { coreBridge } from '../../infrastructure/coreBridge'
 import { useRebaseStore } from '../../features/rebase/stores/rebase'
 import { useMergeStore } from '../../features/merge/stores/merge'
 import { buildCommitMenu } from '../commitMenu'
@@ -37,7 +40,7 @@ const menu = useContextMenuStore()
 const flow = useGitFlowStore()
 const sidebar = useSidebarStore()
 const stash = useStashStore()
-const navigation = useNavigationStore()
+const navigation = useReferenceActionsStore()
 const rebase = useRebaseStore()
 const rebaseAvailable = ref<boolean | null>(null)
 const rebaseMenuCache = new Map<string, boolean>()
@@ -523,7 +526,7 @@ async function perform(item: Item) {
             .map((commit) => commit.hash)
     if (id === 'jump-child') {
       try {
-        const result = await desktop.commitOperationRead(target.repo, {
+        const result = await coreBridge.commitOperationRead(target.repo, {
           kind: 'relations',
           oids: [target.commit.hash],
           expectedHead: target.head,
@@ -696,7 +699,7 @@ async function perform(item: Item) {
     }
     if (id === 'rebase' || id === 'rebase-interactive')
       await rebase.open(reference, id === 'rebase-interactive', origin)
-    else await navigation.open(id as NavigationMode, reference, origin)
+    else await navigation.open(id as ReferenceActionMode, reference, origin)
     return
   }
   if (target.kind === 'section') {
@@ -946,7 +949,7 @@ function prepareRebaseMenu(target: MenuContext) {
         rebaseMenuPending.delete(key)
         return
       }
-      void desktop
+      void coreBridge
         .rebaseMenuRead(target.repo, { head: target.head, oid })
         .then((info) => {
           if (disposed) return

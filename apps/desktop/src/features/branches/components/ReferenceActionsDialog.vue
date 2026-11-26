@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
-import { useNavigationStore } from '../stores/navigation'
+import { useReferenceActionsStore } from '../stores/referenceActions'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import Icon from '../../../shared/ui/Icon.vue'
-const navigation = useNavigationStore(),
+const navigation = useReferenceActionsStore(),
   repo = useRepositoryStore(),
   dialog = ref<HTMLDialogElement>()
 let previous: HTMLElement | null = null

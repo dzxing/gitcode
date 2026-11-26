@@ -3,7 +3,7 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import type { Branch, Commit, FileChange, Snapshot, StashEntry } from '../../shared/contracts'
 import { useRepositoryStore } from '../../features/repository/stores/repository'
 import { useHistoryQueryStore } from '../../features/history/stores/historyQuery'
-import type { SidebarSection } from '../../features/branches/sidebar'
+import type { SidebarSection } from '../../features/branches/sidebarModel'
 
 export type MenuObject =
   | { kind: 'files'; files: FileChange[]; staged: boolean; label: string }

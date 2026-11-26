@@ -1,6 +1,6 @@
 import type { Branch, Commit } from '../../shared/contracts'
 import { branchReference } from '../../shared/lib/references'
-export type { ReferenceLabelStyle } from '../../shared/contracts/view'
+export type { ReferenceLabelStyle } from '../../shared/contracts/referenceLabels'
 
 export interface CommitReference {
   key: string

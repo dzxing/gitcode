@@ -1,4 +1,4 @@
-import type { DesktopBridge } from '../shared/contracts'
+import type { CoreBridge } from '../shared/contracts'
 
 export class LocalConnectionError extends Error {}
 class LocalRequestError extends Error {}
@@ -93,7 +93,7 @@ export function createLocalCoreClient(
       pendingReads.delete(controller)
     }
   }
-  const bridge: DesktopBridge = {
+  const bridge: CoreBridge = {
     refreshReferences: (repo, signature) =>
       cancellableRead('refresh-references', [repo, signature]),
     historyMetadata: (repo, sha) => cancellableRead('history-metadata', [repo, sha]),
@@ -121,7 +121,7 @@ export function createLocalCoreClient(
     stashRead: (repo, oid, file) => cancellableRead('stash-read', [repo, oid, file]),
     selectedCommitPlan: (repo, request) => cancellableRead('selected-commit-plan', [repo, request]),
     runtime: async () => {
-      const info = await rpc<Awaited<ReturnType<DesktopBridge['runtime']>>>('runtime', [])
+      const info = await rpc<Awaited<ReturnType<CoreBridge['runtime']>>>('runtime', [])
       corePlatform = info.platform
       return info
     },

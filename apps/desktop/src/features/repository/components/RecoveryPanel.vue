@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import { noticePresentation } from '../../../shared/lib/noticePresentation'
 import type { RecoveryPlan } from '../../../shared/contracts'
 import Icon from '../../../shared/ui/Icon.vue'
@@ -40,7 +40,7 @@ async function load(refreshContext = false) {
       // invocation must still match the commit the user actually clicked.
       origin = store.captureOperation()
     }
-    const value = await desktop.recoveryRead(origin.repo)
+    const value = await coreBridge.recoveryRead(origin.repo)
     if (mounted && store.repo.path === origin.repo && store.activeTabId === origin.tabId) {
       if (
         value.head !== origin.expectedHead ||

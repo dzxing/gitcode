@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { vOverflowTitle } from '../../../shared/ui/overflowTitle'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { desktop, isDesktop, pathName } from '../../../infrastructure/desktop'
+import { coreBridge, isDesktop, pathName } from '../../../infrastructure/coreBridge'
 import { useRepositoryStore } from '../stores/repository'
 import type { DirectoryEntry, DirectoryListing } from '../../../shared/contracts'
 import Icon from '../../../shared/ui/Icon.vue'
@@ -40,7 +40,7 @@ async function navigate(path?: string) {
   selected.value = null
   query.value = ''
   try {
-    const next = await desktop.listDirectory(path)
+    const next = await coreBridge.listDirectory(path)
     if (request !== version) return
     listing.value = next
     // A late initial listing must not overwrite a path the user is typing.
@@ -54,7 +54,7 @@ async function navigate(path?: string) {
 
 async function systemPicker() {
   try {
-    const path = await desktop.chooseDirectory(
+    const path = await coreBridge.chooseDirectory(
       listing.value?.path,
       props.mode === 'parent' ? 'parent' : 'repository',
     )

@@ -1,6 +1,6 @@
-import type { GitConsoleRequest } from '../shared/contracts/gitConsoleTypes'
+import type { GitConsoleRequest } from '../shared/contracts/gitConsole'
 import type {
-  DesktopBridge,
+  CoreBridge,
   GitAction,
   GitFlowConfig,
   OperationContext,
@@ -17,13 +17,13 @@ import type {
   CommitOperationRequest,
   GitRuntimeSelection,
 } from '../shared/contracts'
-import type { NativeWindow } from './window'
-import type { TerminalRequest } from '../shared/contracts/terminalTypes'
-import { createLocalCoreClient } from './localCore'
+import type { NativeWindow } from '../shared/contracts/windowBridge'
+import type { TerminalRequest } from '../shared/contracts/terminal'
+import { createLocalCoreClient } from './localCoreClient'
 
 declare global {
   interface Window {
-    gitcode?: DesktopBridge
+    gitcode?: CoreBridge
     gitcodeWindow?: NativeWindow
   }
 }
@@ -62,7 +62,7 @@ function bridge() {
   return local.bridge
 }
 
-async function invoke<T>(work: (bridge: DesktopBridge) => Promise<T>): Promise<T> {
+async function invoke<T>(work: (bridge: CoreBridge) => Promise<T>): Promise<T> {
   try {
     return await work(bridge())
   } catch (error: unknown) {
@@ -72,7 +72,7 @@ async function invoke<T>(work: (bridge: DesktopBridge) => Promise<T>): Promise<T
   }
 }
 
-export const desktop = {
+export const coreBridge = {
   gitConsole: (repo: string, request: GitConsoleRequest) =>
     invoke((bridge) => {
       if (!bridge.gitConsole) throw Error('请重启 GitCode 以加载 Git 控制台。')

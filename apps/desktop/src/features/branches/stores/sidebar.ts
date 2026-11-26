@@ -9,7 +9,7 @@ import {
   normalizeSidebarOrder,
   type BranchSort,
   type SidebarSection,
-} from '../sidebar'
+} from '../sidebarModel'
 
 const storageKey = 'gitcode.sidebar-sections'
 export const useSidebarStore = defineStore('sidebar', () => {

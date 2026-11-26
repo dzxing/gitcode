@@ -1,6 +1,6 @@
 import { ref, watch, type Ref } from 'vue'
 import { createRepositoryObservation } from '../../infrastructure/repositoryObservation'
-import { desktop } from '../../infrastructure/desktop'
+import { coreBridge } from '../../infrastructure/coreBridge'
 import { noticePresentation } from '../../shared/lib/noticePresentation'
 import type {
   BackgroundReadResult,
@@ -40,7 +40,7 @@ interface ObservationContext {
 
 // Observation owns scheduling, not snapshots. Repository mutations and stale-response
 // validation keep using the repository Store's single epoch/selection authority.
-export function createRepositoryRefresh(context: ObservationContext) {
+export function createRepositoryObservationController(context: ObservationContext) {
   const {
     repo,
     connected,
@@ -93,7 +93,7 @@ export function createRepositoryRefresh(context: ObservationContext) {
         !diffLoading.value &&
         !commitLoading.value &&
         document.visibilityState !== 'hidden',
-      status: (key) => desktop.repositoryChanges(key.slice(key.indexOf('\0') + 1)),
+      status: (key) => coreBridge.repositoryChanges(key.slice(key.indexOf('\0') + 1)),
       read: (key) => {
         const path = key.slice(key.indexOf('\0') + 1)
         const file =
@@ -111,7 +111,7 @@ export function createRepositoryRefresh(context: ObservationContext) {
           path,
           source: file?.source || null,
         }
-        return desktop.backgroundSnapshot(path, file ? { file } : null)
+        return coreBridge.backgroundSnapshot(path, file ? { file } : null)
       },
       apply: async (_key, result) => {
         if (

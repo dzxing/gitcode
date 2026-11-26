@@ -4,7 +4,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRepositoryStore } from '../../features/repository/stores/repository'
 import Icon from '../../shared/ui/Icon.vue'
 import { branchReference } from '../../shared/lib/references'
-import { getUIPlatform } from '../../infrastructure/platform'
+import { getUIPlatform } from '../../infrastructure/uiPlatform'
 
 const store = useRepositoryStore()
 const modifierKey = computed(() => (getUIPlatform() === 'macos' ? '⌘' : 'Ctrl'))

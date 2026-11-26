@@ -1,5 +1,5 @@
 import schema from '../../electron/menu-schema.json'
-import type { ApplicationMenuState } from '../infrastructure/application'
+import type { ApplicationMenuState } from '../shared/contracts/applicationBridge'
 export interface MenuItem {
   id: string
   label: string
@@ -27,7 +27,7 @@ interface MenuDefinition {
   radio?: boolean
   children?: MenuDefinition[]
 }
-export function buildMenus(state: ApplicationMenuState): MenuGroup[] {
+export function buildApplicationMenus(state: ApplicationMenuState): MenuGroup[] {
   const enabled = new Set(state.enabled)
   function buildItem(definition: MenuDefinition): MenuItem {
     const { children, ...fields } = definition

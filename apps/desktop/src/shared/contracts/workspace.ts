@@ -1,14 +1,7 @@
-import type { Snapshot, Commit, StashEntry, FileChange } from './git'
-
-// Renderer session and notification models; never sent as Git commands.
-export interface Notice {
-  logId?: string
-  details?: string
-  expanded?: boolean
-  id: number
-  text: string
-  error: boolean
-}
+import type { FileChange } from './changes'
+import type { Commit } from './history'
+import type { Snapshot } from './repository'
+import type { StashEntry } from './stash'
 
 export interface WorkspaceState {
   repo: Snapshot

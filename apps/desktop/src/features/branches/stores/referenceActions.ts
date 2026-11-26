@@ -2,10 +2,10 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import { useMergeStore } from '../../merge/stores/merge'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import type { Branch, NavigationInfo, NavigationRequest } from '../../../shared/contracts'
 import { branchReference } from '../../../shared/lib/references'
-export type NavigationMode =
+export type ReferenceActionMode =
   | 'merge-branch'
   | 'fast-forward'
   | 'create-tag'
@@ -13,10 +13,10 @@ export type NavigationMode =
   | 'delete-remote-branch'
   | 'compare-head'
   | 'compare-working'
-export const useNavigationStore = defineStore('navigation', () => {
+export const useReferenceActionsStore = defineStore('navigation', () => {
   const repo = useRepositoryStore()
   const target = ref<Branch | null>(null),
-    mode = ref<NavigationMode>('merge-branch'),
+    mode = ref<ReferenceActionMode>('merge-branch'),
     info = ref<NavigationInfo | null>(null),
     error = ref(''),
     loading = ref(false),
@@ -93,7 +93,7 @@ export const useNavigationStore = defineStore('navigation', () => {
     if (path) file.value = path
     else if (comparing.value) file.value = ''
     try {
-      const value = await desktop.navigationRead(intent.value.repo, request(path))
+      const value = await coreBridge.navigationRead(intent.value.repo, request(path))
       if (attempt !== version || stale.value) return
       info.value = value
       if (path) file.value = path
@@ -103,7 +103,11 @@ export const useNavigationStore = defineStore('navigation', () => {
       if (attempt === version) loading.value = false
     }
   }
-  async function open(nextMode: NavigationMode, branch: Branch, origin = repo.captureOperation()) {
+  async function open(
+    nextMode: ReferenceActionMode,
+    branch: Branch,
+    origin = repo.captureOperation(),
+  ) {
     if (
       repo.busy ||
       repo.modal ||

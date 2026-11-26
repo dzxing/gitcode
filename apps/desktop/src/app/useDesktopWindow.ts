@@ -1,7 +1,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRepositoryStore } from '../features/repository/stores/repository'
-import { currentNativeWindow } from '../infrastructure/window'
-import { getUIPlatform } from '../infrastructure/platform'
+import { currentNativeWindow } from '../infrastructure/windowBridge'
+import { getUIPlatform } from '../infrastructure/uiPlatform'
 
 export function useDesktopWindow() {
   const store = useRepositoryStore()

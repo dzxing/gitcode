@@ -98,6 +98,12 @@ src/
 
 功能内按需要划分组件、Store 和纯逻辑；跨功能依赖使用明确文件路径，避免通过聚合导出隐式初始化其他 Store。`shared` 不依赖功能、应用组装或通信层，`infrastructure` 不依赖功能或应用组装；类型导入也遵循此规则。桌面 `check:boundaries` 对 TypeScript 与 Vue 脚本检查这些边界及运行时导入环，并纳入 `check` 和 CI。
 
+命名约定：TS 实现文件使用 camelCase，Vue 组件使用 PascalCase，目录使用小写单词，多个单词以短横线连接。`App.vue`、`main.ts` 和 `vue-shim.d.ts` 保留框架入口名称。上游图标等 `assets/` 资源保留原名，Electron CJS 与测试脚本沿用各自的短横线约定。源码边界检查同时检查这些命名和忽略大小写后的路径冲突，避免跨平台检出问题。
+
+文件名表达职责：通信适配使用 `coreBridge`、`applicationBridge`、`windowBridge`，界面平台判断使用 `uiPlatform`；引用操作使用 `referenceActions`，纯侧栏和工作区模型使用 `sidebarModel`、`worktreeModel`。分支分类与仓库观察调度分别使用 `branchKinds`、`repositoryObservationController`。
+
+`shared/contracts/` 按仓库、历史、文件变更、同步、合并、Rebase、GitFlow、运行环境、活动日志及各桥接协议拆分；通知和工作台会话独立。模块间只导入类型，`index.ts` 只聚合类型导出，不初始化运行时状态。
+
 仓库 Store 继续统一持有操作上下文、快照版本和选中版本。后台观察控制器只负责调度，通过注入接口使用同一套版本检查；信任控制器只管理确认状态。GitFlow 完成 Store 发布已完成的操作回执，由开始流程 Store 消费，不相互调用。
 
 全局 CSS 入口为 `app/styles/index.css`，其中区域样式按原层叠顺序导入，随后加载主题和设置样式。`overrides.css` 保留原有后置规则，不能随意提前加载；调整此文件或导入次序时应运行主题、字体和工作台浏览器回归。

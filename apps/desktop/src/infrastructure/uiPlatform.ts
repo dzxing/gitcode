@@ -1,4 +1,4 @@
-import { currentNativeWindow } from './window'
+import { currentNativeWindow } from './windowBridge'
 
 export type UIPlatform = 'windows' | 'macos' | 'linux' | 'unknown'
 

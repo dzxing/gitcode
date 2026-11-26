@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { FileChange } from '../../../shared/contracts'
-import type { StagingZone, WorktreeLayout } from '../worktree'
+import type { StagingZone, WorktreeLayout } from '../worktreeModel'
 
 interface StagingView {
   query: string

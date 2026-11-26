@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { checkSourceBoundaries } from '../scripts/check-source-boundaries.mjs'
+import { checkSourceBoundaries, checkSourceNames } from '../scripts/check-source-boundaries.mjs'
 
 async function fixture(files, run) {
   const root = await mkdtemp(path.join(tmpdir(), 'gitcode-source-boundaries-'))
@@ -50,17 +50,47 @@ test('shared and infrastructure cannot depend on feature implementation, even th
 test('Vue script, re-exports and dynamic imports participate in runtime cycle detection', async () => {
   await fixture(
     {
-      'features/gitflow/view.vue':
+      'features/gitflow/GitFlowView.vue':
         '<script setup lang="ts">import { finish } from "./finish"</script>',
       'features/gitflow/finish.ts': 'export { finish } from "./receipt"',
-      'features/gitflow/receipt.ts': 'export const finish = () => import("./view.vue")',
+      'features/gitflow/receipt.ts': 'export const finish = () => import("./GitFlowView.vue")',
     },
     async (root) => {
       const failures = await checkSourceBoundaries(root)
       assert.equal(failures.length, 1)
       assert.match(failures[0], /^Runtime cycle:/)
       assert.ok(failures[0].includes('finish.ts'))
-      assert.ok(failures[0].includes('view.vue'))
+      assert.ok(failures[0].includes('GitFlowView.vue'))
     },
   )
+})
+
+test('source naming rejects ambiguous casing while allowing conventional entry and declaration files', async () => {
+  await fixture(
+    {
+      'App.vue': '<template><div /></template>',
+      'main.ts': '',
+      'vue-shim.d.ts': '',
+      'shared/contracts/env.d.ts': '',
+      'features/BadDirectory/commitGraph.ts': '',
+      'features/history/history-filter.ts': '',
+      'features/history/commitPanel.vue': '<template><div /></template>',
+      'features/history/ValidPanel.vue': '<template><div /></template>',
+    },
+    async (root) => {
+      const failures = await checkSourceBoundaries(root)
+      assert.equal(failures.length, 3)
+      assert.ok(failures.some((message) => message.includes('directory names')))
+      assert.ok(failures.some((message) => message.includes('TypeScript filenames')))
+      assert.ok(failures.some((message) => message.includes('Vue component filenames')))
+    },
+  )
+})
+
+test('case-insensitive path collisions are caught without relying on the host filesystem', () => {
+  const failures = checkSourceNames([
+    { name: 'features/history/query.ts', directory: false },
+    { name: 'features/history/Query.ts', directory: false },
+  ])
+  assert.ok(failures.some((message) => message.includes('Case-insensitive path collision')))
 })

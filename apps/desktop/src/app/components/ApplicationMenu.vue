@@ -8,13 +8,10 @@ import { useRepositoryStore } from '../../features/repository/stores/repository'
 import { useGraphViewStore } from '../../features/history/stores/graphView'
 import { useTerminalStore } from '../../features/terminal/stores/terminal'
 import { useContextMenuStore } from '../stores/contextMenu'
-import {
-  applicationBridge,
-  type ApplicationMenuState,
-  type EditCommand,
-} from '../../infrastructure/application'
-import { buildMenus, shortcutLabel, type MenuItem } from '../menu'
-import { pathName } from '../../infrastructure/desktop'
+import { applicationBridge } from '../../infrastructure/applicationBridge'
+import type { ApplicationMenuState, EditCommand } from '../../shared/contracts/applicationBridge'
+import { buildApplicationMenus, shortcutLabel, type MenuItem } from '../applicationMenu'
+import { pathName } from '../../infrastructure/coreBridge'
 import Icon from '../../shared/ui/Icon.vue'
 import { useAppearanceStore } from '../../features/preferences/stores/appearance'
 import { isThemePreference, themePresets } from '../../shared/lib/themePresets'
@@ -159,7 +156,7 @@ const state = computed<ApplicationMenuState>(() => {
     resolvedTheme: appearance.resolvedTheme,
   }
 })
-const groups = computed(() => buildMenus(state.value))
+const groups = computed(() => buildApplicationMenus(state.value))
 const group = computed(() => groups.value.find((item) => item.id === active.value))
 function hasMenuMarks(items: MenuItem[]) {
   return items.some((item) => !item.separator && (item.checkbox || item.radio))

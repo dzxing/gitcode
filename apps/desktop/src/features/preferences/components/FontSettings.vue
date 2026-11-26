@@ -11,7 +11,7 @@ import {
   validFontFamily,
   type FontPreferences,
 } from '../fontPreferences'
-import { getFontAccess, fontReadError } from '../../../infrastructure/fonts'
+import { getFontAccess, fontReadError } from '../../../infrastructure/fontAccess'
 import FontPicker from './FontPicker.vue'
 
 const props = withDefaults(defineProps<{ deferred?: boolean }>(), { deferred: false })

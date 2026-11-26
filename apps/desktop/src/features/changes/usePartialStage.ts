@@ -1,6 +1,6 @@
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue'
 import { useRepositoryStore } from '../repository/stores/repository'
-import { desktop } from '../../infrastructure/desktop'
+import { coreBridge } from '../../infrastructure/coreBridge'
 import { noticePresentation } from '../../shared/lib/noticePresentation'
 import type { PartialStagePlan } from '../../shared/contracts'
 
@@ -86,7 +86,7 @@ export function usePartialStage(scroll: () => HTMLElement | null | undefined) {
     error.value = ''
     intent = null
     try {
-      const value = await desktop.partialStageRead(origin.repo, {
+      const value = await coreBridge.partialStageRead(origin.repo, {
         ...origin,
         file,
         source: store.fileStaged ? 'staged' : 'unstaged',

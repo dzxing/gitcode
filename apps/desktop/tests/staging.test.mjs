@@ -16,7 +16,7 @@ globalThis.localStorage = {
 }
 try {
   const { collectWorktreeChanges, filterWorktreeChanges, buildStagingTree, stagingSelectionState } =
-    await vite.ssrLoadModule('/src/features/changes/worktree.ts')
+    await vite.ssrLoadModule('/src/features/changes/worktreeModel.ts')
   const { useStagingStore } = await vite.ssrLoadModule('/src/features/changes/stores/staging.ts')
   const files = collectWorktreeChanges(
     [],

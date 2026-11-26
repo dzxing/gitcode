@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import { useMergeStore } from '../../merge/stores/merge'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import type {
   Commit,
   CommitOperation,
@@ -84,7 +84,7 @@ export const useCommitActionsStore = defineStore('commit-actions', () => {
     const oid = commits.value[0].hash
     sync.value = null
     const source = sources.value.find((s) => s.fullRef === sourceRef.value)
-    const result = await desktop.syncPlan(origin.value.repo, 'push', {
+    const result = await coreBridge.syncPlan(origin.value.repo, 'push', {
       ...origin.value,
       commitOid: commits.value[0].hash,
       ...(source ? { sourceRef: source.fullRef, sourceOid: source.oid } : { detachedSource: true }),
@@ -132,7 +132,7 @@ export const useCommitActionsStore = defineStore('commit-actions', () => {
         return
       }
       if (nextMode === 'push') {
-        const value = await desktop.commitOperationRead(intent.repo, request('push-sources'))
+        const value = await coreBridge.commitOperationRead(intent.repo, request('push-sources'))
         if (version !== generation || stale.value) return
         sources.value = value.sources || []
         sourceRef.value =
@@ -152,7 +152,7 @@ export const useCommitActionsStore = defineStore('commit-actions', () => {
           : nextMode === 'browse' || nextMode === 'patch'
             ? nextMode
             : 'plan'
-      const value = await desktop.commitOperationRead(
+      const value = await coreBridge.commitOperationRead(
         intent.repo,
         request(kind, kind === 'plan' ? { operation: nextMode as CommitOperation } : {}),
       )
@@ -198,7 +198,7 @@ export const useCommitActionsStore = defineStore('commit-actions', () => {
     error.value = ''
     loading.value = true
     try {
-      const result = await desktop.commitOperationRead(
+      const result = await coreBridge.commitOperationRead(
         origin.value.repo,
         request('blob', { file: path }),
       )
@@ -221,7 +221,7 @@ export const useCommitActionsStore = defineStore('commit-actions', () => {
   async function openBrowser(remoteName: string) {
     if (!origin.value || stale.value || loading.value) return
     try {
-      await desktop.openCommit(origin.value.repo, request('hosting'), remoteName)
+      await coreBridge.openCommit(origin.value.repo, request('hosting'), remoteName)
     } catch (failure) {
       error.value = (failure as Error).message
     }
