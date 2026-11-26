@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { desktop } from '../../infrastructure/desktop'
+import { coreBridge } from '../../infrastructure/coreBridge'
 import { noticePresentation } from '../../shared/lib/noticePresentation'
 import type { RepositoryTrustInfo } from '../../shared/contracts'
 
@@ -21,7 +21,7 @@ export function createRepositoryTrust() {
     trustApproving.value = true
     trustError.value = ''
     try {
-      await desktop.approveRepositoryTrust(request.path, request.token)
+      await coreBridge.approveRepositoryTrust(request.path, request.token)
       trustRequest.value = null
       resolveTrust?.(true)
       resolveTrust = null
@@ -30,7 +30,7 @@ export function createRepositoryTrust() {
       // A consumed/expired challenge is never replayed. Refresh the metadata,
       // then require a fresh click before granting consent.
       try {
-        trustRequest.value = await desktop.repositoryTrust(request.path)
+        trustRequest.value = await coreBridge.repositoryTrust(request.path)
       } catch {
         /* Keep cancellation available. */
       }
@@ -39,7 +39,7 @@ export function createRepositoryTrust() {
     }
   }
   async function confirmRepositoryTrust(path: string) {
-    const info = await desktop.repositoryTrust(path)
+    const info = await coreBridge.repositoryTrust(path)
     if (info.trusted) return true
     trustError.value = ''
     trustRequest.value = info

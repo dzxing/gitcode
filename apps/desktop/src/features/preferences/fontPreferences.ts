@@ -1,5 +1,5 @@
 import fontCatalog from './fontCatalog.json' with { type: 'json' }
-import { getUIPlatform, type UIPlatform } from '../../infrastructure/platform'
+import { getUIPlatform, type UIPlatform } from '../../infrastructure/uiPlatform'
 
 export interface FontChoice {
   enabled: boolean

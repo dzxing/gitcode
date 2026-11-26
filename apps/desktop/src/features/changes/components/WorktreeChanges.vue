@@ -12,8 +12,8 @@ import {
   collectWorktreeChanges,
   filterWorktreeChanges,
   stagingSelectionState,
-} from '../worktree'
-import type { WorktreeChange, StagingZone } from '../worktree'
+} from '../worktreeModel'
+import type { WorktreeChange, StagingZone } from '../worktreeModel'
 
 const store = useRepositoryStore(),
   worktree = useStagingStore(),

@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useRepositoryStore } from '../../repository/stores/repository'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import type { MergeFile, MergeState } from '../../../shared/contracts'
 
 interface Session {
@@ -160,7 +160,7 @@ export const useMergeStore = defineStore('merge', () => {
     loading.value = true
     s.error = ''
     try {
-      const result = await desktop.mergeRead(intent.repo, file)
+      const result = await coreBridge.mergeRead(intent.repo, file)
       if (version !== readVersion || origin !== key.value) return
       if (!result.file || !result.state) throw new Error('冲突文件已变化，请刷新。')
       s.file = result.file

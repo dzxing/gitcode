@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BranchTreeNode as DirectoryNode } from '../sidebar'
+import type { BranchTreeNode as DirectoryNode } from '../sidebarModel'
 import SidebarBranchRow from './SidebarBranchRow.vue'
 import BranchTreeFolder from './BranchTreeFolder.vue'
 defineProps<{ node: DirectoryNode; depth: number; query: string; section: string }>()

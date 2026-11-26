@@ -12,8 +12,8 @@ import { useFontStore } from '../stores/fonts'
 import { normalizeFonts } from '../fontPreferences'
 import { commitPreferences } from '../preferencesSession'
 import { isThemePreference } from '../../../shared/lib/themePresets'
-import { getUIPlatform } from '../../../infrastructure/platform'
-import { canConnectLocalCore } from '../../../infrastructure/desktop'
+import { getUIPlatform } from '../../../infrastructure/uiPlatform'
+import { canConnectLocalCore } from '../../../infrastructure/coreBridge'
 
 const props = defineProps<{ initialSection?: 'appearance' | 'fonts' | 'repository' | 'git' }>()
 const emit = defineEmits<{ close: [] }>()

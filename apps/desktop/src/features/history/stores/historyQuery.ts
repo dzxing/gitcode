@@ -1,6 +1,6 @@
 import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import type { Commit } from '../../../shared/contracts'
 export const useHistoryQueryStore = defineStore('history-query', () => {
   const scope = ref('')
@@ -22,7 +22,9 @@ export const useHistoryQueryStore = defineStore('history-query', () => {
   let request = { repo: '', token: '', query: '', branch: '' }
   function configure(key: string, value: typeof request, active: boolean) {
     if (loading.value && request.repo)
-      void desktop.historyTools(request.repo, { kind: 'cancel', scope: readScope }).catch(() => {})
+      void coreBridge
+        .historyTools(request.repo, { kind: 'cancel', scope: readScope })
+        .catch(() => {})
     const changedScope = scope.value !== key
     scope.value = key
     request = value
@@ -44,7 +46,7 @@ export const useHistoryQueryStore = defineStore('history-query', () => {
     loading.value = true
     error.value = ''
     try {
-      const result = await desktop.historyTools(request.repo, {
+      const result = await coreBridge.historyTools(request.repo, {
         kind: 'query',
         scope: readScope,
         ...request,

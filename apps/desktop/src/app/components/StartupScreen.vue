@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRepositoryStore } from '../../features/repository/stores/repository'
 import AppBrand from '../../shared/ui/AppBrand.vue'
-import { desktop } from '../../infrastructure/desktop'
+import { coreBridge } from '../../infrastructure/coreBridge'
 const emit = defineEmits<{ configureGit: [] }>()
 
 const store = useRepositoryStore()
@@ -57,7 +57,7 @@ function skip() {
 }
 async function install() {
   try {
-    await desktop.openResource('git-install')
+    await coreBridge.openResource('git-install')
   } catch (error) {
     store.notify((error as Error).message, true)
   }

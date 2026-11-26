@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { GitRuntimeSettings, GitRuntimeSelection } from '../../../shared/contracts'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import { noticePresentation } from '../../../shared/lib/noticePresentation'
-import { desktop, isDesktop, canConnectLocalCore } from '../../../infrastructure/desktop'
+import { coreBridge, isDesktop, canConnectLocalCore } from '../../../infrastructure/coreBridge'
 
 const store = useRepositoryStore()
 const root = ref<HTMLElement>()
@@ -57,7 +57,7 @@ const source = computed(
 onMounted(async () => {
   pending.value = true
   try {
-    info.value = await desktop.gitSettings()
+    info.value = await coreBridge.gitSettings()
     mode.value = info.value.selection.mode
     customPath.value = info.value.selection.path || ''
   } catch (e) {
@@ -79,7 +79,7 @@ async function browse() {
 }
 async function install() {
   try {
-    await desktop.openResource('git-install')
+    await coreBridge.openResource('git-install')
   } catch (e) {
     error.value = e instanceof Error ? e.message : '无法打开 Git 安装页面。'
   }
@@ -97,7 +97,7 @@ async function refresh() {
   pending.value = true
   error.value = ''
   try {
-    info.value = await desktop.refreshGitRuntime()
+    info.value = await coreBridge.refreshGitRuntime()
     store.runtime = info.value.runtime
   } catch (e) {
     error.value = e instanceof Error ? e.message : '无法重新检测 Git。'
@@ -123,7 +123,7 @@ async function save() {
   error.value = ''
   saved.value = false
   try {
-    info.value = await desktop.gitSettings(selection.value)
+    info.value = await coreBridge.gitSettings(selection.value)
     store.runtime = info.value.runtime
     saved.value = true
     return true

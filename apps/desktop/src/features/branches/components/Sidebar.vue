@@ -14,9 +14,9 @@ import SidebarCollapse from './SidebarCollapse.vue'
 import StashSection from '../../stash/components/StashSection.vue'
 import { useContextMenuStore } from '../../../app/stores/contextMenu'
 import { useGitFlowStore } from '../../gitflow/stores/gitflow'
-import { flowKind } from '../../gitflow/rules'
+import { flowKind } from '../../gitflow/branchKinds'
 import { useSidebarStore } from '../stores/sidebar'
-import { SIDEBAR_SECTIONS, remoteBranchGroups } from '../sidebar'
+import { SIDEBAR_SECTIONS, remoteBranchGroups } from '../sidebarModel'
 import { branchReference } from '../../../shared/lib/references'
 
 const store = useRepositoryStore(),

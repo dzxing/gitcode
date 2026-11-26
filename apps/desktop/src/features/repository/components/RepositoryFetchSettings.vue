@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import { useRepositoryStore } from '../stores/repository'
 import type { RepositoryFetchSettings } from '../../../shared/contracts'
 
@@ -51,7 +51,7 @@ async function load() {
   pending.value = true
   error.value = ''
   try {
-    const result = await desktop.fetchSettingsRead(intent.repo)
+    const result = await coreBridge.fetchSettingsRead(intent.repo)
     if (disposed || current !== version || !sameRepository.value) return
     info.value = result
     if (!result.remotes.some((item) => item.name === remote.value))

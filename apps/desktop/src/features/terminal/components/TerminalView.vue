@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import { useAppearanceStore } from '../../preferences/stores/appearance'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import { useTerminalStore, type TerminalSession } from '../stores/terminal'
@@ -56,7 +56,7 @@ function write(data: string) {
     input = input
       .then(async () => {
         if (alive && !props.session.error && props.session.state === 'running')
-          await desktop.terminal(props.session.repo, {
+          await coreBridge.terminal(props.session.repo, {
             action: 'write',
             id: props.session.id,
             data: chunk,
@@ -73,7 +73,7 @@ async function poll() {
   clearTimeout(timer)
   if (!alive || complete || props.session.error) return
   try {
-    const reply = await desktop.terminal(props.session.repo, {
+    const reply = await coreBridge.terminal(props.session.repo, {
       action: 'read',
       id: props.session.id,
       cursor,
@@ -105,7 +105,7 @@ function resize() {
     if (!alive || !props.active || !element.value?.clientHeight) return
     fit.fit()
     if (props.session.state === 'running' && !props.session.error)
-      void desktop
+      void coreBridge
         .terminal(props.session.repo, {
           action: 'resize',
           id: props.session.id,

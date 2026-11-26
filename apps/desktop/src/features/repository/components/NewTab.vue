@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
 import Icon from '../../../shared/ui/Icon.vue'
-import { isDesktop, pathName } from '../../../infrastructure/desktop'
-import { getUIPlatform } from '../../../infrastructure/platform'
+import { isDesktop, pathName } from '../../../infrastructure/coreBridge'
+import { getUIPlatform } from '../../../infrastructure/uiPlatform'
 
 const store = useRepositoryStore()
 const modifierKey = computed(() => (getUIPlatform() === 'macos' ? '⌘' : 'Ctrl'))

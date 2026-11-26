@@ -1,5 +1,5 @@
 import { createRepositoryTrust } from '../repositoryTrust'
-import { createRepositoryRefresh } from '../repositoryRefresh'
+import { createRepositoryObservationController } from '../repositoryObservationController'
 import { createHistoryColumns } from '../../history/historyColumns'
 import {
   readHistoryFilter,
@@ -27,13 +27,13 @@ import {
   readWorkspaceSession,
   writeWorkspaceSession,
 } from '../../../infrastructure/workspaceSession'
-import type { StartupPhase } from '../../../infrastructure/application'
+import type { StartupPhase } from '../../../shared/contracts/applicationBridge'
 import {
   canConnectLocalCore,
-  desktop,
+  coreBridge,
   isDesktop,
   onLocalCoreDisconnected,
-} from '../../../infrastructure/desktop'
+} from '../../../infrastructure/coreBridge'
 import type {
   ActionResult,
   ActivitySettings,
@@ -113,7 +113,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     activityLogFocus.value = currentFetchStatus.value?.error ? 'fetch-failure' : null
   }
   async function saveActivitySettings(value: ActivitySettings) {
-    const saved = await desktop.activitySettings(value)
+    const saved = await coreBridge.activitySettings(value)
     if (!saved) throw new Error('请重启本地 Git 服务以加载自动获取设置。')
     activitySettings.value = saved
   }
@@ -134,13 +134,13 @@ export const useRepositoryStore = defineStore('repository', () => {
       const intent = captureOperation()
       const epoch = snapshotEpochs.get(intent.repo) || 0
       try {
-        activitySettings.value = await desktop.activitySettings()
+        activitySettings.value = await coreBridge.activitySettings()
         if (disposed || !sameContext(intent) || isWorking.value || externalRefreshing.value) return
-        const status = await desktop.fetchStatus(intent.repo)
+        const status = await coreBridge.fetchStatus(intent.repo)
         if (status) fetchStatuses.value[intent.repo] = status
         if (!activitySettings.value?.autoFetchInterval || navigator.onLine === false) return
         automaticFetching.value = true
-        const result = await desktop.automaticFetch(intent.repo)
+        const result = await coreBridge.automaticFetch(intent.repo)
         if (disposed) return
         if (result.status) fetchStatuses.value[intent.repo] = result.status
         if (result.snapshot && epoch === (snapshotEpochs.get(intent.repo) || 0)) {
@@ -309,7 +309,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     return refillHistoryWindow(
       current,
       next,
-      (request) => desktop.historyRead(intent.repo, request),
+      (request) => coreBridge.historyRead(intent.repo, request),
       () => refreshContextCurrent(intent, epoch, current),
     )
   }
@@ -841,7 +841,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     connecting.value = true
     connectionError.value = ''
     try {
-      runtime.value = await desktop.runtime()
+      runtime.value = await coreBridge.runtime()
       connected.value = true
     } catch (error) {
       connected.value = false
@@ -1003,7 +1003,7 @@ export const useRepositoryStore = defineStore('repository', () => {
       startupPhase.value = 'core'
       startupError.value = ''
       try {
-        runtime.value = (await desktop.refreshGitRuntime()).runtime
+        runtime.value = (await coreBridge.refreshGitRuntime()).runtime
       } catch (error) {
         startupError.value = noticePresentation((error as Error).message, true).text
         startupPhase.value = 'error'
@@ -1083,7 +1083,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     }
     choosingRepository.value = true
     try {
-      const selected = await desktop.chooseDirectory(
+      const selected = await coreBridge.chooseDirectory(
         !isNewTab.value ? repo.value.path : repositoryOpenPath.value || undefined,
         'repository',
       )
@@ -1112,7 +1112,7 @@ export const useRepositoryStore = defineStore('repository', () => {
         repositoryOpenError.value = '尚未信任此仓库，未读取工作区。'
         return false
       }
-      const next = await desktop.snapshot(path)
+      const next = await coreBridge.snapshot(path)
       await acceptRepository(next)
       remember(next.path)
       modal.value = null
@@ -1140,7 +1140,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     try {
       await ensureSession()
       if (kind === 'clone') modal.value = null
-      const result = await desktop.create(kind, path, url)
+      const result = await coreBridge.create(kind, path, url)
       if (result.requiresTrust && result.path) {
         remember(result.path)
         modal.value = null
@@ -1148,7 +1148,7 @@ export const useRepositoryStore = defineStore('repository', () => {
           notify('仓库目录已创建；尚未信任，未读取工作区。')
           return true
         }
-        result.snapshot = await desktop.snapshot(result.path)
+        result.snapshot = await coreBridge.snapshot(result.path)
       }
       if (!result.snapshot) {
         if (result.path) remember(result.path)
@@ -1189,7 +1189,7 @@ export const useRepositoryStore = defineStore('repository', () => {
   function refreshBeforeOperation(intent: ReturnType<typeof captureOperation>, startedAt: number) {
     const current = repo.value,
       epoch = snapshotEpochs.get(intent.repo) || 0
-    const pending = desktop.refreshReferences(intent.repo, current.referenceSignature || '')
+    const pending = coreBridge.refreshReferences(intent.repo, current.referenceSignature || '')
     // Older preload bridges keep their existing command-side context checks.
     if (!pending) return null
     return (async () => {
@@ -1326,8 +1326,8 @@ export const useRepositoryStore = defineStore('repository', () => {
     try {
       const result =
         kind === 'reset'
-          ? await desktop.snapshot(intent.repo)
-          : await desktop.historyRead(
+          ? await coreBridge.snapshot(intent.repo)
+          : await coreBridge.historyRead(
               intent.repo,
               kind === 'locate'
                 ? { token: state.token, sha }
@@ -1400,7 +1400,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     busy.value = true
     activeOperation.value = 'refresh'
     try {
-      const snapshot = await desktop.snapshot(intent.repo)
+      const snapshot = await coreBridge.snapshot(intent.repo)
       const next = await refillRefreshedHistory(snapshot, intent, epoch, current)
       if (!refreshContextCurrent(intent, epoch, current)) return false
       await applySnapshot(next)
@@ -1478,7 +1478,7 @@ export const useRepositoryStore = defineStore('repository', () => {
         modal.value = 'upstream'
         return
       }
-      const plan = await desktop.syncPlan(syncIntent.repo, kind, {
+      const plan = await coreBridge.syncPlan(syncIntent.repo, kind, {
         ...syncIntent,
         method,
         ...(publish ? { publish } : {}),
@@ -1601,7 +1601,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     syncPreview.value = null
     syncError.value = ''
     try {
-      const next = await desktop.snapshot(intent.repo)
+      const next = await coreBridge.snapshot(intent.repo)
       if (attempt !== syncAttempt) return
       if (!sameContext(intent)) {
         syncError.value = '仓库上下文已变化，请关闭后重新打开菜单。'
@@ -1696,7 +1696,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     busy.value = true
     activeOperation.value = 'prepare-commit'
     try {
-      const plan = await desktop.selectedCommitPlan(intent.repo, {
+      const plan = await coreBridge.selectedCommitPlan(intent.repo, {
         expectedHead: intent.expectedHead,
         expectedBranch: intent.expectedBranch,
         paths,
@@ -1771,12 +1771,12 @@ export const useRepositoryStore = defineStore('repository', () => {
       try {
         const before = refreshBeforeOperation(intent, startedAt)
         if (before && !(await before)) return false
-        const plan = await desktop.syncPlan(intent.repo, 'fetch', intent)
+        const plan = await coreBridge.syncPlan(intent.repo, 'fetch', intent)
         if (startedAt !== cancellationEpoch) {
           notify('已放弃获取计划，未开始执行。')
           return false
         }
-        const result = await desktop.action(intent.repo, {
+        const result = await coreBridge.action(intent.repo, {
           action: 'fetch',
           planId: plan.id,
         })
@@ -1794,7 +1794,7 @@ export const useRepositoryStore = defineStore('repository', () => {
               tab.state.repo = result.snapshot
           }
         }
-        const status = await desktop.fetchStatus(intent.repo).catch(() => null)
+        const status = await coreBridge.fetchStatus(intent.repo).catch(() => null)
         if (status) fetchStatuses.value[intent.repo] = status
         const name = intent.repo.split(/[\\/]/).pop()
         const steps = result.steps?.map(
@@ -1908,7 +1908,7 @@ export const useRepositoryStore = defineStore('repository', () => {
         action,
       } as GitAction
       if (isSync && !('planId' in request)) {
-        const plan = await desktop.syncPlan(
+        const plan = await coreBridge.syncPlan(
           intent.repo,
           action as 'fetch' | 'pull' | 'push',
           intent,
@@ -1919,7 +1919,7 @@ export const useRepositoryStore = defineStore('repository', () => {
         }
         Object.assign(request, { planId: plan.id })
       }
-      const result = await desktop.action(intent.repo, request)
+      const result = await coreBridge.action(intent.repo, request)
       recheckNeeded = !!result.refreshError || (!result.snapshot && !result.worktree)
       if (!sameContext(intent)) return false
       lastActionResult.value = result
@@ -2110,7 +2110,7 @@ export const useRepositoryStore = defineStore('repository', () => {
       if (wasSyncModal) syncError.value = (error as Error).message
       // IPC/transport failures may happen after Git already changed the repo.
       try {
-        const next = await desktop.snapshot(intent.repo)
+        const next = await coreBridge.snapshot(intent.repo)
         if (sameContext(intent)) await applySnapshot(next)
       } catch {
         notify('无法重新读取仓库，请手动刷新确认操作结果。', true)
@@ -2142,7 +2142,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     const version = selectionVersion
     commitLoading.value = true
     try {
-      const result = await desktop.commit(repo.value.path, commit.hash)
+      const result = await coreBridge.commit(repo.value.path, commit.hash)
       if (version !== selectionVersion) return
       commitFiles.value = result.files
       commitBody.value = result.body
@@ -2173,7 +2173,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     diffLoading.value = true
     diffTruncated.value = false
     try {
-      const result = await desktop.diff(
+      const result = await coreBridge.diff(
         repo.value.path,
         file.path,
         source === 'working' ? 'working' : staged,
@@ -2202,7 +2202,7 @@ export const useRepositoryStore = defineStore('repository', () => {
 
   async function chooseDirectory() {
     try {
-      return await desktop.chooseDirectory()
+      return await coreBridge.chooseDirectory()
     } catch (error) {
       notify((error as Error).message, true)
       return null
@@ -2225,7 +2225,7 @@ export const useRepositoryStore = defineStore('repository', () => {
       if (fetchCancelling.value) return
       cancellationEpoch++
       fetchCancelling.value = true
-      const task = desktop.cancel()
+      const task = coreBridge.cancel()
       cancellationTask = task
       try {
         await task
@@ -2246,7 +2246,7 @@ export const useRepositoryStore = defineStore('repository', () => {
       syncAttempt++
       syncPreview.value = null
     }
-    const task = desktop.cancel()
+    const task = coreBridge.cancel()
     cancellationTask = task
     try {
       await task
@@ -2264,7 +2264,7 @@ export const useRepositoryStore = defineStore('repository', () => {
 
   async function openResource(resource: 'git-docs' | 'git-book') {
     try {
-      await desktop.openResource(resource)
+      await coreBridge.openResource(resource)
     } catch (error) {
       notify((error as Error).message, true)
     }
@@ -2277,7 +2277,7 @@ export const useRepositoryStore = defineStore('repository', () => {
     externalRefreshDeferred,
     requestExternalRefresh,
     startRepositoryObservation,
-  } = createRepositoryRefresh({
+  } = createRepositoryObservationController({
     repo,
     connected,
     isNewTab,

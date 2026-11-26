@@ -1,5 +1,6 @@
-import type { ThemeSource, ThemePalette, ThemePreference } from '../shared/lib/themePresets'
-import type { ReferenceLabelStyle } from '../shared/contracts/view'
+import type { ThemePalette, ThemePreference, ThemeSource } from '../lib/themePresets'
+import type { ReferenceLabelStyle } from './referenceLabels'
+
 export interface ApplicationMenuState {
   wsl?: boolean
   theme?: ThemeSource
@@ -33,12 +34,4 @@ export interface ApplicationBridge {
   info(): Promise<{ name: string; version: string; electron: string; platform: string }>
   onCommand(handler: (command: string) => void): () => void
   onCloseRequested(handler: (id: number) => void): () => void
-}
-declare global {
-  interface Window {
-    gitcodeApp?: ApplicationBridge
-  }
-}
-export function applicationBridge() {
-  return typeof window === 'undefined' ? null : window.gitcodeApp || null
 }

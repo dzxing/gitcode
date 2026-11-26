@@ -1,4 +1,4 @@
-import { applicationBridge } from './application'
+import { applicationBridge } from './applicationBridge'
 
 export interface FontAccess {
   source: 'desktop' | 'browser'

@@ -70,7 +70,7 @@ try {
   const { useSidebarStore } = await vite.ssrLoadModule('/src/features/branches/stores/sidebar.ts')
   const { useWorktreeStore } = await vite.ssrLoadModule('/src/features/changes/stores/worktree.ts')
   const { normalizeSidebarOrder, sortSidebarBranches, remoteBranchGroups, branchDirectoryTree } =
-    await vite.ssrLoadModule('/src/features/branches/sidebar.ts')
+    await vite.ssrLoadModule('/src/features/branches/sidebarModel.ts')
   const { branchTracking } = await vite.ssrLoadModule('/src/features/branches/branchTracking.ts')
   const { buildGraph, buildHistoryGraph } = await vite.ssrLoadModule(
     '/src/features/history/graph.ts',
@@ -78,7 +78,7 @@ try {
   const { resolveCommitReferences, groupCommitReferences } = await vite.ssrLoadModule(
     '/src/features/history/referenceLabels.ts',
   )
-  const { buildMenus } = await vite.ssrLoadModule('/src/app/menu.ts')
+  const { buildApplicationMenus } = await vite.ssrLoadModule('/src/app/applicationMenu.ts')
   const { repositoryFixture: fixture } = await vite.ssrLoadModule('/tests/fixtures/repository.ts')
   const { useContextMenuStore, referenceBranch, branchContextCurrent } = await vite.ssrLoadModule(
     '/src/app/stores/contextMenu.ts',
@@ -86,9 +86,11 @@ try {
   const { interactiveRebaseFromHistory } = await vite.ssrLoadModule(
     '/src/features/rebase/rebaseMenu.ts',
   )
-  const { desktop, pathName, joinPath } = await vite.ssrLoadModule('/src/infrastructure/desktop.ts')
+  const { coreBridge, pathName, joinPath } = await vite.ssrLoadModule(
+    '/src/infrastructure/coreBridge.ts',
+  )
   const { createLocalCoreClient, LocalConnectionError } = await vite.ssrLoadModule(
-    '/src/infrastructure/localCore.ts',
+    '/src/infrastructure/localCoreClient.ts',
   )
   const { useDesktopWindow } = await vite.ssrLoadModule('/src/app/useDesktopWindow.ts')
   const seedRepository = (store) => {
@@ -135,7 +137,7 @@ try {
       return { outcome: 'succeeded', snapshot: null, output: '' }
     }
     try {
-      await desktop.action('/repo', request)
+      await coreBridge.action('/repo', request)
       request.lines.push(9)
       assert.deepEqual(captured.lines, [7, 8])
       assert.equal(captured.planId, 'reviewed')
@@ -2131,7 +2133,7 @@ try {
   })
 
   await test('Five application menus share named commands and checked column state', () => {
-    const menus = buildMenus({
+    const menus = buildApplicationMenus({
       enabled: ['file.open', 'file.recent.0', 'view.sha'],
       recent: ['repo'],
       author: false,
@@ -4392,7 +4394,7 @@ try {
     store.activeOperation = 'fetch'
     await store.cancelOperation()
     assert.deepEqual(commands, ['runtime', 'cancel'])
-    await desktop.diff('/tmp/repo', 'src/file.ts', true, fixture.commits[0].hash)
+    await coreBridge.diff('/tmp/repo', 'src/file.ts', true, fixture.commits[0].hash)
     assert.equal(commands.at(-1), 'diff')
   })
 

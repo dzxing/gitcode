@@ -14,8 +14,8 @@ import {
 } from '../graphPainting'
 import type { Commit, StashEntry, CommitMetadata } from '../../../shared/contracts'
 import Icon from '../../../shared/ui/Icon.vue'
-import { desktop } from '../../../infrastructure/desktop'
-import { getUIPlatform } from '../../../infrastructure/platform'
+import { coreBridge } from '../../../infrastructure/coreBridge'
+import { getUIPlatform } from '../../../infrastructure/uiPlatform'
 import ReferenceBadge from './ReferenceBadge.vue'
 import BranchInlineForm from '../../branches/components/BranchInlineForm.vue'
 import {
@@ -463,7 +463,7 @@ async function loadArrowMetadata() {
   }
   metadataPending = true
   try {
-    const value = await desktop.historyMetadata(path, hash)
+    const value = await coreBridge.historyMetadata(path, hash)
     if (!graphDisposed) rememberMetadata(key, value)
   } catch {
     if (!graphDisposed) rememberMetadata(key, null)

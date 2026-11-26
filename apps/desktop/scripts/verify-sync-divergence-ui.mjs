@@ -479,9 +479,10 @@ export async function verifySyncDivergence(
     if (originalAutoFetchInterval !== undefined)
       await page
         .evaluate(async (interval) => {
-          const { desktop } = await import('/src/infrastructure/desktop.ts')
-          const settings = await desktop.activitySettings()
-          if (settings) await desktop.activitySettings({ ...settings, autoFetchInterval: interval })
+          const { coreBridge } = await import('/src/infrastructure/coreBridge.ts')
+          const settings = await coreBridge.activitySettings()
+          if (settings)
+            await coreBridge.activitySettings({ ...settings, autoFetchInterval: interval })
         }, originalAutoFetchInterval)
         .catch(() => {})
     await page.goto('about:blank').catch(() => {})

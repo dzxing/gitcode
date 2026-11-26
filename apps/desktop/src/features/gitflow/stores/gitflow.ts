@@ -1,10 +1,10 @@
-import { flowTypes, flowKind } from '../rules'
+import { flowTypes, flowKind } from '../branchKinds'
 import { parseJsonObject } from '../../../infrastructure/json'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import { useGitFlowFinishStore } from './gitflowFinish'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import type {
   ActionResult,
   GitFlowConfig,
@@ -517,7 +517,7 @@ export const useGitFlowStore = defineStore('gitflow', () => {
     repo.busy = true
     repo.activeOperation = 'gitflow-preview'
     try {
-      plan.value = await desktop.gitflowPlan(original.repo, {
+      plan.value = await coreBridge.gitflowPlan(original.repo, {
         ...original,
         config: { ...config.value },
         signature: signature.value,

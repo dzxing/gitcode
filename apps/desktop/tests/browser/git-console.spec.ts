@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { openFixtureRepository } from './repository-fixture'
-import type { GitConsoleRequest } from '../../src/shared/contracts/gitConsoleTypes'
+import type { GitConsoleRequest } from '../../src/shared/contracts/gitConsole'
 
 async function fixture(page: Page) {
   await openFixtureRepository(page)

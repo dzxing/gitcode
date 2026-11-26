@@ -2,7 +2,7 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import { useMergeStore } from '../../merge/stores/merge'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import { branchReference } from '../../../shared/lib/references'
 import type { Branch, Commit, RebasePlan, RebaseStep } from '../../../shared/contracts'
 
@@ -96,7 +96,7 @@ export const useRebaseStore = defineStore('rebase', () => {
     loading.value = true
     error.value = ''
     try {
-      const value = await desktop.navigationRead(origin.repo, {
+      const value = await coreBridge.navigationRead(origin.repo, {
         ...origin,
         kind: 'rebase',
         fullRef: branchReference(branch),

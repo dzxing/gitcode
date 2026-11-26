@@ -3,8 +3,8 @@ import { vOverflowTitle } from '../../../shared/ui/overflowTitle'
 import { computed } from 'vue'
 import Icon from '../../../shared/ui/Icon.vue'
 import { fileStatusPresentation } from '../../../shared/lib/fileStatus'
-import type { WorktreeChange, WorktreeNode } from '../worktree'
-import { stagingSelectionState } from '../worktree'
+import type { WorktreeChange, WorktreeNode } from '../worktreeModel'
+import { stagingSelectionState } from '../worktreeModel'
 import { useContextMenuStore } from '../../../app/stores/contextMenu'
 const menu = useContextMenuStore()
 

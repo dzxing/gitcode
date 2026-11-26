@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { WorktreeChange, WorktreeLayout } from '../worktree'
+import type { WorktreeChange, WorktreeLayout } from '../worktreeModel'
 
 interface WorktreePreferences {
   selected: string[]

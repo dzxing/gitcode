@@ -1,7 +1,7 @@
 import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useRepositoryStore } from '../../repository/stores/repository'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import type { StashDetails, StashEntry } from '../../../shared/contracts'
 
 type StashOperation = 'stash-apply' | 'stash-pop' | 'stash-drop'
@@ -158,7 +158,7 @@ export const useStashStore = defineStore('stash', () => {
     repository.diffLoading = false
     loading.value = true
     try {
-      const result = await desktop.stashRead(intent.repo, entry.oid)
+      const result = await coreBridge.stashRead(intent.repo, entry.oid)
       if (!validRead(attempt, entry, intent)) return
       details.value = result
       loading.value = false
@@ -220,7 +220,7 @@ export const useStashStore = defineStore('stash', () => {
     const current = () =>
       validRead(attempt, entry, intent) && repository.selectedFile?.path === path
     try {
-      const result = await desktop.stashRead(intent.repo, entry.oid, path)
+      const result = await coreBridge.stashRead(intent.repo, entry.oid, path)
       if (!current()) return
       details.value = result
       detailFile = path

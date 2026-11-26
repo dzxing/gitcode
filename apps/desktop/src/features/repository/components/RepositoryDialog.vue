@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useRepositoryStore } from '../stores/repository'
-import { desktop, isDesktop, joinPath } from '../../../infrastructure/desktop'
-import { getUIPlatform } from '../../../infrastructure/platform'
+import { coreBridge, isDesktop, joinPath } from '../../../infrastructure/coreBridge'
+import { getUIPlatform } from '../../../infrastructure/uiPlatform'
 import {
   parentDirectory,
   suggestedRepositoryName,
@@ -133,7 +133,7 @@ async function browse(purpose: 'repo' | 'parent', internal = false) {
   picking.value = true
   pickerError.value = ''
   try {
-    const path = await desktop.chooseDirectory(
+    const path = await coreBridge.chooseDirectory(
       purpose === 'repo'
         ? store.repositoryOpenPath || (!store.isNewTab ? store.repo.path : undefined)
         : draft.value.parent || undefined,

@@ -1,5 +1,4 @@
 type Unlisten = () => void
-
 export interface NativeWindow {
   readonly platform?: string
   readonly nativeControls?: boolean
@@ -11,8 +10,4 @@ export interface NativeWindow {
   isFocused(): Promise<boolean>
   onResized(handler: () => void): Promise<Unlisten>
   onFocusChanged(handler: (event: { payload: boolean }) => void): Promise<Unlisten>
-}
-
-export function currentNativeWindow(): NativeWindow | null {
-  return typeof window === 'undefined' ? null : window.gitcodeWindow || null
 }

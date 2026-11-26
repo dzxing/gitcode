@@ -50,20 +50,48 @@ function imports(source, file) {
   return edges
 }
 
+// Accept a path inventory so collision policy can also be verified on a
+// case-insensitive filesystem, where both conflicting files cannot coexist.
+export function checkSourceNames(entries) {
+  const failures = [],
+    seenPaths = new Map()
+  for (const { name, directory } of entries) {
+    const key = name.toLowerCase(),
+      basename = path.posix.basename(name)
+    const previous = seenPaths.get(key)
+    if (previous && previous !== name)
+      failures.push(`Case-insensitive path collision: ${previous} / ${name}`)
+    seenPaths.set(key, name)
+    if (directory) {
+      if (!/^[a-z][a-z0-9-]*$/.test(basename))
+        failures.push(`${name}: directory names must use lowercase words and optional hyphens`)
+    } else if (basename.endsWith('.vue')) {
+      if (!/^[A-Z][A-Za-z0-9]*\.vue$/.test(basename))
+        failures.push(`${name}: Vue component filenames must use PascalCase`)
+    } else if (basename.endsWith('.ts') && name !== 'vue-shim.d.ts') {
+      if (!/^[a-z][A-Za-z0-9]*(?:\.d)?\.ts$/.test(basename))
+        failures.push(`${name}: TypeScript filenames must use camelCase`)
+    }
+  }
+  return failures
+}
+
 export async function checkSourceBoundaries(root = defaultRoot) {
-  const files = new Map()
+  const files = new Map(),
+    names = []
+  const relative = (file) => path.relative(root, file).split(path.sep).join('/')
   async function collect(folder) {
     for (const entry of await readdir(folder, { withFileTypes: true })) {
       if (entry.name === 'assets') continue
       const file = path.join(folder, entry.name)
+      names.push({ name: relative(file), directory: entry.isDirectory() })
       if (entry.isDirectory()) await collect(file)
       else if (/\.(?:ts|vue)$/.test(entry.name)) files.set(file, await readFile(file, 'utf8'))
     }
   }
   await collect(root)
-  const failures = [],
-    graph = new Map()
-  const relative = (file) => path.relative(root, file).split(path.sep).join('/')
+  const graph = new Map(),
+    failures = checkSourceNames(names)
   for (const [file, source] of files) {
     const name = relative(file)
     if (!name.includes('/') && !['main.ts', 'App.vue', 'vue-shim.d.ts'].includes(name))
@@ -113,5 +141,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (failures.length) {
     console.error(failures.join('\n'))
     process.exitCode = 1
-  } else console.log('Frontend boundaries passed; no runtime import cycles.')
+  } else console.log('Frontend naming and boundaries passed; no runtime import cycles.')
 }

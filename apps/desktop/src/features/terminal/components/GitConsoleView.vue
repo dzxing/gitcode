@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
-import { desktop } from '../../../infrastructure/desktop'
+import { coreBridge } from '../../../infrastructure/coreBridge'
 import { useRepositoryStore } from '../../repository/stores/repository'
-import type { GitConsoleEntry, GitConsoleReply } from '../../../shared/contracts/gitConsoleTypes'
+import type { GitConsoleEntry, GitConsoleReply } from '../../../shared/contracts/gitConsole'
 
 const props = defineProps<{ active: boolean }>()
 const repository = useRepositoryStore()
@@ -46,7 +46,7 @@ async function read(version: number, repo: string) {
   const history = histories.get(repo)!
   let delay = 200
   try {
-    const reply = await desktop.gitConsole(repo, {
+    const reply = await coreBridge.gitConsole(repo, {
       action: 'read',
       epoch: history.epoch,
       cursor: history.cursor,
@@ -110,7 +110,7 @@ async function clear() {
     repo = repository.repo.path
   clearing.value = true
   try {
-    const reply = await desktop.gitConsole(repo, { action: 'tail' })
+    const reply = await coreBridge.gitConsole(repo, { action: 'tail' })
     if (version !== generation) return
     histories.set(repo, {
       epoch: reply.epoch,

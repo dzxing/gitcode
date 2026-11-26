@@ -2,7 +2,7 @@
 import { vOverflowTitle } from '../../../shared/ui/overflowTitle'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useGitFlowStore } from '../stores/gitflow'
-import { flowLabels, flowTypes } from '../rules'
+import { flowLabels, flowTypes } from '../branchKinds'
 import { useRepositoryStore } from '../../repository/stores/repository'
 import Icon from '../../../shared/ui/Icon.vue'
 import type { GitFlowConfig } from '../../../shared/contracts'

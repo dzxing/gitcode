@@ -1,6 +1,6 @@
 {
   "name": "gitcode-workbench",
-  "version": "1.0.1",
+  "version": "1.0.2-dev.0",
   "private": true,
   "description": "A local Git workbench built with Electron and Vue",
   "type": "module",

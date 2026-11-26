@@ -1,4 +1,4 @@
-import { flowKind } from '../rules'
+import { flowKind } from '../branchKinds'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useRepositoryStore } from '../../repository/stores/repository'
